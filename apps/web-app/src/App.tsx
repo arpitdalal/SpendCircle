@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react";
 import { createSpendCircleBackend } from "@spend-circle/convex";
 
-type Session = ReturnType<ReturnType<typeof createSpendCircleBackend>["signInWithDevGoogle"]>;
+type Backend = ReturnType<typeof createSpendCircleBackend>;
+type Session = ReturnType<Backend["signInWithDevGoogle"]>;
+type RegularCircleSession = ReturnType<Backend["createRegularCircle"]>;
 
 export function App() {
   const backend = useMemo(() => createSpendCircleBackend(), []);
   const [session, setSession] = useState<Session | null>(null);
+  const [regularCircles, setRegularCircles] = useState<RegularCircleSession[]>([]);
   const [circleName, setCircleName] = useState("");
+  const [newCircleName, setNewCircleName] = useState("");
+  const [residenceType, setResidenceType] = useState<"leased" | "owned" | "skip">("skip");
 
   if (!session) {
     return (
@@ -65,6 +70,61 @@ export function App() {
           <input id="circle-name" value={circleName} onChange={(event) => setCircleName(event.target.value)} />
           <button type="submit">Rename Circle</button>
         </form>
+      </section>
+      <section className="circle-workspace">
+        <form
+          className="create-circle"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const createdCircle = backend.createRegularCircle({
+              actorUserId: session.user.id,
+              name: newCircleName,
+              locale: navigator.language,
+              setup: residenceType === "skip" ? {} : { residenceType }
+            });
+            setRegularCircles([...regularCircles, createdCircle]);
+            setNewCircleName("");
+          }}
+        >
+          <h2>Create regular Circle</h2>
+          <label htmlFor="new-circle-name">New Circle name</label>
+          <input
+            id="new-circle-name"
+            value={newCircleName}
+            onChange={(event) => setNewCircleName(event.target.value)}
+          />
+          <label htmlFor="residence-type">Residence type</label>
+          <select
+            id="residence-type"
+            value={residenceType}
+            onChange={(event) => setResidenceType(event.target.value as "leased" | "owned" | "skip")}
+          >
+            <option value="skip">Skip</option>
+            <option value="leased">Leased</option>
+            <option value="owned">Owned</option>
+          </select>
+          <button type="submit">Create Circle</button>
+        </form>
+        <div className="circle-list">
+          <h2>Your Circles</h2>
+          <article>
+            <span>{session.circle.kind}</span>
+            <p className="circle-title">{session.circle.name}</p>
+            <p>
+              <span>{session.circle.currency}</span> · <span>Mark {session.circle.mark}</span>
+            </p>
+          </article>
+          {regularCircles.map((createdCircle) => (
+            <article key={createdCircle.circle.id}>
+              <span>{createdCircle.circle.kind}</span>
+              <h3>{createdCircle.circle.name}</h3>
+              <p>
+                <span>{createdCircle.circle.currency}</span> · <span>Mark {createdCircle.circle.mark}</span>
+              </p>
+              <p>{createdCircle.categories.map((category) => category.name).join(", ")}</p>
+            </article>
+          ))}
+        </div>
       </section>
     </main>
   );
