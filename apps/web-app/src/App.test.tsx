@@ -24,4 +24,19 @@ describe("authenticated web app", () => {
 
     expect(screen.getByRole("heading", { name: "Solo Ledger" })).toBeInTheDocument();
   });
+
+  it("creates a regular Circle from the app and shows setup-derived details", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Continue with Google" }));
+    await user.type(screen.getByLabelText("New Circle name"), "Home");
+    await user.selectOptions(screen.getByLabelText("Residence type"), "leased");
+    await user.click(screen.getByRole("button", { name: "Create Circle" }));
+
+    expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(1);
+    expect(screen.getAllByText("USD")).toHaveLength(2);
+    expect(screen.getByText("Mark H")).toBeInTheDocument();
+    expect(screen.getByText("Rent, Groceries, Paycheck")).toBeInTheDocument();
+  });
 });
