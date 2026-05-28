@@ -2,3 +2,5 @@ node_modules/
 dist/
 test-results/
 apps/web-app/dist/
+
+.env.local
