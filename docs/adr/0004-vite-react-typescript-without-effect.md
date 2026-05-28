@@ -1,0 +1,3 @@
+# pnpm workspace with Vite React TypeScript app
+
+Spend Circle uses a pnpm workspace monorepo on Node LTS tooling, with Biome for formatting/linting, the v1 authenticated product app in `apps/web-app` using Vite, React, and TypeScript, Convex functions in `packages/convex`, and pure shared business primitives in `packages/domain`. Marketing is intentionally kept separate as future `apps/site` so it can use SSR or static generation for SEO without forcing the authenticated app into that runtime, and a future React Native client can live in `apps/native-app`; Bun and Deno are avoided for v1, and Effect is intentionally avoided until backend complexity justifies its additional programming model.
