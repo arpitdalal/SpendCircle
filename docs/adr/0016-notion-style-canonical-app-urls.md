@@ -1,0 +1,11 @@
+# Notion-style canonical app URLs
+
+Spend Circle uses canonical app URLs built from a human-readable slug plus the authoritative object ID, such as `/circles/my-home-c1` and `/circles/my-home-c1/transactions/rent-t1`.
+
+The ID is the only lookup key. The slug exists only to make browser history, shared links, and address-bar autocomplete understandable. Raw IDs and stale slugs are accepted, resolved by ID, and then replaced with the current canonical `slug-id` URL when the target is accessible. Canonicalization uses router navigation with replace semantics so the browser Back stack does not gain dead intermediate entries.
+
+Circle-scoped object routes always include the Circle reference. Routes like `/transactions/:transactionRef` and `/categories/:categoryRef` are invalid because object links should resolve through Circle Visibility and have a Circle fallback. If the Circle is inaccessible or missing, the app shows a generic link-unavailable snackbar and falls back to the User's default safe route. If the Circle is accessible but the object is missing or inaccessible, the app shows the same generic snackbar and falls back to the Circle route. User-facing messaging must not distinguish missing objects from inaccessible objects.
+
+Slug/ref parsing and canonical ref construction belong in implementation-neutral domain helpers. The parser extracts the final hyphen-delimited segment as the ID and accepts an injected validator instead of baking Convex ID rules into the domain package.
+
+Invitation Links are the exception. They use opaque token-only URLs because they are single-use, expiring access links and should not expose Circle context before token validation.

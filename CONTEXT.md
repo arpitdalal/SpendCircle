@@ -184,6 +184,10 @@ _Avoid_: Hidden Category Audit
 A per-**Circle** summary of money activity. The v1 Dashboard shows current-month Income, Expenses, Net, recent Transactions, a selected-month Expense breakdown by Category, and month-over-month Income, Expense, and Net comparison; totals include all active Transactions by default and can be filtered by Paid By. Category analytics are non-additive because a Transaction can have multiple Categories, and include Archived Categories when active Transactions in the selected period still use them.
 _Avoid_: Overview
 
+**Home Summary**:
+A future cross-**Circle** summary of a **User's** money activity across visible Circles. Home Summary is distinct from the per-Circle **Dashboard** and does not replace Circle-scoped reporting.
+_Avoid_: Global Dashboard, Overview
+
 **Monthly Ledger**:
 The month-focused Transaction view for a **Circle**. A Monthly Ledger shows one selected month and year, that month's Income, Expenses, and Net, and that month's Transactions sorted by Transaction Date descending and then created-at descending.
 _Avoid_: Transaction List
