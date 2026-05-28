@@ -6,7 +6,7 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:5173"
   },
   webServer: {
-    command: "/opt/homebrew/bin/pnpm --filter @spend-circle/web-app dev --host 127.0.0.1",
+    command: "VITE_AUTH_MODE=dev /opt/homebrew/bin/pnpm --filter @spend-circle/web-app dev --host 127.0.0.1",
     url: "http://127.0.0.1:5173",
     reuseExistingServer: true
   },

@@ -9,9 +9,12 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@convex-dev/better-auth": "^0.12.2",
     "@spend-circle/convex": "workspace:*",
     "@spend-circle/domain": "workspace:*",
     "@vitejs/plugin-react": "^4.5.2",
+    "better-auth": "^1.6.11",
+    "convex": "^1.39.1",
     "vite": "^6.3.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

@@ -4,14 +4,19 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api": "./convex/_generated/api.js",
+    "./dataModel": "./convex/_generated/dataModel.d.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@spend-circle/domain": "workspace:*"
+    "@convex-dev/better-auth": "^0.12.2",
+    "@spend-circle/domain": "workspace:*",
+    "better-auth": "^1.6.11",
+    "convex": "^1.39.1"
   },
   "devDependencies": {
     "typescript": "^5.8.3"
