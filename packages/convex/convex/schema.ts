@@ -1,47 +1,181 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+/**
+ * Spend Circle data model. Better Auth owns its own user/session tables inside
+ * the `betterAuth` component (see convex.config.ts); the app `users` table here
+ * stores the Spend Circle profile keyed by the auth subject. All permission and
+ * lifecycle enforcement lives in Convex functions (ADR 0015), and money is
+ * stored as positive integer minor units (ADR 0009).
+ */
+
+const transactionType = v.union(v.literal("expense"), v.literal("income"));
+const lifecycleStatus = v.union(v.literal("active"), v.literal("archived"));
+
 export default defineSchema({
+  // Spend Circle User profile. The Better Auth component owns the auth user and
+  // the auth-user → app-user mapping (ADR 0002); this row is created by the
+  // `onCreateUser` trigger in auth.ts and resolved via `authComponent.getAuthUser`.
   users: defineTable({
-    googleSubject: v.string(),
-    googleAccountEmail: v.string(),
+    email: v.string(),
     displayName: v.string(),
-    profilePictureUrl: v.string(),
+    image: v.optional(v.string()),
+    // Legal acceptance captured on first sign-in (ADR 0014).
     acceptedTermsVersion: v.string(),
     acceptedPrivacyVersion: v.string(),
-    acceptedAt: v.string()
-  })
-    .index("by_google_subject", ["googleSubject"])
-    .index("by_google_account_email", ["googleAccountEmail"]),
+    acceptedAt: v.number(),
+    // Product analytics opt-out (ADR 0013); operational monitoring is unaffected.
+    analyticsOptOut: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_email", ["email"]),
 
   circles: defineTable({
-    ownerUserId: v.id("users"),
-    kind: v.union(v.literal("personal"), v.literal("regular")),
     name: v.string(),
+    kind: v.union(v.literal("personal"), v.literal("regular")),
+    currency: v.string(),
     color: v.string(),
     mark: v.string(),
-    currency: v.union(v.literal("CAD"), v.literal("USD")),
-    archived: v.boolean(),
-    hasTransactions: v.boolean()
-  }).index("by_owner_kind", ["ownerUserId", "kind"]),
-
-  members: defineTable({
-    userId: v.id("users"),
-    circleId: v.id("circles"),
-    role: v.union(v.literal("owner"), v.literal("member")),
-    displayNameSnapshot: v.string(),
-    profilePictureUrlSnapshot: v.string()
+    ownerUserId: v.id("users"),
+    status: lifecycleStatus,
+    // Currency is locked once any Transaction exists (PRD story 9).
+    currencyLocked: v.boolean(),
+    createdAt: v.number(),
+    archivedAt: v.optional(v.number()),
   })
-    .index("by_user", ["userId"])
+    .index("by_owner", ["ownerUserId"])
+    .index("by_owner_and_status", ["ownerUserId", "status"]),
+
+  // Membership join. Exactly one row per (circleId, userId): leaving flips
+  // status to "removed", rejoining reactivates the SAME row — never a duplicate
+  // (the by_circle_and_user .unique() lookup depends on this). PRD stories 42–44.
+  //
+  // `displayName`/`image` are the per-Circle MATERIALIZED identity, not a
+  // one-time snapshot (ADR 0018): the `onUpdateUser` trigger in auth.ts mirrors
+  // the User's current Google profile onto ACTIVE member rows when the profile
+  // changes, freezes them while the Member is "removed", and refreshes on rejoin.
+  // Paid By / Recorded By and the Member List read this materialized identity
+  // (active ⇒ current, removed ⇒ frozen); the immutable history does not — it
+  // keeps the name as it read when each event was written (ADR 0018).
+  members: defineTable({
+    circleId: v.id("circles"),
+    userId: v.id("users"),
+    role: v.union(v.literal("owner"), v.literal("member")),
+    status: v.union(v.literal("active"), v.literal("removed")),
+    displayName: v.string(),
+    image: v.optional(v.string()),
+    joinedAt: v.number(),
+    removedAt: v.optional(v.number()),
+  })
     .index("by_circle", ["circleId"])
-    .index("by_user_circle", ["userId", "circleId"]),
+    .index("by_circle_and_status", ["circleId", "status"])
+    .index("by_user", ["userId"])
+    .index("by_circle_and_user", ["circleId", "userId"]),
 
   categories: defineTable({
     circleId: v.id("circles"),
     name: v.string(),
-    type: v.union(v.literal("expense"), v.literal("income")),
+    // Lowercased name for case-insensitive uniqueness per Circle+type, including
+    // archived names (PRD stories 49, 54).
+    nameLower: v.string(),
+    type: transactionType,
     color: v.string(),
-    createdByUserId: v.id("users"),
-    archived: v.boolean()
-  }).index("by_circle", ["circleId"])
+    creatorUserId: v.id("users"),
+    status: lifecycleStatus,
+    createdAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  })
+    .index("by_circle", ["circleId"])
+    .index("by_circle_and_type", ["circleId", "type"])
+    .index("by_circle_type_name", ["circleId", "type", "nameLower"]),
+
+  transactions: defineTable({
+    circleId: v.id("circles"),
+    type: transactionType,
+    title: v.string(),
+    note: v.optional(v.string()),
+    amountMinorUnits: v.number(),
+    // Plain date "YYYY-MM-DD" and its "YYYY-MM" bucket; no timezone conversion
+    // (PRD story 33).
+    date: v.string(),
+    month: v.string(),
+    recordedByMemberId: v.id("members"),
+    paidByMemberId: v.id("members"),
+    status: lifecycleStatus,
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  })
+    .index("by_circle", ["circleId"])
+    .index("by_circle_and_status", ["circleId", "status"])
+    .index("by_circle_and_month", ["circleId", "month"])
+    .index("by_circle_and_date", ["circleId", "date"]),
+
+  // Many-to-many between Transactions and Categories (PRD story 50).
+  transactionCategories: defineTable({
+    circleId: v.id("circles"),
+    transactionId: v.id("transactions"),
+    categoryId: v.id("categories"),
+  })
+    .index("by_transaction", ["transactionId"])
+    .index("by_category", ["categoryId"]),
+
+  invitations: defineTable({
+    circleId: v.id("circles"),
+    emailLower: v.string(),
+    // Stored hashed; the opaque token lives only in the emailed link (ADR 0016).
+    tokenHash: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("revoked"),
+      v.literal("expired"),
+    ),
+    invitedByUserId: v.id("users"),
+    resendCount: v.number(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_circle", ["circleId"])
+    .index("by_circle_and_email", ["circleId", "emailLower"])
+    .index("by_token_hash", ["tokenHash"]),
+
+  notifications: defineTable({
+    userId: v.id("users"),
+    type: v.string(),
+    title: v.string(),
+    body: v.optional(v.string()),
+    // Canonical in-app link target, resolved for accessibility at read time.
+    link: v.optional(v.string()),
+    read: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_read", ["userId", "read"]),
+
+  // Append-only, IMMUTABLE event-as-row audit; written server-side only via the
+  // history module (ADR 0015, 0018). One row per user action: the event IS the
+  // row. Convex _ids are globally unique, so `entityId` (a stringified Circle /
+  // Transaction / Category id) alone keys an entity's history — read by_entity
+  // newest-first — and access is resolved through the entity's Circle, not a
+  // denormalized column. `changes` is an array of { field, from?, to? } of human
+  // strings formatted ONCE at write time (money via the Circle Currency, dates
+  // plain, Members as Display Name, Categories as names); `from` is absent on a
+  // "created" event, `to` on an "archived" one. Values are frozen — never
+  // re-resolved — so a line always shows what was true when it was written, and
+  // raw internal IDs never appear inside `changes` (PRD story 80). We rejected a
+  // reference-based history that re-resolves display values at read time; see
+  // ADR 0018.
+  histories: defineTable({
+    entityId: v.string(),
+    actorMemberId: v.optional(v.id("members")), // absent ⇒ system action
+    action: v.string(),
+    changes: v.array(
+      v.object({
+        field: v.string(),
+        from: v.optional(v.string()),
+        to: v.optional(v.string()),
+      }),
+    ),
+    createdAt: v.number(),
+  }).index("by_entity", ["entityId"]),
 });

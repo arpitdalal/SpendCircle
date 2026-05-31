@@ -10,8 +10,10 @@
 
 import type * as auth from "../auth.js";
 import type * as circles from "../circles.js";
-import type * as domain from "../domain.js";
+import type * as guard from "../guard.js";
+import type * as history from "../history.js";
 import type * as http from "../http.js";
+import type * as model from "../model.js";
 import type * as users from "../users.js";
 
 import type {
@@ -23,8 +25,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   circles: typeof circles;
-  domain: typeof domain;
+  guard: typeof guard;
+  history: typeof history;
   http: typeof http;
+  model: typeof model;
   users: typeof users;
 }>;
 

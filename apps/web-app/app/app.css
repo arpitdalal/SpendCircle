@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+/* Dark-first theme baseline (ADR 0005). shadcn/ui components and Recharts are
+   layered on top of these tokens as the UI is built out. */
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-neutral-950 text-neutral-100 antialiased;
+  }
+}

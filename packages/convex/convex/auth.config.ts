@@ -1,6 +1,10 @@
-import { getAuthConfigProvider } from "@convex-dev/better-auth/auth-config";
-import type { AuthConfig } from "convex/server";
-
+// Convex auth configuration: trust tokens minted by the Better Auth component
+// hosted on this deployment's site URL.
 export default {
-  providers: [getAuthConfigProvider()]
-} satisfies AuthConfig;
+  providers: [
+    {
+      domain: process.env.CONVEX_SITE_URL,
+      applicationID: "convex",
+    },
+  ],
+};

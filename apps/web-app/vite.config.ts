@@ -1,22 +1,14 @@
-import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv } from "vite";
+import { reactRouter } from "@react-router/dev/vite";
+import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, "../..", "");
-  return {
-    envDir: "../..",
-    plugins: [react()],
-    server: {
-      port: 5173,
-      strictPort: true,
-      proxy: env.VITE_CONVEX_SITE_URL
-        ? {
-            "/api/auth": {
-              target: env.VITE_CONVEX_SITE_URL,
-              changeOrigin: true
-            }
-          }
-        : undefined
-    }
-  };
+export default defineConfig({
+  // The shared .env.local lives at the monorepo root, so load env from there for
+  // both dev and the SPA prerender build (which instantiates the Convex client).
+  envDir: "../..",
+  server: {
+    port: 5173,
+  },
+  plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
 });
