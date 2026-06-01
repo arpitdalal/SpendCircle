@@ -9,9 +9,6 @@ import { type Resolution, useResolvedRef } from "./use-resolved-ref.js";
 
 export type { Circle };
 
-/** Stable canonical path for a Circle, fed to the resolution primitive's deps. */
-const circleCanonicalPath = (circle: Circle): string => `/circles/${circle.ref}`;
-
 /**
  * The Circle adapter over the shared resolution primitive (ADR 0016/0017): read
  * `circleRef`, parse it, subscribe by id (synthesizing in mock mode), then hand
@@ -42,7 +39,6 @@ export function useResolvedCircle(fallback = "/"): Resolution<Circle> {
     rawRef: circleRef,
     parsed: parsed != null,
     value,
-    canonicalPath: circleCanonicalPath,
     fallback,
   });
 }
