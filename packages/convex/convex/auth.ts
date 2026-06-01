@@ -21,6 +21,12 @@ import { createUserWithPersonalCircle, propagateUserProfile } from "./model.js";
  * Required deployment env vars: SITE_URL (the app origin), GOOGLE_CLIENT_ID,
  * GOOGLE_CLIENT_SECRET, BETTER_AUTH_SECRET. CONVEX_SITE_URL is provided by
  * Convex automatically and is where the auth routes live.
+ *
+ * E2E-only: when `E2E_TEST_AUTH=1` (set ONLY on ephemeral CI/self-hosted
+ * deployments, NEVER in production — ADR 0019), email+password sign-in is also
+ * enabled so Playwright can mint a real, backend-trusted session without driving
+ * Google OAuth (which it cannot automate). Production stays Google-only (ADR 0002):
+ * the flag is absent there, so this path does not exist on the prod deployment.
  */
 type AuthCtx =
   | GenericQueryCtx<DataModel>
@@ -65,6 +71,10 @@ export const { createUser, updateUser, deleteUser, createSession, isAuthenticate
 
 const siteUrl = process.env.SITE_URL ?? "http://127.0.0.1:5173";
 
+// E2E-only auth bypass (ADR 0019). Enabled solely on ephemeral test deployments via
+// E2E_TEST_AUTH; never set in production, so production stays Google-only (ADR 0002).
+const e2eTestAuth = process.env.E2E_TEST_AUTH === "1";
+
 // Local dev is reachable as both 127.0.0.1 and localhost; trust both so the
 // CORS allow-origin and post-auth redirect work regardless of which the browser
 // uses. In production this collapses to the single SITE_URL.
@@ -78,6 +88,9 @@ export const createAuth = (ctx: AuthCtx) =>
     trustedOrigins,
     database: convexAdapter(ctx, authComponent),
     account: { accountLinking: { enabled: true } },
+    // E2E-only (ADR 0019): a flag-gated credentials path so Playwright can mint a
+    // session without Google. Eliminated in production (E2E_TEST_AUTH is unset there).
+    ...(e2eTestAuth ? { emailAndPassword: { enabled: true } } : {}),
     // Google-only sign-in (ADR 0002).
     socialProviders: {
       google: {

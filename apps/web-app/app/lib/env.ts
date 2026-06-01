@@ -6,4 +6,12 @@
  */
 export const MOCKS = import.meta.env.VITE_MOCKS === "true";
 
+/**
+ * True-E2E mode (ADR 0019): the app runs against a REAL self-hosted Convex backend
+ * with the real session path and real queries — NOT the `MOCKS` fixtures path. It
+ * only enables the gated test-auth helper (so Playwright can establish a session
+ * without Google). Build-time constant, so prod drops everything it guards.
+ */
+export const E2E = import.meta.env.VITE_E2E === "true";
+
 export const CONVEX_URL = import.meta.env.VITE_CONVEX_URL;
