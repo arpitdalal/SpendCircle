@@ -1,4 +1,4 @@
-import type { Circle } from "./data.js";
+import type { Category, Circle } from "./data.js";
 
 /**
  * Mock fixture data for E2E renders without a live backend (ADR 0006). These are
@@ -19,6 +19,38 @@ export const MOCK_CIRCLES: Circle[] = [
     mark: "P",
     status: "active",
     currencyLocked: false,
+  },
+];
+
+/**
+ * Mock Categories spanning both types, typed against the derived {@link Category}
+ * contract so a shape change to `toCategoryView` fails typecheck here (ADR 0003).
+ * `useCategories` filters these by the requested type.
+ */
+export const MOCK_CATEGORIES: Category[] = [
+  {
+    id: "mock-cat-groceries" as Category["id"],
+    name: "Groceries",
+    type: "expense",
+    color: "green",
+    status: "active",
+    creator: { displayName: "You", image: undefined },
+  },
+  {
+    id: "mock-cat-rent" as Category["id"],
+    name: "Rent",
+    type: "expense",
+    color: "amber",
+    status: "active",
+    creator: { displayName: "You", image: undefined },
+  },
+  {
+    id: "mock-cat-salary" as Category["id"],
+    name: "Salary",
+    type: "income",
+    color: "teal",
+    status: "active",
+    creator: { displayName: "You", image: undefined },
   },
 ];
 
