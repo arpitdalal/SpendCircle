@@ -1,0 +1,84 @@
+name: E2E
+
+# True end-to-end tests against a REAL, ephemeral self-hosted Convex backend (ADR 0019).
+# Each run boots the OSS convex-backend image, deploys this project's functions (incl. the
+# Better Auth component) with the flag-gated email+password bypass, builds the app pointed
+# at that backend, and runs Playwright with a real injected session. Google OAuth is never
+# driven; production stays Google-only.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  true-e2e:
+    runs-on: ubuntu-latest
+    env:
+      # Pinned to the exact image the viability spike validated (deterministic).
+      # Re-pin when bumping the `convex` npm version; a mismatch fails at `convex deploy`.
+      CONVEX_IMAGE: ghcr.io/get-convex/convex-backend@sha256:122da352b12b216a017a1fb45c6a467f41a5b746158b47aecd1fe12f9f74edb0
+      CONVEX_SELF_HOSTED_URL: http://127.0.0.1:3210
+      VITE_CONVEX_URL: http://127.0.0.1:3210
+      VITE_CONVEX_SITE_URL: http://127.0.0.1:3211
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` — action-setup reads the pinned pnpm from package.json's
+      # `packageManager` field. Specifying both errors (ERR_PNPM_BAD_PM_VERSION).
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          # pnpm 11.5.0 (pinned in package.json) needs Node >= 22.13 (it imports
+          # the node:sqlite builtin). 22 also satisfies the repo's `engines`.
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Boot self-hosted Convex backend
+        run: |
+          docker run -d --name convex \
+            -p 3210:3210 -p 3211:3211 \
+            -e CONVEX_CLOUD_ORIGIN=http://127.0.0.1:3210 \
+            -e CONVEX_SITE_ORIGIN=http://127.0.0.1:3211 \
+            -e DISABLE_BEACON=true \
+            "$CONVEX_IMAGE"
+          echo "Waiting for backend…"
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:3210/version && break || sleep 2
+          done
+
+      - name: Generate admin key
+        run: echo "CONVEX_SELF_HOSTED_ADMIN_KEY=$(docker exec convex ./generate_admin_key.sh | tail -n1 | tr -d '\r')" >> "$GITHUB_ENV"
+
+      - name: Configure auth env (test-only) + deploy backend
+        working-directory: packages/convex
+        run: |
+          pnpm exec convex env set BETTER_AUTH_SECRET "ci-$(openssl rand -hex 16)"
+          pnpm exec convex env set SITE_URL "http://127.0.0.1:5173"
+          pnpm exec convex env set GOOGLE_CLIENT_ID "ci-dummy"
+          pnpm exec convex env set GOOGLE_CLIENT_SECRET "ci-dummy"
+          pnpm exec convex env set E2E_TEST_AUTH "1"
+          pnpm exec convex deploy -y
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run E2E suite
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Backend logs on failure
+        if: failure()
+        run: docker logs convex || true

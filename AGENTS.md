@@ -1,3 +1,7 @@
+Be extremely concise and sacrifice grammar for the sake of concision.
+Don't cut corners. Be thorough in your work.
+Fix issues from the root, don't settle for a bandaid.
+
 ## Agent skills
 
 ### Issue tracker

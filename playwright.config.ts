@@ -1,17 +1,45 @@
 import { defineConfig, devices } from "@playwright/test";
 
+/**
+ * End-to-end tests run against a REAL, self-hosted Convex backend (ADR 0019):
+ * the real frontend → Convex functions → DB path. Google OAuth is replaced by the
+ * flag-gated email+password bypass (E2E_TEST_AUTH on the backend, VITE_E2E on the
+ * app); outbound vendors are MSW-mocked once they exist. There is no mock-mode
+ * E2E suite — fast UI checks live in the Vitest render tests (e.g. home.test.tsx).
+ *
+ * The CI workflow sets VITE_CONVEX_URL / VITE_CONVEX_SITE_URL to the self-hosted
+ * backend's origins; locally they default to the docker-compose ports.
+ */
+const PORT = 5173;
+const baseURL = `http://127.0.0.1:${PORT}`;
+
 export default defineConfig({
   testDir: "./e2e",
+  // global-setup mints a session via the gated helper and saves storageState, so
+  // every test starts already authenticated against the real backend.
+  globalSetup: "./e2e/global-setup.ts",
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "http://127.0.0.1:5173"
-  },
-  webServer: {
-    command: "VITE_AUTH_MODE=dev /opt/homebrew/bin/pnpm --filter @spend-circle/web-app dev --host 127.0.0.1",
-    url: "http://127.0.0.1:5173",
-    reuseExistingServer: true
+    baseURL,
+    storageState: "e2e/.auth/state.json",
+    trace: "on-first-retry",
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
-    { name: "mobile", use: { ...devices["Pixel 7"] } }
-  ]
+    { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
+  ],
+  webServer: {
+    command: "pnpm --filter @spend-circle/web-app dev --host 127.0.0.1",
+    url: baseURL,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    env: {
+      VITE_E2E: "true",
+      VITE_CONVEX_URL: process.env.VITE_CONVEX_URL ?? "http://127.0.0.1:3210",
+      VITE_CONVEX_SITE_URL: process.env.VITE_CONVEX_SITE_URL ?? "http://127.0.0.1:3211",
+    },
+  },
 });
