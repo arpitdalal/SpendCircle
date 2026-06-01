@@ -33,7 +33,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # pnpm 11.5.0 (pinned in package.json) needs Node >= 22.13 (it imports
+          # the node:sqlite builtin). 22 also satisfies the repo's `engines`.
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
