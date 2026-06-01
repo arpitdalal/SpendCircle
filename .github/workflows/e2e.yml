@@ -26,12 +26,12 @@ jobs:
       VITE_CONVEX_URL: http://127.0.0.1:3210
       VITE_CONVEX_SITE_URL: http://127.0.0.1:3211
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # No `version:` — action-setup reads the pinned pnpm from package.json's
       # `packageManager` field. Specifying both errors (ERR_PNPM_BAD_PM_VERSION).
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           # pnpm 11.5.0 (pinned in package.json) needs Node >= 22.13 (it imports
           # the node:sqlite builtin). 22 also satisfies the repo's `engines`.
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/
