@@ -16,7 +16,8 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:local": "./scripts/e2e-local.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
