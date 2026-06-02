@@ -28,8 +28,20 @@ export type ColorId = (typeof COLOR_PALETTE)[number]["id"];
 
 const COLOR_IDS = new Set<string>(COLOR_PALETTE.map((color) => color.id));
 
+const COLOR_NAMES = new Map<string, string>(COLOR_PALETTE.map((color) => [color.id, color.name]));
+
 export function isValidColorId(id: string): id is ColorId {
   return COLOR_IDS.has(id);
+}
+
+/**
+ * The human-readable name for a palette color id ("blue" → "Blue"). Used to
+ * format the frozen color value written into the immutable audit (ADR 0018) so a
+ * history line shows "Blue", never the raw id. Falls back to the id when unknown
+ * so a caller never gets an empty string.
+ */
+export function colorLabel(id: string): string {
+  return COLOR_NAMES.get(id) ?? id;
 }
 
 export const DEFAULT_COLOR_ID: ColorId = "blue";

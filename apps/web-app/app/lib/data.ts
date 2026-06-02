@@ -1,8 +1,9 @@
 import { api } from "@spend-circle/convex";
-import { useQuery } from "convex/react";
+import type { TransactionType } from "@spend-circle/domain";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "./env.js";
-import { MOCK_CIRCLES } from "./fixtures.js";
+import { MOCK_CATEGORIES, MOCK_CIRCLES } from "./fixtures.js";
 
 /**
  * The single Circle view contract, derived from the Convex function's return
@@ -23,4 +24,37 @@ export type Circle = NonNullable<FunctionReturnType<typeof api.circles.getCircle
 export function useMyCircles(): Circle[] | undefined {
   const queried = useQuery(api.circles.listMyCircles, MOCKS ? "skip" : {});
   return MOCKS ? MOCK_CIRCLES : queried;
+}
+
+/**
+ * The single Category view contract, derived from `listCategories` so it cannot
+ * drift from `toCategoryView` in `packages/convex/convex/categories.ts` (ADR
+ * 0003). The query returns `CategoryView[] | null` (null ≡ inaccessible Circle —
+ * ADR 0016); this is one element of that array.
+ */
+export type Category = NonNullable<
+  FunctionReturnType<typeof api.categories.listCategories>
+>[number];
+
+/**
+ * A Circle's Categories of one type, active only. `undefined` while loading;
+ * `null` when the Circle is inaccessible (anti-enumeration — ADR 0016). In mock
+ * mode it filters fixtures and skips the backend so E2E renders without a live
+ * deployment (ADR 0006); in real mode it is the reactive Convex query.
+ */
+export function useCategories(
+  circleId: Circle["id"],
+  type: TransactionType,
+): Category[] | null | undefined {
+  const queried = useQuery(api.categories.listCategories, MOCKS ? "skip" : { circleId, type });
+  return MOCKS ? MOCK_CATEGORIES.filter((category) => category.type === type) : queried;
+}
+
+/**
+ * The Create-Category mutation, exposed as the function the form awaits. Kept
+ * behind this seam (rather than `useMutation` in the route) so the route imports
+ * no Convex internals and render tests can mock the data layer alone.
+ */
+export function useCreateCategory() {
+  return useMutation(api.categories.createCategory);
 }
