@@ -1,10 +1,10 @@
 import {
-  type CurrencyCode,
   LIMITS,
   type TransactionType,
   formatMinorUnits,
   minorUnitsToMajorString,
   parseAmountToMinorUnits,
+  toCurrencyCode,
   toPlainDate,
   transactionInputSchema,
 } from "@spend-circle/domain";
@@ -360,7 +360,7 @@ function TransactionList({
             )}
           >
             {txn.type === "income" ? "+" : "-"}
-            {formatMinorUnits(txn.amountMinorUnits, currency as CurrencyCode)}
+            {formatMinorUnits(txn.amountMinorUnits, toCurrencyCode(currency))}
           </span>
         </li>
       ))}

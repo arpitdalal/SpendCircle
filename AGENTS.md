@@ -1,6 +1,7 @@
 Be extremely concise and sacrifice grammar for the sake of concision.
 Don't cut corners. Be thorough in your work.
 Fix issues from the root, don't settle for a bandaid.
+No typescript `as` casts, use type inference, zod, or other type-safe tools. Type casting should be the last resort, if needed, confirm with the user by presenting why it is absolutely needed.
 
 ## Agent skills
 

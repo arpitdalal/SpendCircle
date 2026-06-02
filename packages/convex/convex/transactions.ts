@@ -1,7 +1,7 @@
 import {
-  type CurrencyCode,
   formatMinorUnits,
   monthOf,
+  toCurrencyCode,
   transactionCreateSchema,
 } from "@spend-circle/domain";
 import { v } from "convex/values";
@@ -12,18 +12,70 @@ import { recordEvent, transactionEntity } from "./history.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
 
+interface MemberRef {
+  displayName: string;
+  image?: string;
+}
+interface CategoryRef {
+  id: Id<"categories">;
+  name: string;
+  color: string;
+}
+
 /**
- * Resolves a Member's materialized identity (Display Name + image) for display.
- * Reads the frozen-on-removal `members` row directly (ADR 0018) — current for an
- * active Member, frozen for a Removed one — so a later-removed Paid By keeps the
- * name it had, with no join to live User rows.
+ * Per-query lookup caches. A Transaction list repeats the same Paid By / Recorded
+ * By Member and the same Categories across many rows, so resolving each id once
+ * and reusing it collapses the otherwise-N+1 reads in {@link toTransactionView}.
+ * Scoped to a single query call — never shared across requests.
  */
-async function memberRef(ctx: QueryCtx, memberId: Id<"members">) {
+interface ViewCaches {
+  members: Map<Id<"members">, MemberRef>;
+  categories: Map<Id<"categories">, CategoryRef | null>;
+}
+
+function newViewCaches(): ViewCaches {
+  return { members: new Map(), categories: new Map() };
+}
+
+/**
+ * Resolves a Member's materialized identity (Display Name + image) for display,
+ * memoized per query. Reads the frozen-on-removal `members` row directly (ADR
+ * 0018) — current for an active Member, frozen for a Removed one — so a
+ * later-removed Paid By keeps the name it had, with no join to live User rows.
+ */
+async function memberRef(
+  ctx: QueryCtx,
+  memberId: Id<"members">,
+  caches: ViewCaches,
+): Promise<MemberRef> {
+  const cached = caches.members.get(memberId);
+  if (cached) {
+    return cached;
+  }
   const member = await ctx.db.get(memberId);
-  return {
+  const ref: MemberRef = {
     displayName: member?.displayName ?? "Unknown member",
     image: member?.image,
   };
+  caches.members.set(memberId, ref);
+  return ref;
+}
+
+/** Resolves a Category to its display fields, memoized per query. */
+async function categoryRef(
+  ctx: QueryCtx,
+  categoryId: Id<"categories">,
+  caches: ViewCaches,
+): Promise<CategoryRef | null> {
+  if (caches.categories.has(categoryId)) {
+    return caches.categories.get(categoryId) ?? null;
+  }
+  const category = await ctx.db.get(categoryId);
+  const ref: CategoryRef | null = category
+    ? { id: category._id, name: category.name, color: category.color }
+    : null;
+  caches.categories.set(categoryId, ref);
+  return ref;
 }
 
 /**
@@ -31,18 +83,20 @@ async function memberRef(ctx: QueryCtx, memberId: Id<"members">) {
  * (for exact client-side sums — ADR 0009) and resolved identity/category names so
  * the UI attributes the Transaction without re-resolving. Categories are read
  * through the `transactionCategories` join, including any already-attached
- * archived Category (historical attachments are preserved — PRD story 57).
+ * archived Category (historical attachments are preserved — PRD story 57). Member
+ * and Category lookups are memoized through `caches` to avoid re-reading the same
+ * row across a list.
  */
-async function toTransactionView(ctx: QueryCtx, txn: Doc<"transactions">) {
+async function toTransactionView(ctx: QueryCtx, txn: Doc<"transactions">, caches: ViewCaches) {
   const links = await ctx.db
     .query("transactionCategories")
     .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
     .collect();
-  const categories = [];
+  const categories: CategoryRef[] = [];
   for (const link of links) {
-    const category = await ctx.db.get(link.categoryId);
+    const category = await categoryRef(ctx, link.categoryId, caches);
     if (category) {
-      categories.push({ id: category._id, name: category.name, color: category.color });
+      categories.push(category);
     }
   }
 
@@ -55,8 +109,8 @@ async function toTransactionView(ctx: QueryCtx, txn: Doc<"transactions">) {
     date: txn.date,
     month: txn.month,
     status: txn.status,
-    recordedBy: await memberRef(ctx, txn.recordedByMemberId),
-    paidBy: await memberRef(ctx, txn.paidByMemberId),
+    recordedBy: await memberRef(ctx, txn.recordedByMemberId, caches),
+    paidBy: await memberRef(ctx, txn.paidByMemberId, caches),
     categories,
   };
 }
@@ -70,6 +124,11 @@ export type TransactionView = Awaited<ReturnType<typeof toTransactionView>>;
  * minimal read TXN-1 needs to confirm a create landed and the basis the Ledger /
  * Dashboard / live-update slices (RPT-*) build on; archived Transactions are
  * excluded from this active surface (TXN-3 owns archived views).
+ *
+ * NOTE: this collects-then-sorts the whole active set in memory, which is fine at
+ * v1 scale but unbounded. The month/date-range scoping + pagination that bounds it
+ * is owned by RPT-1 (Monthly Ledger) / RPT-2 (Search) via `by_circle_and_month` /
+ * `by_circle_and_date`; this query stays the simple "all active" read until then.
  */
 export const listTransactions = query({
   args: { circleId: v.id("circles") },
@@ -93,7 +152,8 @@ export const listTransactions = query({
         b._creationTime - a._creationTime,
     );
 
-    return await Promise.all(transactions.map((txn) => toTransactionView(ctx, txn)));
+    const caches = newViewCaches();
+    return await Promise.all(transactions.map((txn) => toTransactionView(ctx, txn, caches)));
   },
 });
 
@@ -216,7 +276,7 @@ export const createTransaction = mutation({
       { field: "title", to: input.title },
       {
         field: "amount",
-        to: formatMinorUnits(input.amountMinorUnits, access.circle.currency as CurrencyCode),
+        to: formatMinorUnits(input.amountMinorUnits, toCurrencyCode(access.circle.currency)),
       },
       { field: "date", to: input.date },
       { field: "paidBy", to: paidByMember.displayName },

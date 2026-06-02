@@ -43,6 +43,20 @@ export function getCurrency(code: CurrencyCode): Currency {
 }
 
 /**
+ * Narrows a plain string (e.g. a Circle's stored `currency`) to a typed
+ * `CurrencyCode`, throwing on an unsupported value. Use this at the boundary
+ * where a stored/queried string feeds money formatting, instead of an unchecked
+ * `as CurrencyCode` cast — the value is validated server-side at Circle creation,
+ * but this keeps the one place that trusts it honest at runtime.
+ */
+export function toCurrencyCode(code: string): CurrencyCode {
+  if (!isSupportedCurrency(code)) {
+    throw new Error(`Unsupported currency: ${code}`);
+  }
+  return code; // narrowed to CurrencyCode by the isSupportedCurrency type guard
+}
+
+/**
  * Picks a sensible default currency from a BCP 47 locale (e.g. "en-GB"),
  * falling back to USD when the region is unknown or unsupported. The mapping is
  * intentionally small; unmatched locales fall back rather than guess.
