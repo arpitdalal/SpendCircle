@@ -1,15 +1,23 @@
 import { type ReactNode, createContext, use, useCallback, useMemo, useState } from "react";
 
 /**
- * Minimal snackbar used for the generic, non-revealing "link unavailable"
- * message (ADR 0016). The same copy is shown whether a target is missing or
- * merely inaccessible, so nothing leaks about object existence.
+ * The closed vocabulary of non-revealing "unavailable" messages (ADR 0016/0017).
+ * Callers pass a `target` token, never free text, so every anti-enumeration string
+ * lives in this one auditable place and cannot drift or leak per call site — within
+ * a target the same copy is shown whether the object is missing or merely
+ * inaccessible, so nothing leaks about its existence. Arbitrary snackbar copy goes
+ * through `show` instead, deliberately outside this constrained path.
  */
-const UNAVAILABLE_LINK_MESSAGE = "That link isn't available.";
+const UNAVAILABLE_MESSAGES = {
+  link: "That link isn't available.",
+  circle: "This circle isn't available.",
+} as const;
+
+export type UnavailableTarget = keyof typeof UNAVAILABLE_MESSAGES;
 
 interface SnackbarContextValue {
   show: (message: string) => void;
-  showUnavailableLink: () => void;
+  showUnavailable: (target?: UnavailableTarget) => void;
 }
 
 const SnackbarContext = createContext<SnackbarContextValue | null>(null);
@@ -22,11 +30,14 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => setMessage(null), 4000);
   }, []);
 
-  const showUnavailableLink = useCallback(() => {
-    show(UNAVAILABLE_LINK_MESSAGE);
-  }, [show]);
+  const showUnavailable = useCallback(
+    (target: UnavailableTarget = "link") => {
+      show(UNAVAILABLE_MESSAGES[target]);
+    },
+    [show],
+  );
 
-  const contextValue = useMemo(() => ({ show, showUnavailableLink }), [show, showUnavailableLink]);
+  const contextValue = useMemo(() => ({ show, showUnavailable }), [show, showUnavailable]);
 
   return (
     <SnackbarContext.Provider value={contextValue}>

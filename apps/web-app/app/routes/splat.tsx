@@ -9,11 +9,12 @@ import { useSnackbar } from "~/lib/snackbar.js";
  * snackbar plus the User's default safe route. There is no dedicated 404 page.
  */
 export default function Splat() {
-  const { showUnavailableLink } = useSnackbar();
+  const { showUnavailable } = useSnackbar();
 
   useEffect(() => {
-    showUnavailableLink();
-  }, [showUnavailableLink]);
+    // An unmatched path is a genuine bad link, so the default "link" copy fits.
+    showUnavailable();
+  }, [showUnavailable]);
 
   return (
     <>

@@ -7,9 +7,9 @@ import { type ResolvedRefOptions, useResolvedRef } from "./use-resolved-ref.js";
 // reporting through four seams; we stub all of them so the state machine is
 // asserted in isolation, exactly as ADR 0017 intends ("test the primitive
 // directly"). `location` is mutable so each test sets the URL it canonicalizes.
-const { navigate, showUnavailableLink, location } = vi.hoisted(() => ({
+const { navigate, showUnavailable, location } = vi.hoisted(() => ({
   navigate: vi.fn(),
-  showUnavailableLink: vi.fn(),
+  showUnavailable: vi.fn(),
   location: { pathname: "/circles/home-c1", search: "", hash: "" },
 }));
 vi.mock("react-router", () => ({
@@ -17,7 +17,7 @@ vi.mock("react-router", () => ({
   useLocation: () => location,
 }));
 vi.mock("./snackbar.js", () => ({
-  useSnackbar: () => ({ show: vi.fn(), showUnavailableLink }),
+  useSnackbar: () => ({ show: vi.fn(), showUnavailable }),
 }));
 vi.mock("./report-error.js", () => ({ reportAppError: vi.fn() }));
 
@@ -49,7 +49,7 @@ describe("useResolvedRef", () => {
     const result = resolve({ value: undefined });
     expect(result).toEqual({ status: "pending" });
     expect(navigate).not.toHaveBeenCalled();
-    expect(showUnavailableLink).not.toHaveBeenCalled();
+    expect(showUnavailable).not.toHaveBeenCalled();
     expect(reportAppError).not.toHaveBeenCalled();
   });
 
@@ -63,16 +63,26 @@ describe("useResolvedRef", () => {
 
   it("falls back and reports when the ref is unparseable (an app-emitted bad link)", () => {
     resolve({ parsed: false, value: undefined, fallback: "/safe" });
-    expect(showUnavailableLink).toHaveBeenCalledOnce();
+    expect(showUnavailable).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledWith("/safe", { replace: true });
     expect(reportAppError).toHaveBeenCalledOnce();
   });
 
   it("falls back silently when the target is inaccessible (no report — permission outcome)", () => {
     resolve({ parsed: true, value: null, fallback: "/safe" });
-    expect(showUnavailableLink).toHaveBeenCalledOnce();
+    expect(showUnavailable).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledWith("/safe", { replace: true });
     expect(reportAppError).not.toHaveBeenCalled();
+  });
+
+  it("fires the default 'link' unavailable message when no target is given", () => {
+    resolve({ parsed: true, value: null });
+    expect(showUnavailable).toHaveBeenCalledWith("link");
+  });
+
+  it("fires the caller's unavailable target token (e.g. the Circle guard's 'circle')", () => {
+    resolve({ parsed: true, value: null, unavailableTarget: "circle" });
+    expect(showUnavailable).toHaveBeenCalledWith("circle");
   });
 
   it("canonicalizes a stale bare-id ref via replace navigation without a snackbar", () => {
@@ -80,7 +90,7 @@ describe("useResolvedRef", () => {
     const value: TestRef = { ref: "home-c1", name: "Home" };
     resolve({ rawRef: "c1", value }); // bare id ⇒ stale vs canonical "home-c1"
     expect(navigate).toHaveBeenCalledWith("/circles/home-c1", { replace: true });
-    expect(showUnavailableLink).not.toHaveBeenCalled();
+    expect(showUnavailable).not.toHaveBeenCalled();
     expect(reportAppError).not.toHaveBeenCalled();
   });
 

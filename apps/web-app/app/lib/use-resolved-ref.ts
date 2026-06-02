@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { reportAppError } from "./report-error.js";
-import { useSnackbar } from "./snackbar.js";
+import { type UnavailableTarget, useSnackbar } from "./snackbar.js";
 
 /**
  * The shared staged-ref-resolution primitive (ADR 0016/0017) — a small state
@@ -40,6 +40,12 @@ export interface ResolvedRefOptions<T extends { ref: string }> {
   value: T | null | undefined;
   /** Where to send the user when the ref is unparseable or inaccessible. */
   fallback: string;
+  /**
+   * Which closed-vocabulary snackbar message to fire on an unavailable target
+   * (ADR 0016). A token, never free text — the copy lives in `snackbar.tsx`.
+   * Defaults to `"link"` (the generic bad-link message).
+   */
+  unavailableTarget?: UnavailableTarget;
 }
 
 /**
@@ -74,10 +80,10 @@ function canonicalizeRefSegment(
 export function useResolvedRef<T extends { ref: string }>(
   options: ResolvedRefOptions<T>,
 ): Resolution<T> {
-  const { rawRef, parsed, value, fallback } = options;
+  const { rawRef, parsed, value, fallback, unavailableTarget = "link" } = options;
   const navigate = useNavigate();
   const location = useLocation();
-  const { showUnavailableLink } = useSnackbar();
+  const { showUnavailable } = useSnackbar();
 
   const unparseable = !parsed;
   // A resolved query of `null` means missing or inaccessible — indistinguishable.
@@ -93,9 +99,9 @@ export function useResolvedRef<T extends { ref: string }>(
     if (unparseable) {
       reportAppError("Unparseable ref in URL", { rawRef });
     }
-    showUnavailableLink();
+    showUnavailable(unavailableTarget);
     navigate(fallback, { replace: true });
-  }, [unavailable, unparseable, rawRef, fallback, navigate, showUnavailableLink]);
+  }, [unavailable, unparseable, rawRef, fallback, navigate, showUnavailable, unavailableTarget]);
 
   useEffect(() => {
     if (staleRef && value && rawRef != null) {
