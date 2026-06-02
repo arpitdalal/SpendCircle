@@ -230,24 +230,50 @@ describe("CircleTransactions", () => {
     );
   });
 
-  it("keeps the submit disabled until title, amount, and a category are set", async () => {
+  it("reveals required errors on submit and does not create when fields are empty", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategory({ name: "Groceries", type: "expense" })] });
+    await user.click(screen.getByRole("button", { name: "Add expense" }));
+
+    // Submit is not gated on presence (no real users' time wasted guessing why it's
+    // greyed out): the user can attempt it and is told exactly what's missing.
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await user.click(within(form).getByRole("button", { name: "Add expense" }));
+
+    expect(await within(form).findByText("Title is required")).toBeInTheDocument();
+    expect(within(form).getByText("Amount is required")).toBeInTheDocument();
+    expect(within(form).getByText("Pick at least one category")).toBeInTheDocument();
+    expect(createTransaction).not.toHaveBeenCalled();
+  });
+
+  it("shows a field error on blur once a field is edited and invalid", async () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategory({ name: "Groceries", type: "expense" })] });
     await user.click(screen.getByRole("button", { name: "Add expense" }));
 
     const form = screen.getByRole("form", { name: /add expense/i });
-    const submit = within(form).getByRole("button", { name: "Add expense" });
-    expect(submit).toBeDisabled();
+    await user.type(within(form).getByLabelText(/Amount/), "0");
+    await user.tab(); // blur the amount field
 
-    await user.type(screen.getByLabelText("Title"), "Weekly shop");
-    await user.type(screen.getByLabelText(/Amount/), "10");
-    expect(submit).toBeDisabled(); // still no category
-    await user.click(screen.getByRole("button", { name: "Groceries" }));
-    expect(submit).toBeEnabled();
+    expect(await within(form).findByText("Amount must be greater than zero")).toBeInTheDocument();
   });
 
-  it("surfaces a generic error when the create fails", async () => {
+  it("stays quiet when a required field is focused and blurred without typing", async () => {
     const user = userEvent.setup();
+    setup({ categories: [makeCategory({ name: "Groceries", type: "expense" })] });
+    await user.click(screen.getByRole("button", { name: "Add expense" }));
+
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await user.click(within(form).getByLabelText("Title"));
+    await user.tab(); // blur without typing — an untouched field must not nag
+
+    expect(within(form).queryByText("Title is required")).not.toBeInTheDocument();
+  });
+
+  it("surfaces a generic error and reports the failure when the create fails", async () => {
+    const user = userEvent.setup();
+    // The unexpected failure is reported (Sentry once it lands), never swallowed.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     setup({ categories: [makeCategory({ name: "Groceries", type: "expense" })] });
     createTransaction.mockRejectedValueOnce(new Error("Network down"));
 
@@ -261,6 +287,8 @@ describe("CircleTransactions", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/Couldn't save the transaction/i);
     expect(alert).not.toHaveTextContent(/Network down/);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it("prompts to create a category first when none exist for the type", async () => {

@@ -4,8 +4,9 @@ import { MAX_AMOUNT_MINOR } from "./money.js";
 import {
   LIMITS,
   categoryInputSchema,
+  toMutationArgs,
   transactionCreateSchema,
-  transactionInputSchema,
+  transactionFormSchema,
 } from "./validation.js";
 
 /**
@@ -67,7 +68,7 @@ describe("categoryInputSchema", () => {
   });
 });
 
-describe("transactionInputSchema (form contract)", () => {
+describe("transactionFormSchema (pure form contract)", () => {
   const valid = {
     type: "expense",
     title: "Lunch",
@@ -75,16 +76,19 @@ describe("transactionInputSchema (form contract)", () => {
     date: "2026-05-15",
     categoryIds: ["cat-1"],
     paidByMemberId: "mem-1",
+    note: "",
   } as const;
 
-  it("parses the amount string into positive minor units", () => {
-    const parsed = transactionInputSchema.parse(valid);
-    expect(parsed.amountMinorUnits).toBe(1250);
+  it("validates without transforming — amount stays the entered string", () => {
+    const parsed = transactionFormSchema.parse(valid);
+    expect(parsed.amount).toBe("12.50");
     expect(parsed.title).toBe("Lunch");
+    // No transform: there is no derived amountMinorUnits on the parsed value.
+    expect("amountMinorUnits" in parsed).toBe(false);
   });
 
   it("trims the title and note", () => {
-    const parsed = transactionInputSchema.parse({
+    const parsed = transactionFormSchema.parse({
       ...valid,
       title: "  Lunch  ",
       note: "  with the team  ",
@@ -94,33 +98,37 @@ describe("transactionInputSchema (form contract)", () => {
   });
 
   it("accepts an income transaction", () => {
-    expect(transactionInputSchema.safeParse({ ...valid, type: "income" }).success).toBe(true);
+    expect(transactionFormSchema.safeParse({ ...valid, type: "income" }).success).toBe(true);
+  });
+
+  it("accepts an empty paidByMemberId (self)", () => {
+    expect(transactionFormSchema.safeParse({ ...valid, paidByMemberId: "" }).success).toBe(true);
   });
 
   it("rejects an empty title", () => {
-    expect(transactionInputSchema.safeParse({ ...valid, title: "" }).success).toBe(false);
+    expect(transactionFormSchema.safeParse({ ...valid, title: "" }).success).toBe(false);
   });
 
   it("rejects a whitespace-only title", () => {
-    expect(transactionInputSchema.safeParse({ ...valid, title: "   " }).success).toBe(false);
+    expect(transactionFormSchema.safeParse({ ...valid, title: "   " }).success).toBe(false);
   });
 
   it("rejects a title over the max length", () => {
     const title = "x".repeat(LIMITS.transactionTitleMax + 1);
-    expect(transactionInputSchema.safeParse({ ...valid, title }).success).toBe(false);
+    expect(transactionFormSchema.safeParse({ ...valid, title }).success).toBe(false);
   });
 
   it("rejects a note over the max length", () => {
     const note = "x".repeat(LIMITS.transactionNoteMax + 1);
-    expect(transactionInputSchema.safeParse({ ...valid, note }).success).toBe(false);
+    expect(transactionFormSchema.safeParse({ ...valid, note }).success).toBe(false);
   });
 
   it("rejects an unsupported transaction type", () => {
-    expect(transactionInputSchema.safeParse({ ...valid, type: "transfer" }).success).toBe(false);
+    expect(transactionFormSchema.safeParse({ ...valid, type: "transfer" }).success).toBe(false);
   });
 
   it("surfaces the amount error message on the amount path", () => {
-    const result = transactionInputSchema.safeParse({ ...valid, amount: "0" });
+    const result = transactionFormSchema.safeParse({ ...valid, amount: "0" });
     expect(result.success).toBe(false);
     if (!result.success) {
       const issue = result.error.issues.find((i) => i.path[0] === "amount");
@@ -129,15 +137,15 @@ describe("transactionInputSchema (form contract)", () => {
   });
 
   it("rejects an invalid date format", () => {
-    expect(transactionInputSchema.safeParse({ ...valid, date: "15-05-2026" }).success).toBe(false);
+    expect(transactionFormSchema.safeParse({ ...valid, date: "15-05-2026" }).success).toBe(false);
   });
 
   it("requires at least one category", () => {
-    expect(transactionInputSchema.safeParse({ ...valid, categoryIds: [] }).success).toBe(false);
+    expect(transactionFormSchema.safeParse({ ...valid, categoryIds: [] }).success).toBe(false);
   });
 
   it("rejects duplicate categories", () => {
-    expect(transactionInputSchema.safeParse({ ...valid, categoryIds: ["c", "c"] }).success).toBe(
+    expect(transactionFormSchema.safeParse({ ...valid, categoryIds: ["c", "c"] }).success).toBe(
       false,
     );
   });
@@ -147,7 +155,59 @@ describe("transactionInputSchema (form contract)", () => {
       { length: LIMITS.maxCategoriesPerTransaction + 1 },
       (_, i) => `c${i}`,
     );
-    expect(transactionInputSchema.safeParse({ ...valid, categoryIds }).success).toBe(false);
+    expect(transactionFormSchema.safeParse({ ...valid, categoryIds }).success).toBe(false);
+  });
+});
+
+describe("toMutationArgs (form → mutation transform)", () => {
+  const values = {
+    type: "expense" as const,
+    title: "Lunch",
+    amount: "12.5",
+    date: "2026-05-15",
+    categoryIds: ["cat-1", "cat-2"],
+    paidByMemberId: "mem-other",
+  };
+
+  it("parses the amount string into positive minor units", () => {
+    expect(toMutationArgs(values, "mem-self").amountMinorUnits).toBe(1250);
+  });
+
+  it("preserves the category ids in order", () => {
+    expect(toMutationArgs(values, "mem-self").categoryIds).toEqual(["cat-1", "cat-2"]);
+  });
+
+  it("keeps an explicit Paid By that differs from self", () => {
+    expect(toMutationArgs(values, "mem-self").paidByMemberId).toBe("mem-other");
+  });
+
+  it("omits Paid By when it equals self so the server defaults it", () => {
+    expect(
+      toMutationArgs({ ...values, paidByMemberId: "mem-self" }, "mem-self").paidByMemberId,
+    ).toBe(undefined);
+  });
+
+  it("omits Paid By when the form never picked anyone", () => {
+    expect(toMutationArgs({ ...values, paidByMemberId: "" }, "mem-self").paidByMemberId).toBe(
+      undefined,
+    );
+  });
+
+  it("drops an empty / whitespace-only note", () => {
+    expect(toMutationArgs({ ...values, note: "   " }, "mem-self").note).toBe(undefined);
+    expect("note" in toMutationArgs({ ...values, note: "" }, "mem-self")).toBe(false);
+  });
+
+  it("keeps and trims a real note", () => {
+    expect(toMutationArgs({ ...values, note: "  team lunch  " }, "mem-self").note).toBe(
+      "team lunch",
+    );
+  });
+
+  it("throws on an amount that never passed the form schema", () => {
+    expect(() => toMutationArgs({ ...values, amount: "0" }, "mem-self")).toThrow(
+      /greater than zero/,
+    );
   });
 });
 

@@ -60,29 +60,118 @@ const transactionFields = {
 } as const;
 
 /**
- * Transaction input as entered in the form: amount is a major-unit string and is
- * transformed to positive integer minor units. Categories are de-duplicated and
- * required to have at least one entry (PRD stories 50–52).
+ * The amount field as entered in the form: a major-unit string that must parse to
+ * positive integer minor units. Kept as its own schema (no transform) so the form
+ * can validate it per-field on blur and surface the precise failure (empty vs zero
+ * vs over-precision) on the `amount` path — see {@link transactionFieldSchemas}.
+ * The major→minor conversion itself happens later, explicitly, in
+ * {@link toMutationArgs}; validation and transformation stay separate seams (ADR 0020).
  */
-export const transactionInputSchema = z
-  .object({
-    ...transactionFields,
-    amount: z.string(),
-    paidByMemberId: z.string(),
-  })
-  .transform((value, ctx) => {
-    const parsed = parseAmountToMinorUnits(value.amount);
-    if (!parsed.ok) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["amount"],
-        message: amountErrorMessage(parsed.error),
-      });
-      return z.NEVER;
-    }
-    return { ...value, amountMinorUnits: parsed.minorUnits };
-  });
-export type TransactionInput = z.infer<typeof transactionInputSchema>;
+const amountField = z.string().superRefine((value, ctx) => {
+  const parsed = parseAmountToMinorUnits(value);
+  if (!parsed.ok) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: amountErrorMessage(parsed.error) });
+  }
+});
+
+/**
+ * The note field as entered in the form: always a (possibly empty) string, since a
+ * controlled textarea is never absent. Distinct from the entity's optional note
+ * ({@link transactionFields}) so the form schema's shape matches the form's values
+ * exactly — an empty note is dropped later by {@link toMutationArgs}, not modeled as
+ * `undefined` here.
+ */
+const noteField = z.string().trim().max(LIMITS.transactionNoteMax);
+
+/**
+ * Transaction input as entered in the form — a PURE validation schema with no
+ * transform (ADR 0020). It validates the shape the form binds to (amount as a
+ * major-unit string, `paidByMemberId` as an opaque member id or "" for self); it
+ * does not reshape into mutation args. Per-field slices ({@link transactionFieldSchemas})
+ * drive on-blur validation, this whole schema is the submit-time gate, and
+ * {@link toMutationArgs} performs the form→server transform separately.
+ */
+export const transactionFormSchema = z.object({
+  ...transactionFields,
+  note: noteField,
+  amount: amountField,
+  paidByMemberId: z.string(),
+});
+export type TransactionFormValues = z.infer<typeof transactionFormSchema>;
+
+/**
+ * Per-field validation slices, so the form (web today, native later) can validate
+ * a single field on blur and feed the resulting Standard-Schema issues straight to
+ * a `FieldError` without re-deriving rules. They are the same constraints
+ * {@link transactionFormSchema} enforces at submit, never a drifting copy.
+ */
+export const transactionFieldSchemas = {
+  title: transactionFields.title,
+  amount: amountField,
+  date: transactionFields.date,
+  categoryIds: transactionFields.categoryIds,
+  note: noteField,
+} as const;
+
+/**
+ * Mutation args produced from validated form values. Generic over the caller's id
+ * types so a branded `Id<"categories">` / `Id<"members">` flows through unchanged —
+ * the web/native seam passes branded ids in and gets branded ids out, with no cast,
+ * while this module stays free of any Convex import.
+ */
+export interface TransactionMutationArgs<CategoryId extends string, MemberId extends string> {
+  type: TransactionType;
+  title: string;
+  note?: string;
+  amountMinorUnits: number;
+  date: string;
+  categoryIds: CategoryId[];
+  paidByMemberId?: MemberId;
+}
+
+/**
+ * Transforms validated form values into create-Transaction mutation args (ADR 0020):
+ * parses the major-unit amount to minor units, drops an empty note, and collapses a
+ * Paid By that equals the caller's own Member to `undefined` so the server defaults
+ * it to Recorded By (PRD story 36). Expects values that already passed
+ * {@link transactionFormSchema}; it re-parses the amount defensively and throws on a
+ * value that somehow didn't.
+ */
+export function toMutationArgs<CategoryId extends string, MemberId extends string>(
+  values: {
+    type: TransactionType;
+    title: string;
+    note?: string;
+    amount: string;
+    date: string;
+    categoryIds: readonly CategoryId[];
+    paidByMemberId: MemberId | "";
+  },
+  selfMemberId: MemberId | "",
+): TransactionMutationArgs<CategoryId, MemberId> {
+  const parsed = parseAmountToMinorUnits(values.amount);
+  if (!parsed.ok) {
+    throw new Error(amountErrorMessage(parsed.error));
+  }
+
+  const trimmedNote = values.note?.trim();
+  const note = trimmedNote && trimmedNote.length > 0 ? trimmedNote : undefined;
+
+  // "" means the form never picked anyone, so fall back to self; then omit a Paid By
+  // that is self so the server applies its own default rather than us pinning it.
+  const effective = values.paidByMemberId || selfMemberId;
+  const paidByMemberId = effective && effective !== selfMemberId ? effective : undefined;
+
+  return {
+    type: values.type,
+    title: values.title,
+    ...(note ? { note } : {}),
+    amountMinorUnits: parsed.minorUnits,
+    date: values.date,
+    categoryIds: [...values.categoryIds],
+    ...(paidByMemberId ? { paidByMemberId } : {}),
+  };
+}
 
 /**
  * Server-facing create-Transaction input (ADR 0010). The amount has already been
