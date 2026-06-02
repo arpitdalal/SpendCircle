@@ -13,7 +13,6 @@ import { Button } from "~/components/ui/button.js";
 import {
   type Category,
   type Circle,
-  type Member,
   type PaginatedTransactions,
   useCategories,
   useCreateTransaction,
@@ -148,6 +147,11 @@ function TransactionForm({
       return;
     }
 
+    // Resolve the selection back to a loaded Member, so the id handed to the
+    // mutation is the Member's own typed `id` — never an unchecked cast of the
+    // raw select string (which could drift from the loaded Members).
+    const chosenMember = (members ?? []).find((member) => member.id === selectedPaidBy);
+
     setSubmitting(true);
     try {
       await createTransaction({
@@ -159,11 +163,8 @@ function TransactionForm({
         date: parsed.data.date,
         categoryIds: selectedCategories,
         // Omit when self is selected so the server defaults Paid By to the creator;
-        // only send an id when another Member is chosen.
-        paidByMemberId:
-          selectedPaidBy && selectedPaidBy !== selfMemberId
-            ? (selectedPaidBy as Member["id"])
-            : undefined,
+        // only send an id when another current Member is chosen.
+        paidByMemberId: chosenMember && !chosenMember.isSelf ? chosenMember.id : undefined,
       });
       onClose();
     } catch {
