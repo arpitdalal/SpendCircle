@@ -49,6 +49,23 @@ function makeCategory(over: Partial<Category> = {}): Category {
   };
 }
 
+function makeTransaction(over: Partial<Transaction> = {}): Transaction {
+  return {
+    id: "t1" as Transaction["id"],
+    type: "expense",
+    title: "Weekly shop",
+    note: undefined,
+    amountMinorUnits: 1250,
+    date: "2026-05-15",
+    month: "2026-05",
+    status: "active",
+    recordedBy: { displayName: "You", image: undefined },
+    paidBy: { displayName: "You", image: undefined },
+    categories: [{ id: "cat-groceries" as Category["id"], name: "Groceries", color: "green" }],
+    ...over,
+  };
+}
+
 function makeMember(over: Partial<Member> = {}): Member {
   return {
     id: "mem-you" as Member["id"],
@@ -61,10 +78,14 @@ function makeMember(over: Partial<Member> = {}): Member {
   };
 }
 
+type PaginationStatus = "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted";
+
 function setup(
   opts: {
     circle?: Partial<Circle>;
-    transactions?: Transaction[] | null | undefined;
+    transactions?: Transaction[];
+    status?: PaginationStatus;
+    loadMore?: () => void;
     categories?: Category[] | null | undefined;
     members?: Member[] | null | undefined;
   } = {},
@@ -85,7 +106,11 @@ function setup(
   createTransaction.mockReset();
   createTransaction.mockResolvedValue("new-id");
   useCreateTransaction.mockReturnValue(createTransaction);
-  useTransactions.mockReturnValue(opts.transactions ?? []);
+  useTransactions.mockReturnValue({
+    transactions: opts.transactions ?? [],
+    status: opts.status ?? "Exhausted",
+    loadMore: opts.loadMore ?? vi.fn(),
+  });
   useMembers.mockReturnValue(opts.members ?? [makeMember()]);
   useCategories.mockImplementation((_id: Circle["id"], type: Category["type"]) =>
     (opts.categories ?? [makeCategory()]).filter((c) => c.type === type),
@@ -107,20 +132,33 @@ describe("CircleTransactions", () => {
     expect(screen.getByText(/No transactions yet/)).toBeInTheDocument();
   });
 
+  it("shows a loading state while the first page resolves", () => {
+    setup({ transactions: [], status: "LoadingFirstPage" });
+    expect(screen.getByText(/Loading transactions/)).toBeInTheDocument();
+  });
+
+  it("renders a Load more control and calls loadMore when more pages remain", async () => {
+    const user = userEvent.setup();
+    const loadMore = vi.fn();
+    setup({ transactions: [makeTransaction()], status: "CanLoadMore", loadMore });
+
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Load more while the next page is loading", () => {
+    setup({ transactions: [makeTransaction()], status: "LoadingMore" });
+    expect(screen.getByRole("button", { name: "Loading…" })).toBeDisabled();
+  });
+
   it("lists transactions with formatted money and the income sign", () => {
-    const txn: Transaction = {
-      id: "t1" as Transaction["id"],
+    const txn = makeTransaction({
       type: "income",
       title: "Paycheck",
-      note: undefined,
       amountMinorUnits: 500000,
       date: "2026-05-31",
-      month: "2026-05",
-      status: "active",
-      recordedBy: { displayName: "You", image: undefined },
-      paidBy: { displayName: "You", image: undefined },
       categories: [{ id: "cat-salary" as Category["id"], name: "Salary", color: "teal" }],
-    };
+    });
     setup({ transactions: [txn] });
     const item = screen.getByRole("listitem");
     expect(within(item).getByText("Paycheck")).toBeInTheDocument();

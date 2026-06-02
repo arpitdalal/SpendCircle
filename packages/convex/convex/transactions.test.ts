@@ -750,6 +750,9 @@ describe("createTransaction — currency lock side effect", () => {
   });
 });
 
+/** A first-page query of `size` items (cursor null = from the start). */
+const firstPage = (size: number) => ({ paginationOpts: { numItems: size, cursor: null } });
+
 describe("listTransactions", () => {
   it("returns active transactions sorted by date desc then created-at desc", async () => {
     const t = convexTest(schema, modules);
@@ -769,10 +772,68 @@ describe("listTransactions", () => {
       date: "2026-05-20",
     });
 
-    const list = await t.query(api.transactions.listTransactions, { circleId: f.circleId });
-    expect(list?.map((txn) => txn.title)).toEqual(["Newer", "Older"]);
-    expect(list?.[0]?.paidBy.displayName).toBe("Olive Owner");
-    expect(list?.[0]?.categories.map((c) => c.name)).toEqual(["Groceries"]);
+    const result = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["Newer", "Older"]);
+    expect(result.isDone).toBe(true);
+    expect(result.page[0]?.paidBy.displayName).toBe("Olive Owner");
+    expect(result.page[0]?.categories.map((c) => c.name)).toEqual(["Groceries"]);
+  });
+
+  it("orders same-date transactions by created-at desc", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+      title: "First",
+      date: "2026-05-10",
+    });
+    await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+      title: "Second",
+      date: "2026-05-10",
+    });
+
+    const result = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["Second", "First"]);
+  });
+
+  it("paginates: a bounded page, isDone false, then the next page via the cursor", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    for (const date of ["2026-05-01", "2026-05-02", "2026-05-03"]) {
+      await t.mutation(api.transactions.createTransaction, {
+        circleId: f.circleId,
+        ...baseExpense([f.groceriesId]),
+        title: `Txn ${date}`,
+        date,
+      });
+    }
+
+    const page1 = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(2),
+    });
+    expect(page1.page.map((txn) => txn.title)).toEqual(["Txn 2026-05-03", "Txn 2026-05-02"]);
+    expect(page1.isDone).toBe(false);
+
+    const page2 = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      paginationOpts: { numItems: 2, cursor: page1.continueCursor },
+    });
+    expect(page2.page.map((txn) => txn.title)).toEqual(["Txn 2026-05-01"]);
+    expect(page2.isDone).toBe(true);
   });
 
   it("excludes archived transactions", async () => {
@@ -784,8 +845,11 @@ describe("listTransactions", () => {
       ...baseExpense([f.groceriesId]),
     });
     await t.run((ctx) => ctx.db.patch(id, { status: "archived", archivedAt: Date.now() }));
-    const list = await t.query(api.transactions.listTransactions, { circleId: f.circleId });
-    expect(list).toHaveLength(0);
+    const result = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    expect(result.page).toHaveLength(0);
   });
 
   it("flips live when a Transaction is created (basis for RPT live tests)", async () => {
@@ -794,7 +858,8 @@ describe("listTransactions", () => {
     mockCurrentUser.mockResolvedValue(f.owner);
 
     expect(
-      (await t.query(api.transactions.listTransactions, { circleId: f.circleId }))?.length,
+      (await t.query(api.transactions.listTransactions, { circleId: f.circleId, ...firstPage(25) }))
+        .page.length,
     ).toBe(0);
 
     await t.mutation(api.transactions.createTransaction, {
@@ -803,22 +868,33 @@ describe("listTransactions", () => {
     });
 
     expect(
-      (await t.query(api.transactions.listTransactions, { circleId: f.circleId }))?.length,
+      (await t.query(api.transactions.listTransactions, { circleId: f.circleId, ...firstPage(25) }))
+        .page.length,
     ).toBe(1);
   });
 
-  it("returns null for an inaccessible Circle (anti-enumeration)", async () => {
+  it("returns an empty exhausted page for an inaccessible Circle (anti-enumeration)", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
     mockCurrentUser.mockResolvedValue(stranger);
-    expect(await t.query(api.transactions.listTransactions, { circleId: f.circleId })).toBeNull();
+    const result = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    expect(result.page).toEqual([]);
+    expect(result.isDone).toBe(true);
   });
 
-  it("returns null for an unauthenticated caller", async () => {
+  it("returns an empty exhausted page for an unauthenticated caller", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(null);
-    expect(await t.query(api.transactions.listTransactions, { circleId: f.circleId })).toBeNull();
+    const result = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    expect(result.page).toEqual([]);
+    expect(result.isDone).toBe(true);
   });
 });

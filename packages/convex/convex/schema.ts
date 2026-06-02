@@ -108,7 +108,11 @@ export default defineSchema({
     .index("by_circle", ["circleId"])
     .index("by_circle_and_status", ["circleId", "status"])
     .index("by_circle_and_month", ["circleId", "month"])
-    .index("by_circle_and_date", ["circleId", "date"]),
+    .index("by_circle_and_date", ["circleId", "date"])
+    // Orders a Circle's Transactions of one status by Transaction Date, so the
+    // active Ledger paginates date-desc (then created-at desc via _creationTime)
+    // straight off the index — no in-memory sort of an unbounded set.
+    .index("by_circle_status_date", ["circleId", "status", "date"]),
 
   // Many-to-many between Transactions and Categories (PRD story 50).
   transactionCategories: defineTable({

@@ -14,7 +14,7 @@ import {
   type Category,
   type Circle,
   type Member,
-  type Transaction,
+  type PaginatedTransactions,
   useCategories,
   useCreateTransaction,
   useMembers,
@@ -74,7 +74,7 @@ export default function CircleTransactions() {
         />
       ) : null}
 
-      <TransactionList transactions={transactions} currency={circle.currency} />
+      <TransactionList paginated={transactions} currency={circle.currency} />
     </div>
   );
 }
@@ -323,47 +323,67 @@ function TransactionForm({
   );
 }
 
-/** The active Transactions, most recent first, with money formatted in the Circle Currency. */
+/**
+ * The active Transactions, most recent first, with money formatted in the Circle
+ * Currency. Paginated: it renders the loaded page and a Load more control while
+ * more remain, so an arbitrarily long ledger never loads in one shot.
+ */
 function TransactionList({
-  transactions,
+  paginated,
   currency,
 }: {
-  transactions: Transaction[] | null | undefined;
+  paginated: PaginatedTransactions;
   currency: string;
 }) {
-  if (transactions === undefined) {
+  const { transactions, status, loadMore } = paginated;
+
+  if (status === "LoadingFirstPage") {
     return <p className="text-sm text-neutral-500">Loading transactions…</p>;
   }
-  // null ≡ inaccessible Circle (ADR 0016); the Circle guard already gated entry.
-  if (transactions === null || transactions.length === 0) {
+  // An inaccessible Circle (ADR 0016) and an empty Circle both arrive as an empty
+  // page — the Circle guard already gated entry, so treat both as nothing to show.
+  if (transactions.length === 0) {
     return <p className="text-sm text-neutral-500">No transactions yet.</p>;
   }
 
   return (
-    <ul className="space-y-2">
-      {transactions.map((txn) => (
-        <li
-          key={txn.id}
-          className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
-        >
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{txn.title}</p>
-            <p className="truncate text-xs text-neutral-500">
-              {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
-              {txn.paidBy.displayName}
-            </p>
-          </div>
-          <span
-            className={cn(
-              "ml-auto text-sm font-medium tabular-nums",
-              txn.type === "income" ? "text-green-400" : "text-neutral-100",
-            )}
+    <div className="space-y-3">
+      <ul className="space-y-2">
+        {transactions.map((txn) => (
+          <li
+            key={txn.id}
+            className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
           >
-            {txn.type === "income" ? "+" : "-"}
-            {formatMinorUnits(txn.amountMinorUnits, toCurrencyCode(currency))}
-          </span>
-        </li>
-      ))}
-    </ul>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{txn.title}</p>
+              <p className="truncate text-xs text-neutral-500">
+                {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
+                {txn.paidBy.displayName}
+              </p>
+            </div>
+            <span
+              className={cn(
+                "ml-auto text-sm font-medium tabular-nums",
+                txn.type === "income" ? "text-green-400" : "text-neutral-100",
+              )}
+            >
+              {txn.type === "income" ? "+" : "-"}
+              {formatMinorUnits(txn.amountMinorUnits, toCurrencyCode(currency))}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {status === "CanLoadMore" || status === "LoadingMore" ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={loadMore}
+          disabled={status === "LoadingMore"}
+        >
+          {status === "LoadingMore" ? "Loading…" : "Load more"}
+        </Button>
+      ) : null}
+    </div>
   );
 }

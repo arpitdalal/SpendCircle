@@ -1,6 +1,6 @@
 import { api } from "@spend-circle/convex";
 import type { TransactionType } from "@spend-circle/domain";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "./env.js";
 import { MOCK_CATEGORIES, MOCK_CIRCLES, MOCK_MEMBERS, MOCK_TRANSACTIONS } from "./fixtures.js";
@@ -81,21 +81,46 @@ export function useMembers(circleId: Circle["id"]): Member[] | null | undefined 
 /**
  * The single Transaction view contract, derived from `listTransactions` so it
  * cannot drift from `toTransactionView` in `packages/convex/convex/transactions.ts`
- * (ADR 0003). The query returns `TransactionView[] | null`; this is one element.
+ * (ADR 0003). The query returns a paginated result; this is one element of its
+ * `page`.
  */
-export type Transaction = NonNullable<
-  FunctionReturnType<typeof api.transactions.listTransactions>
->[number];
+export type Transaction = FunctionReturnType<
+  typeof api.transactions.listTransactions
+>["page"][number];
+
+/** How many Transactions to fetch per page (initial load and each "load more"). */
+export const TRANSACTIONS_PAGE_SIZE = 25;
+
+/** Convex's paginated-query lifecycle status, re-exported so the route needn't import Convex. */
+export type PaginationStatus = "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted";
+
+export interface PaginatedTransactions {
+  transactions: Transaction[];
+  status: PaginationStatus;
+  /** Loads the next page; a no-op unless `status` is "CanLoadMore". */
+  loadMore: () => void;
+}
 
 /**
- * A Circle's active Transactions, most recent first. `undefined` while loading;
- * `null` when the Circle is inaccessible (ADR 0016). TXN-1 uses this to confirm a
- * create landed; the Ledger/Dashboard slices (RPT-*) build their surfaces on it.
- * Mock mode returns fixtures and skips the backend (ADR 0006).
+ * A Circle's active Transactions, most recent first, paginated at the source so
+ * the client never holds an unbounded set — it loads one page and grows on demand
+ * (ADR 0006 for the mock fork). TXN-1 uses this to confirm a create landed; the
+ * Ledger/Dashboard slices (RPT-*) build their surfaces on the same paginated read.
  */
-export function useTransactions(circleId: Circle["id"]): Transaction[] | null | undefined {
-  const queried = useQuery(api.transactions.listTransactions, MOCKS ? "skip" : { circleId });
-  return MOCKS ? MOCK_TRANSACTIONS : queried;
+export function useTransactions(circleId: Circle["id"]): PaginatedTransactions {
+  const paginated = usePaginatedQuery(
+    api.transactions.listTransactions,
+    MOCKS ? "skip" : { circleId },
+    { initialNumItems: TRANSACTIONS_PAGE_SIZE },
+  );
+  if (MOCKS) {
+    return { transactions: MOCK_TRANSACTIONS, status: "Exhausted", loadMore: () => {} };
+  }
+  return {
+    transactions: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(TRANSACTIONS_PAGE_SIZE),
+  };
 }
 
 /**

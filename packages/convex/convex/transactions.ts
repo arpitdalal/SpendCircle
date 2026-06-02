@@ -4,6 +4,7 @@ import {
   toCurrencyCode,
   transactionCreateSchema,
 } from "@spend-circle/domain";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import { type QueryCtx, mutation, query } from "./_generated/server.js";
@@ -119,41 +120,36 @@ export type TransactionView = Awaited<ReturnType<typeof toTransactionView>>;
 
 /**
  * Lists a Circle's active Transactions, most recent first (Transaction Date desc,
- * then created-at desc — the Monthly Ledger sort, PRD story 64). Resolver query
- * (ADR 0016): an inaccessible or missing Circle returns `null`. This is the
- * minimal read TXN-1 needs to confirm a create landed and the basis the Ledger /
+ * then created-at desc via `_creationTime` — the Monthly Ledger sort, PRD story
+ * 64). Paginated at the source off `by_circle_status_date`: the database returns
+ * one ordered page, so nothing unbounded is ever loaded or sorted in memory. This
+ * is the read TXN-1 needs to confirm a create landed and the basis the Ledger /
  * Dashboard / live-update slices (RPT-*) build on; archived Transactions are
  * excluded from this active surface (TXN-3 owns archived views).
  *
- * NOTE: this collects-then-sorts the whole active set in memory, which is fine at
- * v1 scale but unbounded. The month/date-range scoping + pagination that bounds it
- * is owned by RPT-1 (Monthly Ledger) / RPT-2 (Search) via `by_circle_and_month` /
- * `by_circle_and_date`; this query stays the simple "all active" read until then.
+ * Anti-enumeration (ADR 0016): an inaccessible or missing Circle returns an empty,
+ * exhausted page — indistinguishable from an accessible Circle with no
+ * Transactions, so nothing about the Circle's existence leaks.
  */
 export const listTransactions = query({
-  args: { circleId: v.id("circles") },
+  args: { circleId: v.id("circles"), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
     if (!access) {
-      return null; // missing ≡ inaccessible (ADR 0016)
+      return { page: [], isDone: true, continueCursor: "" };
     }
 
-    const transactions = await ctx.db
+    const result = await ctx.db
       .query("transactions")
-      .withIndex("by_circle_and_status", (q) =>
+      .withIndex("by_circle_status_date", (q) =>
         q.eq("circleId", args.circleId).eq("status", "active"),
       )
-      .collect();
-
-    transactions.sort(
-      (a, b) =>
-        (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) ||
-        b.createdAt - a.createdAt ||
-        b._creationTime - a._creationTime,
-    );
+      .order("desc")
+      .paginate(args.paginationOpts);
 
     const caches = newViewCaches();
-    return await Promise.all(transactions.map((txn) => toTransactionView(ctx, txn, caches)));
+    const page = await Promise.all(result.page.map((txn) => toTransactionView(ctx, txn, caches)));
+    return { ...result, page };
   },
 });
 
