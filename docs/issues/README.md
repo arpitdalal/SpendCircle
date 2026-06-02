@@ -42,7 +42,7 @@ can lean on the one below.
 | Backend model | `packages/convex/convex/model.ts` + new `*.ts` modules | Reusable mutation/query *logic* (the deep modules). Permission/lifecycle helpers in `guard.ts`; audit writes ONLY via `history.ts` `recordEvent`. |
 | Convex functions | `packages/convex/convex/<area>.ts` | The `query`/`mutation` exports — the shared contract (ADR 0003). Thin handlers that compose model + guard + history. |
 | View contract | `apps/web-app/app/lib/data.ts` | Derive each view type from the function via `FunctionReturnType` (never hand-write it — ADR 0003). Add a `useX()` hook with the MOCKS fork. |
-| Mocks | `apps/web-app/app/lib/fixtures.ts` + `packages/mocks` | Fixtures for every new query (so E2E renders with no backend), MSW handlers for any new outbound vendor call. |
+| Mocks | `apps/web-app/app/lib/fixtures.ts` + `packages/mocks` | Fixtures for component/render tests + offline UI dev (`VITE_MOCKS`); MSW handlers for any new outbound vendor call (the only thing faked in E2E — ADR 0019). |
 | Routing | `apps/web-app/app/routes.ts` + `routes/**` | Add object routes WITH their feature (see §4). Reuse `useResolvedRef` adapters. |
 | UI | `apps/web-app/app/routes/**`, `components/**` | shadcn/ui + Tailwind + Recharts (ADR 0005). |
 
@@ -107,6 +107,10 @@ graph TD
   MEM2 --> EML2[EML-2 · Invitation email]
   EML1 --> EML2
 
+  %% Quality / Validation
+  TXN2 --> QA1[QA-1 · Concurrency e2e validation]
+  TXN3 --> QA1
+
   %% Platform
   TXN1 --> EXP1[EXP-1 · CSV Export]
   EML1 --> FBK1[FBK-1 · Feedback]
@@ -123,8 +127,9 @@ graph TD
   `CS-2`, `CS-3`, `RPT-1`, `RPT-3`, `EXP-1`, `FBK-1`, `OBS-2`.
 - **Tier 3 — collaborate + report:** `MEM-2…9`, `RPT-2`, `RPT-4`, `RPT-5`, `RPT-6`,
   `EML-2`, `CS-4`.
-- **Tier 4 — wire the cross-cutting net:** `NTF-2` (last — it fans out to every event
-  emitted by the slices above).
+- **Tier 4 — wire the cross-cutting net + validate under load:** `NTF-2` (fans out to every
+  event emitted by the slices above) and `QA-1` (concurrency e2e; needs `TXN-2` + `TXN-3`
+  shipped). Both run last.
 
 ---
 
@@ -132,6 +137,13 @@ graph TD
 
 These encode decisions already made. Following them is what keeps the codebase deep and
 scalable; breaking them is a review blocker.
+
+**v1 ships to real test users at production quality.** You may defer *scope* — a capability
+that genuinely belongs to a later slice — but you may never defer *quality*: correctness,
+security, scale, error handling, and accessibility hold at v1 exactly as they would at GA.
+"It's only v1," "no real users yet," or "fine for current volume" is **not** a valid reason
+to cut any corner below. If a quality dimension truly can't be met within a slice, say so
+explicitly in the PR and flag it — never skip it silently.
 
 - **Permissions are server-side, always (ADR 0015).** Every mutation/query resolves access
   through `requireCircleAccess` / `resolveCircleAccess` (`guard.ts`). The UI hiding a button
@@ -154,15 +166,41 @@ scalable; breaking them is a review blocker.
   removed.
 - **Every new query gets a mock path (ADR 0006).** Add a fixture in `fixtures.ts` and the
   `MOCKS ? fixture : useQuery(...)` fork in the `useX()` hook, with `"skip"` on the real
-  query under MOCKS. E2E runs in mock mode and must render your surface with no backend.
+  query under MOCKS. Fixtures power the fast component/render tests and offline UI dev
+  (`VITE_MOCKS`); they are **not** the E2E surface — E2E runs against a real self-hosted
+  Convex backend (ADR 0019).
 - **Object routes land with their feature, not before.** When a slice needs
   `/circles/:circleRef/transactions/:transactionRef` (or `…/categories/:categoryRef`), add
   the route AND its `useResolvedRef` adapter together — the first one instantiates the
   object-guard pattern described in `use-resolved-ref.ts` and `guard.ts`. No caller-less
   placeholder routes.
+- **Queries are scalable and paginated from day one.** v1 ships to real test users, not a
+  personal dataset — every query must stay bounded under load. Any query over an
+  unbounded-growth set (Transactions, Categories, Members, History, Notifications, search
+  results) MUST paginate **at the source** via Convex `paginate` over an appropriate index —
+  never `.collect()` a whole table/range and slice in memory, and never lean on "v1 volume is
+  small." Reads are index-backed (add the index in `schema.ts` if missing); aggregates
+  (totals, counts, analytics) are computed over bounded/indexed ranges, not by scanning every
+  row. "Good enough for v1" is not a reason to ship an unbounded query — if a slice genuinely
+  cannot paginate, say why in the PR, don't skip it silently.
+- **Reads are index-backed and batch-aware.** Query via `.withIndex(...)`; never `.filter()`
+  over an unbounded range (it scans every row). Resolve related data (a Transaction's
+  Categories and Paid By, a Member's User, etc.) by batching over an index, **not** a `.get()`
+  per row inside a loop — no N+1. This holds at v1 volume too; a small dataset is not a license
+  to fan out per-row reads.
 - **Domain logic is pure and shared.** Money/date/currency/validation logic goes in
   `packages/domain` (testable with zero mocks) and is imported by both backend and UI.
   Don't reimplement amount parsing or date bucketing in a handler.
+- **No silent failures.** A `catch` either handles a *known* outcome the form already mirrors,
+  or surfaces the unexpected one (console now, Sentry once it lands — ADR 0012) — it never
+  swallows. User-facing errors get a visible, accessible message (`role="alert"`); failures are
+  never logged-and-ignored or dropped into an empty `catch {}`.
+- **Every read surface handles all states — loading, empty, and error — not just the populated
+  happy path.** Mutations disable their trigger while in-flight and guard against double-submit.
+- **Accessible by default** (the ADR 0005 reason for shadcn/Radix). Inputs have associated
+  labels, interactive non-`<button>` elements carry correct roles/`aria-*`, validation errors
+  use `role="alert"`, and every surface is keyboard-operable. Accessibility is part of the
+  slice, not a later cleanup.
 - **Money is integer minor units (ADR 0009); dates are plain strings, no timezone (PRD).**
 - **Secrets only in platform env vars.** No keys in code or committed env files.
 - **Rate-limited actions enforce limits server-side** (see the specific caps in MEM-4,
@@ -197,15 +235,19 @@ pass — happy paths alone are a review rejection. For each slice, cover:
 8. **Anti-enumeration** — missing vs inaccessible produce the identical observable result.
 9. **Mock parity** — the mock fixture shape matches the derived view type (typecheck
    enforces it; add a render/route test where behavior differs under MOCKS).
-10. **Regression** — any bug fixed while building the slice gets a test that fails before
+10. **Scalability** — any list/search/history query asserts it paginates: seed past one page,
+    assert the first page is bounded and `continueCursor` returns the next page (no full-set
+    `.collect()`). Aggregates assert correctness over a multi-page dataset.
+11. **Regression** — any bug fixed while building the slice gets a test that fails before
     the fix (ADR 0006).
 
 **Test placement:** pure domain → `packages/domain/src/*.test.ts`. Backend functions,
 permissions, lifecycle, rate limits, history → `packages/convex/convex/*.test.ts`
 (convex-test; mock the `./auth.js` seam via `vi.mock` as in `guard.test.ts` since Better
 Auth can't run under convex-test). UI hooks/state machines → `apps/web-app/app/**/*.test.ts`
-(renderHook + `vi.mock`). Critical flows → `e2e/*.spec.ts` (Playwright, mock mode only —
-never drives OAuth; desktop + mobile viewports).
+(renderHook + `vi.mock`). Critical flows → `e2e/*.spec.ts` (Playwright against a real
+self-hosted Convex backend — ADR 0019; OAuth replaced by the `E2E_TEST_AUTH` email/password
+bypass, vendors intercepted by MSW; desktop + mobile viewports).
 
 ---
 
@@ -276,5 +318,8 @@ Each slice file in this directory uses this structure:
 - [SET-1 · Settings: App Version + analytics opt-out](SET-1-settings.md)
 - [OBS-1 · Sentry error monitoring](OBS-1-sentry.md)
 - [OBS-2 · PostHog product analytics](OBS-2-posthog.md)
+
+### Quality / Validation
+- [QA-1 · Concurrent-modification e2e validation](QA-1-concurrency-validation.md)
 </content>
 </invoke>
