@@ -2,7 +2,7 @@ import { z } from "zod";
 import { isValidColorId } from "./color.js";
 import { isSupportedCurrency } from "./currency.js";
 import { isValidPlainDate } from "./date.js";
-import { type AmountParseError, parseAmountToMinorUnits } from "./money.js";
+import { type AmountParseError, isValidMinorUnits, parseAmountToMinorUnits } from "./money.js";
 
 /**
  * Shared form-facing validation. These Zod schemas (ADR 0010) are reused by the
@@ -39,24 +39,35 @@ export const categoryInputSchema = z.object({
 export type CategoryInput = z.infer<typeof categoryInputSchema>;
 
 /**
+ * The Transaction fields shared by the form schema and the server-facing create
+ * schema. Factoring them here keeps the two entry points (form: amount as a
+ * string; backend: amount already parsed to minor units) from drifting on title
+ * length, note bounds, the type enum, the date format, or the ≥1 / no-duplicate
+ * Category rule (PRD stories 50–52).
+ */
+const transactionFields = {
+  type: z.enum(TRANSACTION_TYPES),
+  title: z.string().trim().min(1, "Title is required").max(LIMITS.transactionTitleMax),
+  note: z.string().trim().max(LIMITS.transactionNoteMax).optional(),
+  date: z.string().refine(isValidPlainDate, { message: "Invalid date" }),
+  categoryIds: z
+    .array(z.string())
+    .min(1, "Pick at least one category")
+    .max(LIMITS.maxCategoriesPerTransaction)
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: "Duplicate categories are not allowed",
+    }),
+} as const;
+
+/**
  * Transaction input as entered in the form: amount is a major-unit string and is
  * transformed to positive integer minor units. Categories are de-duplicated and
  * required to have at least one entry (PRD stories 50–52).
  */
 export const transactionInputSchema = z
   .object({
-    type: z.enum(TRANSACTION_TYPES),
-    title: z.string().trim().min(1, "Title is required").max(LIMITS.transactionTitleMax),
-    note: z.string().trim().max(LIMITS.transactionNoteMax).optional(),
+    ...transactionFields,
     amount: z.string(),
-    date: z.string().refine(isValidPlainDate, { message: "Invalid date" }),
-    categoryIds: z
-      .array(z.string())
-      .min(1, "Pick at least one category")
-      .max(LIMITS.maxCategoriesPerTransaction)
-      .refine((ids) => new Set(ids).size === ids.length, {
-        message: "Duplicate categories are not allowed",
-      }),
     paidByMemberId: z.string(),
   })
   .transform((value, ctx) => {
@@ -72,6 +83,23 @@ export const transactionInputSchema = z
     return { ...value, amountMinorUnits: parsed.minorUnits };
   });
 export type TransactionInput = z.infer<typeof transactionInputSchema>;
+
+/**
+ * Server-facing create-Transaction input (ADR 0010). The amount has already been
+ * parsed to positive integer minor units at the client boundary, so this schema
+ * re-asserts it is a valid minor-unit integer (`isValidMinorUnits`) rather than
+ * re-parsing a string; `paidByMemberId` is optional because the handler defaults
+ * it to the Recorded By Member. Convex re-validates id/shape at its own boundary
+ * (ADR 0015); this enforces the cross-field invariants Convex validators can't.
+ */
+export const transactionCreateSchema = z.object({
+  ...transactionFields,
+  amountMinorUnits: z
+    .number()
+    .refine(isValidMinorUnits, { message: "Amount must be a positive value within range" }),
+  paidByMemberId: z.string().optional(),
+});
+export type TransactionCreateInput = z.infer<typeof transactionCreateSchema>;
 
 function amountErrorMessage(error: AmountParseError): string {
   switch (error) {

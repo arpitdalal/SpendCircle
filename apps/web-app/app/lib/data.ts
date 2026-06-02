@@ -3,7 +3,7 @@ import type { TransactionType } from "@spend-circle/domain";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "./env.js";
-import { MOCK_CATEGORIES, MOCK_CIRCLES } from "./fixtures.js";
+import { MOCK_CATEGORIES, MOCK_CIRCLES, MOCK_MEMBERS, MOCK_TRANSACTIONS } from "./fixtures.js";
 
 /**
  * The single Circle view contract, derived from the Convex function's return
@@ -57,4 +57,52 @@ export function useCategories(
  */
 export function useCreateCategory() {
   return useMutation(api.categories.createCategory);
+}
+
+/**
+ * The single Member view contract, derived from `listMembers` so it cannot drift
+ * from `toMemberView` in `packages/convex/convex/members.ts` (ADR 0003). The query
+ * returns `MemberView[] | null` (null ≡ inaccessible Circle — ADR 0016); this is
+ * one element of that array.
+ */
+export type Member = NonNullable<FunctionReturnType<typeof api.members.listMembers>>[number];
+
+/**
+ * A Circle's active Members, Owner first. `undefined` while loading; `null` when
+ * the Circle is inaccessible (ADR 0016). Feeds the Transaction form's Paid By
+ * selector; MEM-1 layers the full Member List UI on the same query. Mock mode
+ * returns fixtures and skips the backend (ADR 0006).
+ */
+export function useMembers(circleId: Circle["id"]): Member[] | null | undefined {
+  const queried = useQuery(api.members.listMembers, MOCKS ? "skip" : { circleId });
+  return MOCKS ? MOCK_MEMBERS : queried;
+}
+
+/**
+ * The single Transaction view contract, derived from `listTransactions` so it
+ * cannot drift from `toTransactionView` in `packages/convex/convex/transactions.ts`
+ * (ADR 0003). The query returns `TransactionView[] | null`; this is one element.
+ */
+export type Transaction = NonNullable<
+  FunctionReturnType<typeof api.transactions.listTransactions>
+>[number];
+
+/**
+ * A Circle's active Transactions, most recent first. `undefined` while loading;
+ * `null` when the Circle is inaccessible (ADR 0016). TXN-1 uses this to confirm a
+ * create landed; the Ledger/Dashboard slices (RPT-*) build their surfaces on it.
+ * Mock mode returns fixtures and skips the backend (ADR 0006).
+ */
+export function useTransactions(circleId: Circle["id"]): Transaction[] | null | undefined {
+  const queried = useQuery(api.transactions.listTransactions, MOCKS ? "skip" : { circleId });
+  return MOCKS ? MOCK_TRANSACTIONS : queried;
+}
+
+/**
+ * The Create-Transaction mutation, exposed as the function the form awaits. Kept
+ * behind this seam (rather than `useMutation` in the route) so the route imports
+ * no Convex internals and render tests can mock the data layer alone.
+ */
+export function useCreateTransaction() {
+  return useMutation(api.transactions.createTransaction);
 }
