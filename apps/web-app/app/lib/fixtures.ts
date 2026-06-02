@@ -1,4 +1,4 @@
-import type { Category, Circle } from "./data.js";
+import type { Category, Circle, Member, Transaction } from "./data.js";
 
 /**
  * Mock fixture data for E2E renders without a live backend (ADR 0006). These are
@@ -53,6 +53,40 @@ export const MOCK_CATEGORIES: Category[] = [
     creator: { displayName: "You", image: undefined },
   },
 ];
+
+/**
+ * Mock Members for the Paid By selector and Member List, typed against the
+ * derived {@link Member} contract so a shape change to `toMemberView` fails
+ * typecheck here (ADR 0003).
+ */
+export const MOCK_MEMBERS: Member[] = [
+  {
+    id: "mock-member-you" as Member["id"],
+    displayName: "You",
+    image: undefined,
+    role: "owner",
+    status: "active",
+    joinedAt: 0,
+    isSelf: true,
+  },
+  {
+    id: "mock-member-alex" as Member["id"],
+    displayName: "Alex",
+    image: undefined,
+    role: "member",
+    status: "active",
+    joinedAt: 1,
+    isSelf: false,
+  },
+];
+
+/**
+ * Mock Transactions, typed against the derived {@link Transaction} contract so a
+ * shape change to `toTransactionView` fails typecheck here (ADR 0003). The list
+ * starts empty so the Transactions surface renders its empty state under MOCKS;
+ * a created Transaction is reflected optimistically by the form in mock mode.
+ */
+export const MOCK_TRANSACTIONS: Transaction[] = [];
 
 export function mockCircle(id: string): Circle {
   return {

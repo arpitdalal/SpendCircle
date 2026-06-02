@@ -1,0 +1,44 @@
+name: CI
+
+# Required gates from docs/issues/README.md §1 that don't need a backend:
+# typecheck, lint, test, build. (test:e2e runs in e2e.yml against a real Convex
+# backend.) These run on every PR so a regression can't merge silently.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # No `version:` — action-setup reads the pinned pnpm from package.json's
+      # `packageManager` field. Specifying both errors (ERR_PNPM_BAD_PM_VERSION).
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          # pnpm 11.5.0 (pinned in package.json) needs Node >= 22.13 (it imports
+          # the node:sqlite builtin). 24 also satisfies the repo's `engines`.
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+      # The SPA prerender evaluates the module graph, which constructs the
+      # ConvexReactClient at import time (app/lib/convex.ts); its constructor
+      # throws on an empty address. This job only checks that the build
+      # compiles, so feed placeholder URLs — the real deploy injects its own.
+      - run: pnpm build
+        env:
+          VITE_CONVEX_URL: https://placeholder.convex.cloud
+          VITE_CONVEX_SITE_URL: https://placeholder.convex.site
