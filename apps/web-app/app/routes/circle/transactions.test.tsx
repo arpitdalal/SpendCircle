@@ -1,45 +1,34 @@
 import { toPlainDate } from "@spend-circle/domain";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Category, Circle, Member, Transaction } from "~/lib/data.js";
+import {
+  type Category,
+  type Circle,
+  type Member,
+  type PaginationStatus,
+  TRANSACTIONS_PAGE_SIZE,
+  type Transaction,
+} from "~/lib/data.js";
+import { configureConvex, renderInCircle, testId } from "~/test/convex-react.js";
 
 /**
- * Render smoke for the Transactions surface (jsdom, no backend). The data seam
- * (`useTransactions`/`useCategories`/`useMembers`/`useCreateTransaction`) and the
- * resolved Circle are mocked, so the route's behavior — the type-scoped CTAs, the
- * category multi-select, amount parsing, the Paid By default, and the create call
- * — is asserted without a live Convex client (ADR 0006).
+ * Behavior test for the Transactions surface (jsdom). The ONLY thing doubled is
+ * Convex's reactive client (`convex/react`, via the shared helper). The real
+ * `~/lib/data.js` hooks, the real `useCircle` Outlet-context seam, and the real
+ * route + form logic run, so a drift between the route, the data layer, and the
+ * backend query contract is caught here rather than mocked away (ADR 0006).
  */
-const {
-  useTransactions,
-  useCategories,
-  useMembers,
-  useCreateTransaction,
-  createTransaction,
-  useCircle,
-} = vi.hoisted(() => ({
-  useTransactions: vi.fn(),
-  useCategories: vi.fn(),
-  useMembers: vi.fn(),
-  useCreateTransaction: vi.fn(),
-  createTransaction: vi.fn(),
-  useCircle: vi.fn(),
-}));
-vi.mock("~/lib/data.js", () => ({
-  useTransactions,
-  useCategories,
-  useMembers,
-  useCreateTransaction,
-}));
-vi.mock("~/routes/layouts/circle-layout.js", () => ({ useCircle }));
+vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
 import CircleTransactions from "./transactions.js";
 
+const createTransaction = vi.fn();
+const paginatedLoadMore = vi.fn();
+
 function makeCategory(over: Partial<Category> = {}): Category {
   return {
-    id: "cat-groceries" as Category["id"],
+    id: testId<Category["id"]>("cat-groceries"),
     name: "Groceries",
     type: "expense",
     color: "green",
@@ -51,7 +40,7 @@ function makeCategory(over: Partial<Category> = {}): Category {
 
 function makeTransaction(over: Partial<Transaction> = {}): Transaction {
   return {
-    id: "t1" as Transaction["id"],
+    id: testId<Transaction["id"]>("t1"),
     type: "expense",
     title: "Weekly shop",
     note: undefined,
@@ -61,14 +50,16 @@ function makeTransaction(over: Partial<Transaction> = {}): Transaction {
     status: "active",
     recordedBy: { displayName: "You", image: undefined },
     paidBy: { displayName: "You", image: undefined },
-    categories: [{ id: "cat-groceries" as Category["id"], name: "Groceries", color: "green" }],
+    categories: [
+      { id: testId<Category["id"]>("cat-groceries"), name: "Groceries", color: "green" },
+    ],
     ...over,
   };
 }
 
 function makeMember(over: Partial<Member> = {}): Member {
   return {
-    id: "mem-you" as Member["id"],
+    id: testId<Member["id"]>("mem-you"),
     displayName: "You",
     image: undefined,
     role: "owner",
@@ -79,20 +70,17 @@ function makeMember(over: Partial<Member> = {}): Member {
   };
 }
 
-type PaginationStatus = "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted";
-
 function setup(
   opts: {
     circle?: Partial<Circle>;
     transactions?: Transaction[];
     status?: PaginationStatus;
-    loadMore?: () => void;
-    categories?: Category[] | null | undefined;
-    members?: Member[] | null | undefined;
+    categories?: Category[] | null;
+    members?: Member[] | null;
   } = {},
 ) {
   const circle: Circle = {
-    id: "c1" as Circle["id"],
+    id: testId<Circle["id"]>("c1"),
     ref: "trip-c1",
     name: "Trip",
     kind: "regular",
@@ -103,24 +91,19 @@ function setup(
     currencyLocked: false,
     ...opts.circle,
   };
-  useCircle.mockReturnValue(circle);
   createTransaction.mockReset();
   createTransaction.mockResolvedValue("new-id");
-  useCreateTransaction.mockReturnValue(createTransaction);
-  useTransactions.mockReturnValue({
-    transactions: opts.transactions ?? [],
-    status: opts.status ?? "Exhausted",
-    loadMore: opts.loadMore ?? vi.fn(),
+  configureConvex({
+    // Default to a self Member / one active Category so the form is usable unless a
+    // test overrides; loading/empty/null are opt-in by passing them explicitly.
+    categories: opts.categories === undefined ? [makeCategory()] : opts.categories,
+    members: opts.members === undefined ? [makeMember()] : opts.members,
+    transactions: opts.transactions,
+    transactionsStatus: opts.status,
+    loadMore: paginatedLoadMore,
+    createTransaction,
   });
-  useMembers.mockReturnValue(opts.members ?? [makeMember()]);
-  useCategories.mockImplementation((_id: Circle["id"], type: Category["type"]) =>
-    (opts.categories ?? [makeCategory()]).filter((c) => c.type === type),
-  );
-  return render(
-    <MemoryRouter>
-      <CircleTransactions />
-    </MemoryRouter>,
-  );
+  return { ...renderInCircle(circle, <CircleTransactions />), circle };
 }
 
 afterEach(() => {
@@ -138,13 +121,13 @@ describe("CircleTransactions", () => {
     expect(screen.getByText(/Loading transactions/)).toBeInTheDocument();
   });
 
-  it("renders a Load more control and calls loadMore when more pages remain", async () => {
+  it("renders a Load more control and pages the source by the page size", async () => {
     const user = userEvent.setup();
-    const loadMore = vi.fn();
-    setup({ transactions: [makeTransaction()], status: "CanLoadMore", loadMore });
+    setup({ transactions: [makeTransaction()], status: "CanLoadMore" });
 
     await user.click(screen.getByRole("button", { name: "Load more" }));
-    expect(loadMore).toHaveBeenCalledTimes(1);
+    // The real `useTransactions` translates the click into a paged source read.
+    expect(paginatedLoadMore).toHaveBeenCalledWith(TRANSACTIONS_PAGE_SIZE);
   });
 
   it("disables Load more while the next page is loading", () => {
@@ -158,7 +141,7 @@ describe("CircleTransactions", () => {
       title: "Paycheck",
       amountMinorUnits: 500000,
       date: "2026-05-31",
-      categories: [{ id: "cat-salary" as Category["id"], name: "Salary", color: "teal" }],
+      categories: [{ id: testId<Category["id"]>("cat-salary"), name: "Salary", color: "teal" }],
     });
     setup({ transactions: [txn] });
     const item = screen.getByRole("listitem");
@@ -171,7 +154,7 @@ describe("CircleTransactions", () => {
     setup({
       categories: [
         makeCategory({ name: "Groceries", type: "expense" }),
-        makeCategory({ id: "i1" as Category["id"], name: "Salary", type: "income" }),
+        makeCategory({ id: testId<Category["id"]>("i1"), name: "Salary", type: "income" }),
       ],
     });
     await user.click(screen.getByRole("button", { name: "Add expense" }));
@@ -213,7 +196,7 @@ describe("CircleTransactions", () => {
       categories: [makeCategory({ name: "Groceries", type: "expense" })],
       members: [
         makeMember(),
-        makeMember({ id: "mem-alex" as Member["id"], displayName: "Alex", isSelf: false }),
+        makeMember({ id: testId<Member["id"]>("mem-alex"), displayName: "Alex", isSelf: false }),
       ],
     });
 
@@ -270,6 +253,44 @@ describe("CircleTransactions", () => {
     expect(within(form).queryByText("Title is required")).not.toBeInTheDocument();
   });
 
+  it("keeps a category archived mid-edit visible and blocks submit (PRD 57)", async () => {
+    const user = userEvent.setup();
+    // The query double reads this array by reference each render, so mutating it in
+    // place simulates the reactive `listCategories` flipping the Category to archived
+    // mid-edit (the route requested `includeArchived`, so it still comes back).
+    const cats: Category[] = [
+      makeCategory({ id: testId<Category["id"]>("cat-x"), name: "Snacks", type: "expense" }),
+    ];
+    const { rerenderInCircle } = setup({ categories: cats });
+
+    await user.click(screen.getByRole("button", { name: "Add expense" }));
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await user.type(within(form).getByLabelText("Title"), "Movie night");
+    await user.type(within(form).getByLabelText(/Amount/), "10");
+    await user.click(within(form).getByRole("button", { name: "Snacks" })); // select while active
+
+    // Another Member archives "Snacks" while the form is open.
+    cats[0] = makeCategory({
+      id: testId<Category["id"]>("cat-x"),
+      name: "Snacks",
+      type: "expense",
+      status: "archived",
+    });
+    rerenderInCircle(<CircleTransactions />);
+
+    // It stays visible (badged archived), is not silently dropped, and explains itself.
+    expect(within(form).getByText(/Snacks · archived/)).toBeInTheDocument();
+    expect(within(form).getByRole("alert")).toHaveTextContent(/"Snacks" was archived/);
+
+    // Submitting is blocked while the archived Category is still selected.
+    await user.click(within(form).getByRole("button", { name: "Add expense" }));
+    expect(createTransaction).not.toHaveBeenCalled();
+
+    // Removing it clears the block.
+    await user.click(within(form).getByText(/Snacks · archived/));
+    expect(within(form).queryByText(/Snacks · archived/)).not.toBeInTheDocument();
+  });
+
   it("surfaces a generic error and reports the failure when the create fails", async () => {
     const user = userEvent.setup();
     // The unexpected failure is reported (Sentry once it lands), never swallowed.
@@ -300,6 +321,27 @@ describe("CircleTransactions", () => {
 
   it("hides the CTAs and shows a read-only notice for an archived Circle", () => {
     setup({ circle: { status: "archived" }, transactions: [] });
+    expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
+    expect(screen.getByText(/circle is archived/i)).toBeInTheDocument();
+  });
+
+  it("closes an open form in place when the Circle is archived mid-edit", async () => {
+    const user = userEvent.setup();
+    const { rerenderInCircle, circle } = setup({
+      categories: [makeCategory({ name: "Groceries", type: "expense" })],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Add expense" }));
+    expect(screen.getByRole("form", { name: /add expense/i })).toBeInTheDocument();
+
+    // The Owner archives the Circle while the form is open; the reactive getCircle
+    // flips status and the guard layout re-provides it through Outlet context. The
+    // Member keeps access (archived ≠ inaccessible) so we stay on the route, not eject.
+    rerenderInCircle(<CircleTransactions />, { ...circle, status: "archived" });
+
+    // The write surface collapses live: form gone, CTAs gone, the read-only banner
+    // explains it in place — no snackbar, no redirect.
+    expect(screen.queryByRole("form", { name: /add expense/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
     expect(screen.getByText(/circle is archived/i)).toBeInTheDocument();
   });

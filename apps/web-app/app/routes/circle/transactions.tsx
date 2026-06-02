@@ -77,7 +77,11 @@ export default function CircleTransactions() {
         </p>
       ) : null}
 
-      {formType ? (
+      {/* Gated on `writable` too, so a Circle archived mid-edit (its reactive query
+          flips status) closes the open form live; the read-only banner above then
+          explains why. An inaccessible Circle is handled a layer up by the guard
+          (it ejects to a safe route — ADR 0016/0017). */}
+      {formType && writable ? (
         <TransactionForm
           key={formType}
           circle={circle}
@@ -129,9 +133,16 @@ function TransactionForm({
   onClose: () => void;
 }) {
   const createTransaction = useCreateTransaction();
-  const categories = useCategories(circle.id, type);
+  // Include archived Categories so a Category archived mid-edit (by another Member)
+  // stays visible and resolvable rather than silently vanishing from the selection
+  // — only ACTIVE Categories are newly pickable (PRD story 57).
+  const categories = useCategories(circle.id, type, { includeArchived: true });
   const members = useMembers(circle.id);
-  const activeCategories = categories ?? [];
+  const allCategories = categories ?? [];
+  const activeCategories = allCategories.filter((category) => category.status === "active");
+  const categoryById = new Map<string, Category>(
+    allCategories.map((category) => [category.id, category]),
+  );
 
   // The caller's own Member, used as the Paid By default (PRD story 36). Members
   // load async, so the selection falls back to self once known.
@@ -161,14 +172,28 @@ function TransactionForm({
     onSubmitInvalid: () => setShowAllErrors(true),
     onSubmit: async ({ value }) => {
       setSubmitError(null);
+      // Resolve every selected id back to its loaded Category (its own branded id —
+      // no cast). A selection that isn't an ACTIVE Category can't be added to a NEW
+      // Transaction, so block the submit (the server enforces the same rule, ADR 0015,
+      // as the backstop). Two ways a selection fails, handled differently:
+      //   - Archived mid-edit (PRD story 57): still resolvable, since the list includes
+      //     archived. It stays VISIBLE below as an "archived" chip with an inline alert
+      //     to remove it — the surfaced, user-recoverable case the chip UX exists for.
+      //   - Unresolvable id (the `length` check below): only reachable when the whole
+      //     list went `null`, i.e. the Circle just became inaccessible (ADR 0016). The
+      //     guard layout is already tearing this form down and there's no Category (so
+      //     no name) to render, so we block defensively without a dedicated chip.
+      const selectedCategories = value.categoryIds
+        .map((id) => categoryById.get(id))
+        .filter((category) => category !== undefined);
+      const everySelectedIsActive =
+        selectedCategories.length === value.categoryIds.length &&
+        selectedCategories.every((category) => category.status === "active");
+      if (!everySelectedIsActive) {
+        return;
+      }
       const args = toMutationArgs(value, selfMemberId);
-      // Resolve the form's plain string ids back to the loaded Category / Member ids,
-      // so the mutation gets each object's own branded id with no cast. An id that no
-      // longer resolves (e.g. a Category archived mid-edit) drops out; the server is
-      // the authority and re-validates the rest (ADR 0015).
-      const categoryIds = value.categoryIds
-        .map((id) => activeCategories.find((category) => category.id === id)?.id)
-        .filter((id) => id !== undefined);
+      const categoryIds = selectedCategories.map((category) => category.id);
       const paidByMemberId = args.paidByMemberId
         ? (members ?? []).find((member) => member.id === args.paidByMemberId)?.id
         : undefined;
@@ -303,10 +328,19 @@ function TransactionForm({
             // No blur for a chip group; reveal once any chip was toggled, or on submit.
             const reveal = field.state.meta.isDirty || showAllErrors;
             const invalid = reveal && field.state.meta.errors.length > 0;
+            const deselect = (id: string) =>
+              field.handleChange(field.state.value.filter((current) => current !== id));
+            // Selected Categories that were archived while the form was open: they
+            // can't be added to a new Transaction (PRD story 57), so we keep them
+            // VISIBLE (not silently dropped) and deselectable, badged "archived".
+            const archivedSelected = field.state.value.flatMap((id) => {
+              const category = categoryById.get(id);
+              return category && category.status === "archived" ? [category] : [];
+            });
             return (
               <FieldSet>
                 <FieldLegend>Categories</FieldLegend>
-                {activeCategories.length === 0 ? (
+                {activeCategories.length === 0 && archivedSelected.length === 0 ? (
                   <p className="text-xs text-neutral-500">
                     No {type} categories yet. Create one first to record a {type}.
                   </p>
@@ -320,11 +354,9 @@ function TransactionForm({
                           type="button"
                           aria-pressed={selected}
                           onClick={() =>
-                            field.handleChange(
-                              selected
-                                ? field.state.value.filter((id) => id !== category.id)
-                                : [...field.state.value, category.id],
-                            )
+                            selected
+                              ? deselect(category.id)
+                              : field.handleChange([...field.state.value, category.id])
                           }
                           className={cn(
                             "rounded-full border px-3 py-1 text-sm transition-colors",
@@ -337,8 +369,26 @@ function TransactionForm({
                         </button>
                       );
                     })}
+                    {archivedSelected.map((category) => (
+                      <button
+                        key={category.id}
+                        type="button"
+                        aria-pressed={true}
+                        onClick={() => deselect(category.id)}
+                        className="rounded-full border border-amber-600/70 bg-amber-950/40 px-3 py-1 text-sm text-amber-300 transition-colors hover:text-amber-100"
+                      >
+                        {category.name} · archived ✕
+                      </button>
+                    ))}
                   </div>
                 )}
+                {archivedSelected.length > 0 ? (
+                  <p role="alert" className="text-sm text-amber-400">
+                    {archivedSelected.length === 1
+                      ? `"${archivedSelected[0]?.name}" was archived and can't be added to a new ${type}. Remove it to continue.`
+                      : "Some selected categories were archived and can't be added to a new transaction. Remove them to continue."}
+                  </p>
+                ) : null}
                 <FieldError errors={invalid ? field.state.meta.errors : undefined} />
               </FieldSet>
             );
