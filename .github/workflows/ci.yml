@@ -33,4 +33,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+
+      # The SPA prerender evaluates the module graph, which constructs the
+      # ConvexReactClient at import time (app/lib/convex.ts); its constructor
+      # throws on an empty address. This job only checks that the build
+      # compiles, so feed placeholder URLs — the real deploy injects its own.
       - run: pnpm build
+        env:
+          VITE_CONVEX_URL: https://placeholder.convex.cloud
+          VITE_CONVEX_SITE_URL: https://placeholder.convex.site
