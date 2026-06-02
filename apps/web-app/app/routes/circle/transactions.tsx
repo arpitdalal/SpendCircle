@@ -5,11 +5,24 @@ import {
   minorUnitsToMajorString,
   parseAmountToMinorUnits,
   toCurrencyCode,
+  toMutationArgs,
   toPlainDate,
-  transactionInputSchema,
+  transactionFieldSchemas,
+  transactionFormSchema,
 } from "@spend-circle/domain";
-import { type FormEvent, useState } from "react";
+import { useForm } from "@tanstack/react-form";
+import { useState } from "react";
 import { Button } from "~/components/ui/button.js";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "~/components/ui/field.js";
+import { Input } from "~/components/ui/input.js";
+import { Textarea } from "~/components/ui/textarea.js";
 import {
   type Category,
   type Circle,
@@ -64,7 +77,11 @@ export default function CircleTransactions() {
         </p>
       ) : null}
 
-      {formType ? (
+      {/* Gated on `writable` too, so a Circle archived mid-edit (its reactive query
+          flips status) closes the open form live; the read-only banner above then
+          explains why. An inaccessible Circle is handled a layer up by the guard
+          (it ejects to a safe route — ADR 0016/0017). */}
+      {formType && writable ? (
         <TransactionForm
           key={formType}
           circle={circle}
@@ -78,12 +95,33 @@ export default function CircleTransactions() {
   );
 }
 
+/** The form's value shape. `type` is fixed per instance (the CTA picks it, not a
+ * field) but lives here so the whole-form submit validator covers it. Ids are plain
+ * strings to match the validation schemas exactly; they're resolved back to the
+ * loaded Category / Member ids (no cast) at submit. */
+interface TransactionFormValues {
+  type: TransactionType;
+  title: string;
+  amount: string;
+  note: string;
+  date: string;
+  categoryIds: string[];
+  paidByMemberId: string;
+}
+
 /**
- * The Add Expense / Add Income form. Amount is entered in major units and parsed
- * to minor units at the boundary (ADR 0009); the date is a plain `YYYY-MM-DD`;
- * Categories are a multi-select of the active Categories of this type; Paid By
- * defaults to the creator and can be set to any current Member. The server
- * re-validates and owns every invariant (ADR 0015) — this is the courtesy mirror.
+ * The Add Expense / Add Income form, built on TanStack Form (ADR 0020) so it shares
+ * one form model with the future native app. Amount is entered in major units and
+ * converted to minor units at submit (ADR 0009) by `toMutationArgs`; the date is a
+ * plain `YYYY-MM-DD`; Categories are a multi-select of the active Categories of this
+ * type; Paid By defaults to the creator and can be set to any current Member.
+ *
+ * Validation mirrors the shared schemas (the server re-validates and owns every
+ * invariant — ADR 0015): each field validates on blur, errors reveal on-blur-then-
+ * live (only once a field is both blurred and dirty, or once submit was attempted),
+ * and the whole-form `transactionFormSchema` is the submit gate. So tabbing through
+ * an untouched field stays quiet and "required" surfaces on submit, while an edited-
+ * but-invalid field flags on blur.
  */
 function TransactionForm({
   circle,
@@ -95,94 +133,99 @@ function TransactionForm({
   onClose: () => void;
 }) {
   const createTransaction = useCreateTransaction();
-  const categories = useCategories(circle.id, type);
+  // Include archived Categories so a Category archived mid-edit (by another Member)
+  // stays visible and resolvable rather than silently vanishing from the selection
+  // — only ACTIVE Categories are newly pickable (PRD story 57).
+  const categories = useCategories(circle.id, type, { includeArchived: true });
   const members = useMembers(circle.id);
-
-  const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [date, setDate] = useState(() => toPlainDate(new Date()));
-  const [selectedCategories, setSelectedCategories] = useState<Category["id"][]>([]);
-  // Empty until the user picks someone; the effective value falls back to self.
-  const [paidBy, setPaidBy] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const allCategories = categories ?? [];
+  const activeCategories = allCategories.filter((category) => category.status === "active");
+  const categoryById = new Map<string, Category>(
+    allCategories.map((category) => [category.id, category]),
+  );
 
   // The caller's own Member, used as the Paid By default (PRD story 36). Members
   // load async, so the selection falls back to self once known.
   const selfMemberId = (members ?? []).find((member) => member.isSelf)?.id ?? "";
-  const selectedPaidBy = paidBy || selfMemberId;
 
-  function toggleCategory(id: Category["id"]) {
-    setError(null);
-    setSelectedCategories((current) =>
-      current.includes(id) ? current.filter((c) => c !== id) : [...current, id],
-    );
-  }
+  // A failed create (an unexpected/transient server error) shown generically.
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Flipped on a rejected submit so every field reveals its error at once — this is
+  // how an untouched required field surfaces (it stays quiet on blur until here).
+  const [showAllErrors, setShowAllErrors] = useState(false);
 
-  /** Normalize the amount to two decimals on blur (e.g. "12.5" → "12.50"). */
-  function formatAmountOnBlur() {
-    const parsed = parseAmountToMinorUnits(amount);
-    if (parsed.ok) {
-      setAmount(minorUnitsToMajorString(parsed.minorUnits));
-    }
-  }
+  const defaultValues: TransactionFormValues = {
+    type,
+    title: "",
+    amount: "",
+    note: "",
+    date: toPlainDate(new Date()),
+    categoryIds: [],
+    paidByMemberId: "",
+  };
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-
-    // Client-side mirror of the shared schema (the server re-validates — ADR 0015).
-    const parsed = transactionInputSchema.safeParse({
-      type,
-      title,
-      note: note.trim() === "" ? undefined : note,
-      amount,
-      date,
-      categoryIds: selectedCategories,
-      paidByMemberId: selectedPaidBy || "self",
-    });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Please check the transaction details.");
-      return;
-    }
-
-    // Resolve the selection back to a loaded Member, so the id handed to the
-    // mutation is the Member's own typed `id` — never an unchecked cast of the
-    // raw select string (which could drift from the loaded Members).
-    const chosenMember = (members ?? []).find((member) => member.id === selectedPaidBy);
-
-    setSubmitting(true);
-    try {
-      await createTransaction({
-        circleId: circle.id,
-        type,
-        title: parsed.data.title,
-        note: parsed.data.note,
-        amountMinorUnits: parsed.data.amountMinorUnits,
-        date: parsed.data.date,
-        categoryIds: selectedCategories,
-        // Omit when self is selected so the server defaults Paid By to the creator;
-        // only send an id when another current Member is chosen.
-        paidByMemberId: chosenMember && !chosenMember.isSelf ? chosenMember.id : undefined,
-      });
-      onClose();
-    } catch {
-      // Every server rejection here is one the form already mirrors, so it's a
-      // transient/unexpected failure by the time it surfaces — keep it generic.
-      setError("Couldn't save the transaction. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const activeCategories = categories ?? [];
-  const canSubmit =
-    title.trim() !== "" && amount.trim() !== "" && selectedCategories.length > 0 && !submitting;
+  const form = useForm({
+    defaultValues,
+    // The whole-form submit gate. Field-level validators (below) drive the live
+    // on-blur feedback; this re-checks everything (incl. cross-field rules) at submit.
+    validators: { onSubmit: transactionFormSchema },
+    onSubmitInvalid: () => setShowAllErrors(true),
+    onSubmit: async ({ value }) => {
+      setSubmitError(null);
+      // Resolve every selected id back to its loaded Category (its own branded id —
+      // no cast). A selection that isn't an ACTIVE Category can't be added to a NEW
+      // Transaction, so block the submit (the server enforces the same rule, ADR 0015,
+      // as the backstop). Two ways a selection fails, handled differently:
+      //   - Archived mid-edit (PRD story 57): still resolvable, since the list includes
+      //     archived. It stays VISIBLE below as an "archived" chip with an inline alert
+      //     to remove it — the surfaced, user-recoverable case the chip UX exists for.
+      //   - Unresolvable id (the `length` check below): only reachable when the whole
+      //     list went `null`, i.e. the Circle just became inaccessible (ADR 0016). The
+      //     guard layout is already tearing this form down and there's no Category (so
+      //     no name) to render, so we block defensively without a dedicated chip.
+      const selectedCategories = value.categoryIds
+        .map((id) => categoryById.get(id))
+        .filter((category) => category !== undefined);
+      const everySelectedIsActive =
+        selectedCategories.length === value.categoryIds.length &&
+        selectedCategories.every((category) => category.status === "active");
+      if (!everySelectedIsActive) {
+        return;
+      }
+      const args = toMutationArgs(value, selfMemberId);
+      const categoryIds = selectedCategories.map((category) => category.id);
+      const paidByMemberId = args.paidByMemberId
+        ? (members ?? []).find((member) => member.id === args.paidByMemberId)?.id
+        : undefined;
+      try {
+        await createTransaction({
+          circleId: circle.id,
+          type: args.type,
+          title: args.title,
+          note: args.note,
+          amountMinorUnits: args.amountMinorUnits,
+          date: args.date,
+          categoryIds,
+          paidByMemberId,
+        });
+        onClose();
+      } catch (error) {
+        // Known rejections are already mirrored by the schema, so anything reaching
+        // here is unexpected — surface it (Sentry once it lands, ADR 0012) rather
+        // than swallow it, and show the user a generic retry message.
+        console.error("createTransaction failed", error);
+        setSubmitError("Couldn't save the transaction. Please try again.");
+      }
+    },
+  });
 
   return (
     <form
-      onSubmit={onSubmit}
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void form.handleSubmit();
+      }}
       aria-label={`Add ${TYPE_LABEL[type].toLowerCase()}`}
       className="space-y-4 rounded-lg border border-neutral-800 p-4"
     >
@@ -197,135 +240,218 @@ function TransactionForm({
         </button>
       </div>
 
-      <div className="space-y-1.5">
-        <label htmlFor="txn-title" className="block text-sm font-medium">
-          Title
-        </label>
-        <input
-          id="txn-title"
-          value={title}
-          onChange={(event) => {
-            setTitle(event.target.value);
-            setError(null);
+      <FieldGroup>
+        <form.Field name="title" validators={{ onBlur: transactionFieldSchemas.title }}>
+          {(field) => {
+            const reveal =
+              (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
+            const invalid = reveal && field.state.meta.errors.length > 0;
+            return (
+              <Field>
+                <FieldLabel htmlFor="txn-title">Title</FieldLabel>
+                <Input
+                  id="txn-title"
+                  value={field.state.value}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  onBlur={field.handleBlur}
+                  maxLength={LIMITS.transactionTitleMax}
+                  placeholder="e.g. Weekly shop"
+                  autoComplete="off"
+                  aria-invalid={invalid}
+                />
+                <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+              </Field>
+            );
           }}
-          maxLength={LIMITS.transactionTitleMax}
-          placeholder="e.g. Weekly shop"
-          autoComplete="off"
-          className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-        />
-      </div>
+        </form.Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label htmlFor="txn-amount" className="block text-sm font-medium">
-            Amount ({circle.currency})
-          </label>
-          <input
-            id="txn-amount"
-            inputMode="decimal"
-            value={amount}
-            onChange={(event) => {
-              setAmount(event.target.value);
-              setError(null);
-            }}
-            onBlur={formatAmountOnBlur}
-            placeholder="0.00"
-            autoComplete="off"
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="txn-date" className="block text-sm font-medium">
-            Date
-          </label>
-          <input
-            id="txn-date"
-            type="date"
-            value={date}
-            onChange={(event) => {
-              setDate(event.target.value);
-              setError(null);
-            }}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-          />
-        </div>
-      </div>
-
-      <fieldset className="space-y-1.5">
-        <legend className="text-sm font-medium">Categories</legend>
-        {activeCategories.length === 0 ? (
-          <p className="text-xs text-neutral-500">
-            No {type} categories yet. Create one first to record a {type}.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {activeCategories.map((category) => {
-              const selected = selectedCategories.includes(category.id);
+        <div className="grid grid-cols-2 gap-3">
+          <form.Field name="amount" validators={{ onBlur: transactionFieldSchemas.amount }}>
+            {(field) => {
+              const reveal =
+                (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
+              const invalid = reveal && field.state.meta.errors.length > 0;
               return (
-                <button
-                  key={category.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => toggleCategory(category.id)}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-sm transition-colors",
-                    selected
-                      ? "border-neutral-100 bg-neutral-100 text-neutral-900"
-                      : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
-                  )}
-                >
-                  {category.name}
-                </button>
+                <Field>
+                  <FieldLabel htmlFor="txn-amount">Amount ({circle.currency})</FieldLabel>
+                  <Input
+                    id="txn-amount"
+                    inputMode="decimal"
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    onBlur={() => {
+                      field.handleBlur();
+                      // Normalize to two decimals on blur (e.g. "12.5" → "12.50").
+                      const parsed = parseAmountToMinorUnits(field.state.value);
+                      if (parsed.ok) {
+                        field.handleChange(minorUnitsToMajorString(parsed.minorUnits));
+                      }
+                    }}
+                    placeholder="0.00"
+                    autoComplete="off"
+                    aria-invalid={invalid}
+                  />
+                  <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+                </Field>
               );
-            })}
-          </div>
-        )}
-      </fieldset>
+            }}
+          </form.Field>
 
-      <div className="space-y-1.5">
-        <label htmlFor="txn-paid-by" className="block text-sm font-medium">
-          Paid by
-        </label>
-        <select
-          id="txn-paid-by"
-          value={selectedPaidBy}
-          onChange={(event) => setPaidBy(event.target.value)}
-          className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+          <form.Field name="date" validators={{ onBlur: transactionFieldSchemas.date }}>
+            {(field) => {
+              const reveal =
+                (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
+              const invalid = reveal && field.state.meta.errors.length > 0;
+              return (
+                <Field>
+                  <FieldLabel htmlFor="txn-date">Date</FieldLabel>
+                  <Input
+                    id="txn-date"
+                    type="date"
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    onBlur={field.handleBlur}
+                    aria-invalid={invalid}
+                  />
+                  <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+                </Field>
+              );
+            }}
+          </form.Field>
+        </div>
+
+        <form.Field
+          name="categoryIds"
+          validators={{ onChange: transactionFieldSchemas.categoryIds }}
         >
-          {selfMemberId === "" ? <option value="">Loading…</option> : null}
-          {(members ?? []).map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.isSelf ? `${member.displayName} (You)` : member.displayName}
-            </option>
-          ))}
-        </select>
-      </div>
+          {(field) => {
+            // No blur for a chip group; reveal once any chip was toggled, or on submit.
+            const reveal = field.state.meta.isDirty || showAllErrors;
+            const invalid = reveal && field.state.meta.errors.length > 0;
+            const deselect = (id: string) =>
+              field.handleChange(field.state.value.filter((current) => current !== id));
+            // Selected Categories that were archived while the form was open: they
+            // can't be added to a new Transaction (PRD story 57), so we keep them
+            // VISIBLE (not silently dropped) and deselectable, badged "archived".
+            const archivedSelected = field.state.value.flatMap((id) => {
+              const category = categoryById.get(id);
+              return category && category.status === "archived" ? [category] : [];
+            });
+            return (
+              <FieldSet>
+                <FieldLegend>Categories</FieldLegend>
+                {activeCategories.length === 0 && archivedSelected.length === 0 ? (
+                  <p className="text-xs text-neutral-500">
+                    No {type} categories yet. Create one first to record a {type}.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {activeCategories.map((category) => {
+                      const selected = field.state.value.includes(category.id);
+                      return (
+                        <button
+                          key={category.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() =>
+                            selected
+                              ? deselect(category.id)
+                              : field.handleChange([...field.state.value, category.id])
+                          }
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-sm transition-colors",
+                            selected
+                              ? "border-neutral-100 bg-neutral-100 text-neutral-900"
+                              : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+                          )}
+                        >
+                          {category.name}
+                        </button>
+                      );
+                    })}
+                    {archivedSelected.map((category) => (
+                      <button
+                        key={category.id}
+                        type="button"
+                        aria-pressed={true}
+                        onClick={() => deselect(category.id)}
+                        className="rounded-full border border-amber-600/70 bg-amber-950/40 px-3 py-1 text-sm text-amber-300 transition-colors hover:text-amber-100"
+                      >
+                        {category.name} · archived ✕
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {archivedSelected.length > 0 ? (
+                  <p role="alert" className="text-sm text-amber-400">
+                    {archivedSelected.length === 1
+                      ? `"${archivedSelected[0]?.name}" was archived and can't be added to a new ${type}. Remove it to continue.`
+                      : "Some selected categories were archived and can't be added to a new transaction. Remove them to continue."}
+                  </p>
+                ) : null}
+                <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+              </FieldSet>
+            );
+          }}
+        </form.Field>
 
-      <div className="space-y-1.5">
-        <label htmlFor="txn-note" className="block text-sm font-medium">
-          Note <span className="text-neutral-500">(optional)</span>
-        </label>
-        <textarea
-          id="txn-note"
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          maxLength={LIMITS.transactionNoteMax}
-          rows={2}
-          placeholder="Extra context"
-          className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-        />
-      </div>
+        <form.Field name="paidByMemberId">
+          {(field) => (
+            <Field>
+              <FieldLabel htmlFor="txn-paid-by">Paid by</FieldLabel>
+              <select
+                id="txn-paid-by"
+                value={field.state.value || selfMemberId}
+                onChange={(event) => field.handleChange(event.target.value)}
+                className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400"
+              >
+                {selfMemberId === "" ? <option value="">Loading…</option> : null}
+                {(members ?? []).map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.isSelf ? `${member.displayName} (You)` : member.displayName}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+        </form.Field>
 
-      {error ? (
-        <p role="alert" className="text-sm text-red-400">
-          {error}
-        </p>
-      ) : null}
+        <form.Field name="note" validators={{ onBlur: transactionFieldSchemas.note }}>
+          {(field) => {
+            const reveal =
+              (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
+            const invalid = reveal && field.state.meta.errors.length > 0;
+            return (
+              <Field>
+                <FieldLabel htmlFor="txn-note">
+                  Note <span className="text-neutral-500">(optional)</span>
+                </FieldLabel>
+                <Textarea
+                  id="txn-note"
+                  value={field.state.value}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  onBlur={field.handleBlur}
+                  maxLength={LIMITS.transactionNoteMax}
+                  rows={2}
+                  placeholder="Extra context"
+                  aria-invalid={invalid}
+                />
+                <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+              </Field>
+            );
+          }}
+        </form.Field>
+      </FieldGroup>
 
-      <Button type="submit" disabled={!canSubmit}>
-        {submitting ? "Saving…" : `Add ${TYPE_LABEL[type].toLowerCase()}`}
-      </Button>
+      {submitError ? <FieldError>{submitError}</FieldError> : null}
+
+      <form.Subscribe selector={(state) => state.isSubmitting}>
+        {(isSubmitting) => (
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Saving…" : `Add ${TYPE_LABEL[type].toLowerCase()}`}
+          </Button>
+        )}
+      </form.Subscribe>
     </form>
   );
 }

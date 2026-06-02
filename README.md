@@ -84,13 +84,23 @@ To bypass auth and mock third-party vendors (Resend, PostHog, Sentry) via MSW, r
 /opt/homebrew/bin/pnpm --filter @spend-circle/web-app dev:mocks --host 127.0.0.1
 ```
 
-Playwright end-to-end tests always run in mock mode, so they never drive the OAuth flow.
-
 ## Checks
 
 ```sh
 /opt/homebrew/bin/pnpm test
 /opt/homebrew/bin/pnpm typecheck
 /opt/homebrew/bin/pnpm build
-/opt/homebrew/bin/pnpm test:e2e
 ```
+
+### End-to-end (Playwright)
+
+E2E runs against a real, ephemeral self-hosted Convex backend, not mocks (ADR
+[0019](docs/adr/0019-e2e-against-self-hosted-convex-backend.md)). `pnpm test:e2e` alone
+only boots the frontend and fails with `Failed to fetch`; use the wrapper, which boots
+the backend, deploys, runs the suite, and tears it down (needs Docker):
+
+```sh
+/opt/homebrew/bin/pnpm test:e2e:local
+```
+
+See [`e2e/README.md`](e2e/README.md) for details and how to reproduce a red CI E2E job.

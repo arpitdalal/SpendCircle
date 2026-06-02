@@ -43,7 +43,7 @@ test("a member records an expense and sees it in the live list", async ({ page }
   await expect(item).toContainText("12.50");
 });
 
-test("the expense form requires a category before it can be submitted", async ({ page }) => {
+test("the expense form blocks submit and explains a missing category", async ({ page }) => {
   const stamp = Date.now();
   const title = `E2E NoCat ${stamp}`;
 
@@ -56,6 +56,9 @@ test("the expense form requires a category before it can be submitted", async ({
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("5.00");
 
-  // No category selected yet → submit stays disabled (server also enforces ≥1).
-  await expect(form.getByRole("button", { name: "Add expense" })).toBeDisabled();
+  // Submit is attemptable (no guessing why it's greyed out): pressing it with no
+  // category reveals the requirement and creates nothing (the server enforces ≥1 too).
+  await form.getByRole("button", { name: "Add expense" }).click();
+  await expect(form.getByText("Pick at least one category")).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: title })).toHaveCount(0);
 });

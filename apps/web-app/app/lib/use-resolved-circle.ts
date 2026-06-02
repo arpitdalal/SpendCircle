@@ -40,5 +40,9 @@ export function useResolvedCircle(fallback = "/"): Resolution<Circle> {
     parsed: parsed != null,
     value,
     fallback,
+    // A Circle-flavored unavailable message reads correctly for a Member removed
+    // mid-session (they didn't click a "link"); still anti-enumeration-safe since
+    // missing and inaccessible Circles both resolve to `null` (ADR 0016).
+    unavailableTarget: "circle",
   });
 }

@@ -37,23 +37,34 @@ export type Category = NonNullable<
 >[number];
 
 /**
- * A Circle's Categories of one type, active only. `undefined` while loading;
- * `null` when the Circle is inaccessible (anti-enumeration — ADR 0016). In mock
- * mode it filters fixtures and skips the backend so E2E renders without a live
- * deployment (ADR 0006); in real mode it is the reactive Convex query.
+ * A Circle's Categories of one type — active only by default, or active + archived
+ * when `includeArchived` is set (each carries its `status`, so the caller can tell
+ * them apart). `undefined` while loading; `null` when the Circle is inaccessible
+ * (anti-enumeration — ADR 0016). In mock mode it filters fixtures and skips the
+ * backend so E2E renders without a live deployment (ADR 0006); in real mode it is
+ * the reactive Convex query.
  */
 export function useCategories(
   circleId: Circle["id"],
   type: TransactionType,
-): Category[] | null | undefined {
-  const queried = useQuery(api.categories.listCategories, MOCKS ? "skip" : { circleId, type });
-  return MOCKS ? MOCK_CATEGORIES.filter((category) => category.type === type) : queried;
+  options?: { includeArchived?: boolean },
+) {
+  const includeArchived = options?.includeArchived ?? false;
+  const queried = useQuery(
+    api.categories.listCategories,
+    MOCKS ? "skip" : { circleId, type, includeArchived },
+  );
+  return MOCKS
+    ? MOCK_CATEGORIES.filter(
+        (category) => category.type === type && (includeArchived || category.status === "active"),
+      )
+    : queried;
 }
 
 /**
  * The Create-Category mutation, exposed as the function the form awaits. Kept
  * behind this seam (rather than `useMutation` in the route) so the route imports
- * no Convex internals and render tests can mock the data layer alone.
+ * no Convex internals.
  */
 export function useCreateCategory() {
   return useMutation(api.categories.createCategory);
@@ -114,7 +125,11 @@ export function useTransactions(circleId: Circle["id"]): PaginatedTransactions {
     { initialNumItems: TRANSACTIONS_PAGE_SIZE },
   );
   if (MOCKS) {
-    return { transactions: MOCK_TRANSACTIONS, status: "Exhausted", loadMore: () => {} };
+    return {
+      transactions: MOCK_TRANSACTIONS,
+      status: "Exhausted",
+      loadMore: () => {},
+    };
   }
   return {
     transactions: paginated.results,
@@ -126,7 +141,7 @@ export function useTransactions(circleId: Circle["id"]): PaginatedTransactions {
 /**
  * The Create-Transaction mutation, exposed as the function the form awaits. Kept
  * behind this seam (rather than `useMutation` in the route) so the route imports
- * no Convex internals and render tests can mock the data layer alone.
+ * no Convex internals.
  */
 export function useCreateTransaction() {
   return useMutation(api.transactions.createTransaction);
