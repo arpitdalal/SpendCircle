@@ -79,10 +79,6 @@ export default function CircleTransactions() {
   );
 }
 
-/** Sentinel for the default Paid By selection ("Me"): omit so the server defaults
- * Paid By to the Recorded By Member (the creator). */
-const PAID_BY_SELF = "";
-
 /**
  * The Add Expense / Add Income form. Amount is entered in major units and parsed
  * to minor units at the boundary (ADR 0009); the date is a plain `YYYY-MM-DD`;
@@ -108,9 +104,15 @@ function TransactionForm({
   const [note, setNote] = useState("");
   const [date, setDate] = useState(() => toPlainDate(new Date()));
   const [selectedCategories, setSelectedCategories] = useState<Category["id"][]>([]);
-  const [paidBy, setPaidBy] = useState<string>(PAID_BY_SELF);
+  // Empty until the user picks someone; the effective value falls back to self.
+  const [paidBy, setPaidBy] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // The caller's own Member, used as the Paid By default (PRD story 36). Members
+  // load async, so the selection falls back to self once known.
+  const selfMemberId = (members ?? []).find((member) => member.isSelf)?.id ?? "";
+  const selectedPaidBy = paidBy || selfMemberId;
 
   function toggleCategory(id: Category["id"]) {
     setError(null);
@@ -139,7 +141,7 @@ function TransactionForm({
       amount,
       date,
       categoryIds: selectedCategories,
-      paidByMemberId: paidBy === PAID_BY_SELF ? "self" : paidBy,
+      paidByMemberId: selectedPaidBy || "self",
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Please check the transaction details.");
@@ -156,8 +158,12 @@ function TransactionForm({
         amountMinorUnits: parsed.data.amountMinorUnits,
         date: parsed.data.date,
         categoryIds: selectedCategories,
-        // Omit when "Me" is selected so the server defaults Paid By to the creator.
-        paidByMemberId: paidBy === PAID_BY_SELF ? undefined : (paidBy as Member["id"]),
+        // Omit when self is selected so the server defaults Paid By to the creator;
+        // only send an id when another Member is chosen.
+        paidByMemberId:
+          selectedPaidBy && selectedPaidBy !== selfMemberId
+            ? (selectedPaidBy as Member["id"])
+            : undefined,
       });
       onClose();
     } catch {
@@ -282,14 +288,14 @@ function TransactionForm({
         </label>
         <select
           id="txn-paid-by"
-          value={paidBy}
+          value={selectedPaidBy}
           onChange={(event) => setPaidBy(event.target.value)}
           className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
         >
-          <option value={PAID_BY_SELF}>Me</option>
+          {selfMemberId === "" ? <option value="">Loading…</option> : null}
           {(members ?? []).map((member) => (
             <option key={member.id} value={member.id}>
-              {member.displayName}
+              {member.isSelf ? `${member.displayName} (You)` : member.displayName}
             </option>
           ))}
         </select>

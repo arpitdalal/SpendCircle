@@ -74,6 +74,7 @@ function makeMember(over: Partial<Member> = {}): Member {
     role: "owner",
     status: "active",
     joinedAt: 0,
+    isSelf: true,
     ...over,
   };
 }
@@ -210,7 +211,10 @@ describe("CircleTransactions", () => {
     const user = userEvent.setup();
     setup({
       categories: [makeCategory({ name: "Groceries", type: "expense" })],
-      members: [makeMember(), makeMember({ id: "mem-alex" as Member["id"], displayName: "Alex" })],
+      members: [
+        makeMember(),
+        makeMember({ id: "mem-alex" as Member["id"], displayName: "Alex", isSelf: false }),
+      ],
     });
 
     await user.click(screen.getByRole("button", { name: "Add expense" }));

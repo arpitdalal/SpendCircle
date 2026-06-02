@@ -9,9 +9,10 @@ import { resolveCircleAccess } from "./guard.js";
  * Removed Member (ADR 0018, PRD story 43) — so callers never join to live User
  * rows and a removed Member renders with their frozen name automatically. The
  * raw `userId` is deliberately NOT surfaced; selectors and lists key on the
- * Member id.
+ * Member id. `isSelf` flags the caller's own Member so a selector can default to
+ * them and label them distinctly without leaking ids.
  */
-function toMemberView(member: Doc<"members">) {
+function toMemberView(member: Doc<"members">, currentMemberId: Doc<"members">["_id"]) {
   return {
     id: member._id,
     displayName: member.displayName,
@@ -19,6 +20,7 @@ function toMemberView(member: Doc<"members">) {
     role: member.role,
     status: member.status,
     joinedAt: member.joinedAt,
+    isSelf: member._id === currentMemberId,
   };
 }
 
@@ -60,6 +62,6 @@ export const listMembers = query({
       return a.joinedAt - b.joinedAt;
     });
 
-    return visible.map(toMemberView);
+    return visible.map((member) => toMemberView(member, access.membership._id));
   },
 });

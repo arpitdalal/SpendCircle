@@ -131,10 +131,24 @@ describe("listMembers — content", () => {
     const members = await t.query(api.members.listMembers, { circleId });
     expect(members?.map((m) => m.displayName)).toEqual(["Olive Owner", "Maya Member"]);
     expect(members?.[0]?.role).toBe("owner");
+    // The caller (the owner here) is flagged self; the other Member is not.
+    expect(members?.[0]?.isSelf).toBe(true);
+    expect(members?.[1]?.isSelf).toBe(false);
     // No raw userId surfaces to the client.
     for (const member of members ?? []) {
       expect(member).not.toHaveProperty("userId");
     }
+  });
+
+  it("flags isSelf relative to the calling Member, not the Owner", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(maya); // Maya is the caller, not the owner
+
+    const members = await t.query(api.members.listMembers, { circleId });
+    expect(members?.find((m) => m.displayName === "Maya Member")?.isSelf).toBe(true);
+    expect(members?.find((m) => m.displayName === "Olive Owner")?.isSelf).toBe(false);
   });
 
   it("excludes Removed Members by default and includes them with the frozen name when asked", async () => {

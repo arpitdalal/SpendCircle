@@ -67,6 +67,7 @@ export const MOCK_MEMBERS: Member[] = [
     role: "owner",
     status: "active",
     joinedAt: 0,
+    isSelf: true,
   },
   {
     id: "mock-member-alex" as Member["id"],
@@ -75,6 +76,7 @@ export const MOCK_MEMBERS: Member[] = [
     role: "member",
     status: "active",
     joinedAt: 1,
+    isSelf: false,
   },
 ];
 
