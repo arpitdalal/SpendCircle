@@ -27,6 +27,15 @@ comprehensively**. If a slice and an ADR ever disagree, the ADR wins — stop an
 7. **Open one PR per slice.** Title it `feat(<area>): <slice title>`, link the slice file,
    and list which PRD stories it closes. Keep the PR scoped to the slice — resist
    bundling the "next obvious thing."
+8. **Right after the PR exists** (same agent session, same branch — not a later doc sweep on `main`):
+   (a) set this slice’s Meta **Status** row to
+   `Done · [PR #<n>](<full-pr-url>)` using the number and URL from `gh pr create` or
+   `gh pr view --json url,number` (repo comes from `git remote`, same as `gh`);
+   (b) if the GitHub issue does not already show the PR (e.g. missing `Closes`/`Ref` in the body),
+   `gh issue comment <n> --body` with the PR URL;
+   (c) commit and **push to the PR branch** so
+   `docs/issues/<slice>.md` lands with the code. Goal: local slice file, open PR, and GitHub
+   issue stay aligned — no follow-up "mark done + link PR" commit after merge.
 
 ---
 
@@ -256,7 +265,9 @@ bypass, vendors intercepted by MSW; desktop + mobile viewports).
 
 Each slice file in this directory uses this structure:
 
-- **Meta** — Status · Labels · Depends on · Unlocks · PRD stories · ADRs · Glossary terms.
+- **Meta** — Status (`Todo` while in flight; once a PR exists, `Done · [PR #n](url)` and keep
+  that commit on the PR branch — §1 step 8) · Labels · Depends on · Unlocks · PRD stories ·
+  ADRs · Glossary terms.
 - **Intent** — the product reasoning. Why this exists and the non-obvious "why it works
   this way." Enough that you don't need to ask.
 - **Implement** — concrete work per layer, with file paths and the deep-module patterns to
