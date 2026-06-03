@@ -140,3 +140,51 @@ export async function requireCircleAccess(
   }
   return access;
 }
+
+/**
+ * Circle access for an existing Transaction, with the entity-level capabilities
+ * composed OVER {@link requireCircleAccess} — the shape promised in this module's
+ * header, the single home of Transaction permission so handlers never re-derive
+ * "is this the Recorded By Member?" inline (ADR 0015).
+ *
+ *   - `isRecorder` — the caller IS the Recorded By Member. It compares the
+ *     Transaction's `recordedByMemberId` to the caller's RESOLVED `membership._id`,
+ *     and since there is exactly one member row per (Circle, User) and rejoin
+ *     reactivates that SAME row, a Removed→rejoined User naturally matches again
+ *     and regains field-edit rights with no rejoin special-case (PRD stories 38,
+ *     44). Only the Recorded By Member edits a Transaction's fields (TXN-2).
+ *   - `canArchive` — Recorded By OR the Owner. The Owner moderates lifecycle
+ *     (archive/restore — TXN-3) but may NOT edit another Member's fields, so the
+ *     two capabilities are deliberately distinct.
+ *
+ * Anti-enumeration (ADR 0016): a missing Transaction and one whose Circle the
+ * caller can't access collapse to the SAME "Transaction not found" throw, so
+ * nothing about a Transaction's existence leaks. The entity here is the
+ * Transaction, so the message names it (not the Circle).
+ */
+export interface AuthorizedTransaction extends AuthorizedCircle {
+  transaction: Doc<"transactions">;
+  /** The caller is the Recorded By Member (may edit fields — TXN-2). */
+  isRecorder: boolean;
+  /** The caller may archive/restore: Recorded By or the Owner (TXN-3). */
+  canArchive: boolean;
+}
+
+export async function requireTransactionAccess(
+  ctx: QueryCtx | MutationCtx,
+  transactionId: Id<"transactions">,
+): Promise<AuthorizedTransaction> {
+  const transaction = await ctx.db.get(transactionId);
+  if (!transaction) {
+    throw new Error("Transaction not found");
+  }
+  // resolve (not require) so an inaccessible Circle throws the SAME entity-named
+  // message as a missing Transaction — never the Circle-level "Circle not found",
+  // which would leak that the Transaction (and its Circle) exists.
+  const access = await resolveCircleAccess(ctx, transaction.circleId);
+  if (!access) {
+    throw new Error("Transaction not found");
+  }
+  const isRecorder = transaction.recordedByMemberId === access.membership._id;
+  return { ...access, transaction, isRecorder, canArchive: isRecorder || access.isOwner };
+}

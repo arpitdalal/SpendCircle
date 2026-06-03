@@ -39,6 +39,7 @@ const NAME = {
   listMembers: getFunctionName(api.members.listMembers),
   listTransactions: getFunctionName(api.transactions.listTransactions),
   createTransaction: getFunctionName(api.transactions.createTransaction),
+  updateTransaction: getFunctionName(api.transactions.updateTransaction),
   createCategory: getFunctionName(api.categories.createCategory),
 };
 
@@ -75,6 +76,7 @@ interface ConvexState {
    * test lands and a shared rejection contract actually emerges — don't invent a
    * second config shape speculatively. */
   createTransaction?: Mock;
+  updateTransaction?: Mock;
   createCategory?: Mock;
 }
 
@@ -89,6 +91,7 @@ export function configureConvex(state: ConvexState = {}) {
     transactionsStatus = "Exhausted",
     loadMore = () => {},
     createTransaction,
+    updateTransaction,
     createCategory,
   } = state;
 
@@ -119,6 +122,8 @@ export function configureConvex(state: ConvexState = {}) {
     switch (getFunctionName(fn)) {
       case NAME.createTransaction:
         return createTransaction ?? noop;
+      case NAME.updateTransaction:
+        return updateTransaction ?? noop;
       case NAME.createCategory:
         return createCategory ?? noop;
       default:

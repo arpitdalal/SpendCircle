@@ -24,6 +24,7 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 import CircleTransactions from "./transactions.js";
 
 const createTransaction = vi.fn();
+const updateTransaction = vi.fn();
 const paginatedLoadMore = vi.fn();
 
 function makeCategory(over: Partial<Category> = {}): Category {
@@ -48,11 +49,12 @@ function makeTransaction(over: Partial<Transaction> = {}): Transaction {
     date: "2026-05-15",
     month: "2026-05",
     status: "active",
-    recordedBy: { displayName: "You", image: undefined },
-    paidBy: { displayName: "You", image: undefined },
+    recordedBy: { id: testId<Member["id"]>("mem-you"), displayName: "You", image: undefined },
+    paidBy: { id: testId<Member["id"]>("mem-you"), displayName: "You", image: undefined },
     categories: [
       { id: testId<Category["id"]>("cat-groceries"), name: "Groceries", color: "green" },
     ],
+    canEditFields: true,
     ...over,
   };
 }
@@ -93,6 +95,8 @@ function setup(
   };
   createTransaction.mockReset();
   createTransaction.mockResolvedValue("new-id");
+  updateTransaction.mockReset();
+  updateTransaction.mockResolvedValue("t1");
   configureConvex({
     // Default to a self Member / one active Category so the form is usable unless a
     // test overrides; loading/empty/null are opt-in by passing them explicitly.
@@ -102,6 +106,7 @@ function setup(
     transactionsStatus: opts.status,
     loadMore: paginatedLoadMore,
     createTransaction,
+    updateTransaction,
   });
   return { ...renderInCircle(circle, <CircleTransactions />), circle };
 }
@@ -344,5 +349,238 @@ describe("CircleTransactions", () => {
     expect(screen.queryByRole("form", { name: /add expense/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
     expect(screen.getByText(/circle is archived/i)).toBeInTheDocument();
+  });
+});
+
+describe("CircleTransactions — edit (TXN-2)", () => {
+  it("shows an Edit affordance only on the viewer's own transactions", () => {
+    setup({
+      transactions: [
+        makeTransaction({
+          id: testId<Transaction["id"]>("mine"),
+          title: "Mine",
+          canEditFields: true,
+        }),
+        makeTransaction({
+          id: testId<Transaction["id"]>("theirs"),
+          title: "Theirs",
+          canEditFields: false,
+        }),
+      ],
+    });
+    expect(screen.getByRole("button", { name: "Edit Mine" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit Theirs" })).not.toBeInTheDocument();
+  });
+
+  it("hides the Edit affordance in an archived circle even for own transactions", () => {
+    setup({
+      circle: { status: "archived" },
+      transactions: [makeTransaction({ title: "Mine", canEditFields: true })],
+    });
+    expect(screen.queryByRole("button", { name: "Edit Mine" })).not.toBeInTheDocument();
+  });
+
+  it("opens a prefilled edit form from a row", async () => {
+    const user = userEvent.setup();
+    setup({
+      transactions: [
+        makeTransaction({ title: "Weekly shop", amountMinorUnits: 1250, date: "2026-05-15" }),
+      ],
+    });
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    expect(within(form).getByLabelText("Title")).toHaveValue("Weekly shop");
+    expect(within(form).getByLabelText(/Amount/)).toHaveValue("12.50"); // minor units → major
+    expect(within(form).getByLabelText("Date")).toHaveValue("2026-05-15");
+    // The attached Category is pre-selected.
+    expect(
+      within(form).getByRole("button", { name: "Groceries", pressed: true }),
+    ).toBeInTheDocument();
+  });
+
+  it("saves edited fields through updateTransaction", async () => {
+    const user = userEvent.setup();
+    setup({ transactions: [makeTransaction({ title: "Weekly shop", amountMinorUnits: 1250 })] });
+
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    await user.clear(within(form).getByLabelText("Title"));
+    await user.type(within(form).getByLabelText("Title"), "Big shop");
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+
+    expect(updateTransaction).toHaveBeenCalledWith({
+      transactionId: "t1",
+      type: "expense",
+      title: "Big shop",
+      note: "",
+      amountMinorUnits: 1250,
+      date: "2026-05-15",
+      categoryIds: ["cat-groceries"],
+      paidByMemberId: "mem-you",
+    });
+  });
+
+  it("confirms a type change, clears categories, and saves the new type + categories", async () => {
+    const user = userEvent.setup();
+    setup({
+      transactions: [makeTransaction({ title: "Weekly shop" })],
+      categories: [
+        makeCategory({ name: "Groceries", type: "expense" }),
+        makeCategory({ id: testId<Category["id"]>("cat-salary"), name: "Salary", type: "income" }),
+      ],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+
+    // Switching the segment opens a confirmation; cancelling leaves the type alone.
+    await user.click(within(form).getByRole("button", { name: "Income" }));
+    const dialog = within(form).getByRole("alertdialog");
+    expect(dialog).toHaveTextContent(/change to income/i);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(within(form).queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(
+      within(form).getByRole("button", { name: "Expense", pressed: true }),
+    ).toBeInTheDocument();
+
+    // Confirming applies the Type Change: Expense categories clear, Income ones appear.
+    await user.click(within(form).getByRole("button", { name: "Income" }));
+    await user.click(
+      within(within(form).getByRole("alertdialog")).getByRole("button", { name: "Change type" }),
+    );
+    expect(within(form).queryByRole("button", { name: "Groceries" })).not.toBeInTheDocument();
+    expect(within(form).getByRole("button", { name: "Income", pressed: true })).toBeInTheDocument();
+
+    // Must re-pick from the new type before saving.
+    await user.click(within(form).getByRole("button", { name: "Salary" }));
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+
+    expect(updateTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transactionId: "t1",
+        type: "income",
+        categoryIds: ["cat-salary"],
+      }),
+    );
+  });
+
+  it("blocks saving until the cleared categories are re-picked after a type change", async () => {
+    const user = userEvent.setup();
+    setup({
+      transactions: [makeTransaction({ title: "Weekly shop" })],
+      categories: [
+        makeCategory({ name: "Groceries", type: "expense" }),
+        makeCategory({ id: testId<Category["id"]>("cat-salary"), name: "Salary", type: "income" }),
+      ],
+    });
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    await user.click(within(form).getByRole("button", { name: "Income" }));
+    await user.click(
+      within(within(form).getByRole("alertdialog")).getByRole("button", { name: "Change type" }),
+    );
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+
+    expect(await within(form).findByText("Pick at least one category")).toBeInTheDocument();
+    expect(updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it("keeps an already-attached archived category on save without blocking", async () => {
+    const user = userEvent.setup();
+    setup({
+      transactions: [
+        makeTransaction({
+          title: "Weekly shop",
+          categories: [{ id: testId<Category["id"]>("cat-arch"), name: "OldCat", color: "green" }],
+        }),
+      ],
+      categories: [
+        makeCategory({
+          id: testId<Category["id"]>("cat-arch"),
+          name: "OldCat",
+          status: "archived",
+        }),
+      ],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    // Shown as kept-archived (no removal ✕), and no blocking alert.
+    expect(within(form).getByRole("button", { name: /OldCat · archived/ })).toBeInTheDocument();
+    expect(within(form).queryByRole("alert")).not.toBeInTheDocument();
+
+    await user.clear(within(form).getByLabelText("Title"));
+    await user.type(within(form).getByLabelText("Title"), "Edited");
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+
+    expect(updateTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryIds: ["cat-arch"], title: "Edited" }),
+    );
+  });
+
+  it("blocks newly adding a category that was archived mid-edit", async () => {
+    const user = userEvent.setup();
+    const cats: Category[] = [
+      makeCategory({ name: "Groceries", type: "expense" }),
+      makeCategory({ id: testId<Category["id"]>("cat-snacks"), name: "Snacks", type: "expense" }),
+    ];
+    const { rerenderInCircle } = setup({
+      transactions: [makeTransaction({ title: "Weekly shop" })],
+      categories: cats,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    await user.click(within(form).getByRole("button", { name: "Snacks" })); // newly select an active one
+
+    // Another Member archives "Snacks" while the form is open.
+    cats[1] = makeCategory({
+      id: testId<Category["id"]>("cat-snacks"),
+      name: "Snacks",
+      type: "expense",
+      status: "archived",
+    });
+    rerenderInCircle(<CircleTransactions />);
+
+    expect(within(form).getByText(/Snacks · archived ✕/)).toBeInTheDocument();
+    expect(within(form).getByRole("alert")).toHaveTextContent(/"Snacks" was archived/);
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+    expect(updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it("shows a Removed Member's existing Paid By as a selectable option", async () => {
+    const user = userEvent.setup();
+    setup({
+      transactions: [
+        makeTransaction({
+          title: "Weekly shop",
+          paidBy: { id: testId<Member["id"]>("mem-rex"), displayName: "Rex", image: undefined },
+        }),
+      ],
+      members: [makeMember()], // Rex is no longer a current Member
+    });
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    expect(within(form).getByRole("option", { name: "Rex (removed)" })).toBeInTheDocument();
+  });
+
+  it("surfaces a generic error and reports the failure when the edit fails", async () => {
+    const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    setup({ transactions: [makeTransaction({ title: "Weekly shop" })] });
+    updateTransaction.mockRejectedValueOnce(new Error("Network down"));
+
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    await user.clear(within(form).getByLabelText("Title"));
+    await user.type(within(form).getByLabelText("Title"), "Edited");
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Couldn't save the transaction/i);
+    expect(alert).not.toHaveTextContent(/Network down/);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

@@ -146,3 +146,13 @@ export function useTransactions(circleId: Circle["id"]): PaginatedTransactions {
 export function useCreateTransaction() {
   return useMutation(api.transactions.createTransaction);
 }
+
+/**
+ * The Edit-Transaction mutation (TXN-2), behind the same seam as create. The form
+ * sends only the fields it manages; the server diffs against the stored Transaction,
+ * records only what changed, and owns every invariant (Recorded By, type change,
+ * archived-frozen — ADR 0015).
+ */
+export function useUpdateTransaction() {
+  return useMutation(api.transactions.updateTransaction);
+}
