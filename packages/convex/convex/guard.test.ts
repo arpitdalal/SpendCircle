@@ -11,9 +11,8 @@ import schema from "./schema.js";
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({ getCurrentUserOrNull: mockCurrentUser }));
 
-const { getActiveMembership, requireCircleAccess, resolveCircleAccess } = await import(
-  "./guard.js"
-);
+const { getActiveMembership, requireCircleAccess, requireTransactionAccess, resolveCircleAccess } =
+  await import("./guard.js");
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -200,5 +199,127 @@ describe("requireCircleAccess", () => {
     });
     expect(result.circleId).toBe(circleId);
     expect(result.userId).toBe(user._id);
+  });
+});
+
+describe("requireTransactionAccess", () => {
+  /** Adds a second active member to the seeded circle and returns the User + member id. */
+  async function addMember(
+    ctx: MutationCtx,
+    circleId: Id<"circles">,
+  ): Promise<{ user: Doc<"users">; memberId: Id<"members"> }> {
+    const now = Date.now();
+    const userId = await ctx.db.insert("users", {
+      email: "grace@example.com",
+      displayName: "Grace Hopper",
+      acceptedTermsVersion: "2026-05-01",
+      acceptedPrivacyVersion: "2026-05-01",
+      acceptedAt: now,
+      analyticsOptOut: false,
+      createdAt: now,
+    });
+    const memberId = await ctx.db.insert("members", {
+      circleId,
+      userId,
+      role: "member",
+      status: "active",
+      displayName: "Grace Hopper",
+      joinedAt: now,
+    });
+    const user = await ctx.db.get(userId);
+    if (!user) {
+      throw new Error("seed failed");
+    }
+    return { user, memberId };
+  }
+
+  /** Inserts a minimal active Transaction recorded by `recordedByMemberId`. */
+  async function makeTransaction(
+    ctx: MutationCtx,
+    circleId: Id<"circles">,
+    recordedByMemberId: Id<"members">,
+  ): Promise<Id<"transactions">> {
+    const now = Date.now();
+    return await ctx.db.insert("transactions", {
+      circleId,
+      type: "expense",
+      title: "Lunch",
+      amountMinorUnits: 1250,
+      date: "2026-05-15",
+      month: "2026-05",
+      recordedByMemberId,
+      paidByMemberId: recordedByMemberId,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  it("marks the Recorded By Member as recorder and archiver", async () => {
+    const t = convexTest(schema, modules);
+    const { user, circleId, ownerMemberId } = await t.run((ctx) => seed(ctx, { role: "owner" }));
+    const txnId = await t.run((ctx) => makeTransaction(ctx, circleId, ownerMemberId));
+    mockCurrentUser.mockResolvedValue(user);
+
+    const access = await t.run(async (ctx) => {
+      const a = await requireTransactionAccess(ctx, txnId);
+      return { isRecorder: a.isRecorder, canArchive: a.canArchive, txnId: a.transaction._id };
+    });
+    expect(access.isRecorder).toBe(true);
+    expect(access.canArchive).toBe(true);
+    expect(access.txnId).toBe(txnId);
+  });
+
+  it("lets the Owner archive but NOT edit another Member's Transaction", async () => {
+    const t = convexTest(schema, modules);
+    const { user: owner, circleId } = await t.run((ctx) => seed(ctx, { role: "owner" }));
+    const other = await t.run((ctx) => addMember(ctx, circleId));
+    const txnId = await t.run((ctx) => makeTransaction(ctx, circleId, other.memberId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const access = await t.run(async (ctx) => {
+      const a = await requireTransactionAccess(ctx, txnId);
+      return { isRecorder: a.isRecorder, canArchive: a.canArchive };
+    });
+    expect(access.isRecorder).toBe(false); // can't edit fields
+    expect(access.canArchive).toBe(true); // but may moderate (TXN-3)
+  });
+
+  it("a non-recorder Member is neither recorder nor archiver", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId, ownerMemberId } = await t.run((ctx) => seed(ctx, { role: "owner" }));
+    const other = await t.run((ctx) => addMember(ctx, circleId));
+    const txnId = await t.run((ctx) => makeTransaction(ctx, circleId, ownerMemberId));
+    mockCurrentUser.mockResolvedValue(other.user);
+
+    const access = await t.run(async (ctx) => {
+      const a = await requireTransactionAccess(ctx, txnId);
+      return { isRecorder: a.isRecorder, canArchive: a.canArchive };
+    });
+    expect(access.isRecorder).toBe(false);
+    expect(access.canArchive).toBe(false);
+  });
+
+  it("throws 'Transaction not found' for a missing Transaction", async () => {
+    const t = convexTest(schema, modules);
+    const { user } = await t.run((ctx) => seed(ctx));
+    mockCurrentUser.mockResolvedValue(user);
+    const ghost = "j0000000000000000000000000000000" as Id<"transactions">;
+
+    await expect(t.run((ctx) => requireTransactionAccess(ctx, ghost))).rejects.toThrow(
+      "Transaction not found",
+    );
+  });
+
+  it("throws the SAME 'Transaction not found' for an inaccessible Circle (anti-enumeration)", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId, ownerMemberId } = await t.run((ctx) => seed(ctx));
+    const txnId = await t.run((ctx) => makeTransaction(ctx, circleId, ownerMemberId));
+    // A non-member caller: missing and inaccessible must be indistinguishable.
+    mockCurrentUser.mockResolvedValue(null);
+
+    await expect(t.run((ctx) => requireTransactionAccess(ctx, txnId))).rejects.toThrow(
+      "Transaction not found",
+    );
   });
 });

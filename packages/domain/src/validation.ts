@@ -190,6 +190,35 @@ export const transactionCreateSchema = z.object({
 });
 export type TransactionCreateInput = z.infer<typeof transactionCreateSchema>;
 
+/**
+ * Server-facing edit-Transaction input (ADR 0010), the TXN-2 counterpart to
+ * {@link transactionCreateSchema}. Every field is optional: an absent field means
+ * "leave it unchanged", and each present field is validated by the SAME rule as on
+ * create (title/note bounds, the date format, the ≥1 / no-duplicate Category rule,
+ * the minor-unit amount) so the two entry points can't drift. A present `note` of
+ * `""` is the explicit "clear the note" signal — distinct from omitting it.
+ *
+ * Two cross-field invariants this schema deliberately does NOT encode, because they
+ * need state it can't see and so live in the handler (ADR 0015): that a Transaction
+ * Type Change must arrive WITH ≥1 active Category of the new type (the schema has no
+ * current type to compare against), and that a newly-added Category must be active
+ * while an already-attached archived one may stay (the schema has no current
+ * attachments). Both are enforced server-side against the loaded Transaction.
+ */
+export const transactionUpdateSchema = z.object({
+  type: z.enum(TRANSACTION_TYPES).optional(),
+  title: transactionFields.title.optional(),
+  note: transactionFields.note,
+  date: transactionFields.date.optional(),
+  amountMinorUnits: z
+    .number()
+    .refine(isValidMinorUnits, { message: "Amount must be a positive value within range" })
+    .optional(),
+  categoryIds: transactionFields.categoryIds.optional(),
+  paidByMemberId: z.string().optional(),
+});
+export type TransactionUpdateInput = z.infer<typeof transactionUpdateSchema>;
+
 function amountErrorMessage(error: AmountParseError): string {
   switch (error) {
     case "empty":

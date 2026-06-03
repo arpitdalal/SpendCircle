@@ -7,6 +7,7 @@ import {
   toMutationArgs,
   transactionCreateSchema,
   transactionFormSchema,
+  transactionUpdateSchema,
 } from "./validation.js";
 
 /**
@@ -260,6 +261,44 @@ describe("transactionCreateSchema (server contract)", () => {
     const parsed = transactionCreateSchema.parse({ ...valid, title: "  Lunch  ", note: "  " });
     expect(parsed.title).toBe("Lunch");
     expect(parsed.note).toBe("");
+  });
+});
+
+describe("transactionUpdateSchema (server contract)", () => {
+  it("accepts an empty payload (all fields optional ≡ no-op edit)", () => {
+    const parsed = transactionUpdateSchema.parse({});
+    expect(parsed).toEqual({});
+  });
+
+  it("accepts a single changed field", () => {
+    expect(transactionUpdateSchema.parse({ title: "  New title  " }).title).toBe("New title");
+    expect(transactionUpdateSchema.parse({ amountMinorUnits: 999 }).amountMinorUnits).toBe(999);
+    expect(transactionUpdateSchema.parse({ date: "2026-06-01" }).date).toBe("2026-06-01");
+    expect(transactionUpdateSchema.parse({ type: "income" }).type).toBe("income");
+  });
+
+  it("treats an empty note as the explicit clear signal, not absence", () => {
+    const parsed = transactionUpdateSchema.parse({ note: "   " });
+    expect(parsed.note).toBe(""); // present-but-empty, distinct from undefined
+    expect(transactionUpdateSchema.parse({}).note).toBeUndefined();
+  });
+
+  it("validates each present field by the same rule as create", () => {
+    expect(transactionUpdateSchema.safeParse({ title: "" }).success).toBe(false);
+    expect(transactionUpdateSchema.safeParse({ title: "x".repeat(121) }).success).toBe(false);
+    expect(transactionUpdateSchema.safeParse({ note: "x".repeat(1001) }).success).toBe(false);
+    expect(transactionUpdateSchema.safeParse({ date: "2026-13-01" }).success).toBe(false);
+    expect(transactionUpdateSchema.safeParse({ amountMinorUnits: 0 }).success).toBe(false);
+    expect(transactionUpdateSchema.safeParse({ amountMinorUnits: 12.5 }).success).toBe(false);
+    expect(
+      transactionUpdateSchema.safeParse({ amountMinorUnits: MAX_AMOUNT_MINOR + 1 }).success,
+    ).toBe(false);
+  });
+
+  it("keeps the ≥1 / no-duplicate Category rule for a present categoryIds", () => {
+    expect(transactionUpdateSchema.safeParse({ categoryIds: [] }).success).toBe(false);
+    expect(transactionUpdateSchema.safeParse({ categoryIds: ["a", "a"] }).success).toBe(false);
+    expect(transactionUpdateSchema.safeParse({ categoryIds: ["a", "b"] }).success).toBe(true);
   });
 });
 
