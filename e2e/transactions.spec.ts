@@ -68,6 +68,59 @@ test("the expense form blocks submit and explains a missing category", async ({
 });
 
 /**
+ * RPT-1 true-E2E: the Monthly Ledger shows ONE selected month — the month's totals
+ * (computed server-side by `getMonthlyLedger`) and that month's Transactions — with
+ * month navigation. Records an expense (dated today), confirms it lands in the current
+ * month with the Net total reflecting it, jumps to a far-past empty month (zero totals,
+ * empty list), and navigates back to find the row again — all against the real backend.
+ */
+test("the monthly ledger totals a month and navigates between months", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${Date.now()}-${testInfo.project.name}`;
+  const categoryName = `E2E L ${stamp}`; // keep ≤ 40 chars (categoryNameMax)
+  const title = `E2E Ledger ${stamp}`;
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Personal/ }).click();
+
+  await page.getByRole("link", { name: "Categories" }).click();
+  await page.getByLabel(/New expense category/).fill(categoryName);
+  await page.getByRole("button", { name: "Add category" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
+
+  await page.getByRole("link", { name: "Transactions" }).click();
+  await page.getByRole("button", { name: "Add expense" }).click();
+  const form = page.getByRole("form", { name: /add expense/i });
+  await form.getByLabel("Title").fill(title);
+  await form.getByLabel(/Amount/).fill("12.50");
+  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("button", { name: "Add expense" }).click();
+
+  // The current month (the default Ledger view) lists the new expense, and the Net
+  // total reflects it (the Personal Circle is shared across the run, so other expenses
+  // may add to the magnitude — assert the sign + a non-zero net, not an exact figure).
+  const row = page.getByRole("listitem").filter({ hasText: title });
+  await expect(row).toBeVisible();
+  const totals = page.getByRole("group", { name: "Monthly totals" });
+  await expect(totals).toContainText("-$"); // a negative net (expense-only month)
+  await expect(page.getByLabel("Month", { exact: true })).toHaveValue(currentMonth);
+
+  // Jump to a far-past month that no test ever writes to: zero totals, empty list.
+  await page.getByLabel("Month", { exact: true }).fill("2000-06");
+  await expect(page.getByText("No transactions in June 2000.")).toBeVisible();
+  await expect(row).toHaveCount(0);
+  await expect(totals).toContainText("$0.00");
+
+  // Navigate back to the current month and the expense is there again — the totals are
+  // per-month, not global.
+  await page.getByLabel("Month", { exact: true }).fill(currentMonth);
+  await expect(row).toBeVisible();
+});
+
+/**
  * TXN-2 true-E2E: the Recorded By Member edits a saved Transaction through the real
  * frontend → `updateTransaction` mutation → DB → reactive list, and a Type Change
  * (Expense→Income) confirms, clears the old Category, requires re-picking from the

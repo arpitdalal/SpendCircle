@@ -1,7 +1,10 @@
 import {
   LIMITS,
+  type PlainMonth,
   TRANSACTION_TYPES,
   type TransactionType,
+  addMonths,
+  currentMonth,
   formatMinorUnits,
   minorUnitsToMajorString,
   parseAmountToMinorUnits,
@@ -28,12 +31,13 @@ import {
   type Category,
   type Circle,
   type Member,
+  type MonthlySummary,
   type PaginatedTransactions,
   type Transaction,
   useCategories,
   useCreateTransaction,
   useMembers,
-  useTransactions,
+  useMonthlyLedger,
   useUpdateTransaction,
 } from "~/lib/data.js";
 import { cn } from "~/lib/utils.js";
@@ -82,11 +86,18 @@ function resolvePaidBy(
 }
 
 /**
- * Monthly Ledger / Transactions surface (PRD stories 62–67). TXN-1 lands the core
- * write here: dedicated Add Expense / Add Income CTAs (not a type dropdown — PRD
- * 27, 28) open a Transaction form scoped to that type, and the live list below
- * confirms a create landed. The full Ledger filters/search are RPT-* surfaces
- * layered on the same `useTransactions` read.
+ * The Monthly Ledger — the Circle's operational Transaction management surface and
+ * its default view (glossary; PRD stories 62–67). It shows ONE selected month: that
+ * month's Income / Expense / Net totals, that month's active Transactions (sorted
+ * Transaction Date desc then created-at desc), and month/year navigation (PRD 64).
+ * Archived Transactions are excluded (TXN-3). Dedicated Add Expense / Add Income
+ * CTAs (not a type dropdown — PRD 27, 28) open a Transaction form scoped to that
+ * type; the live list confirms a create landed. Search/filters are RPT-2.
+ *
+ * The totals come from `getMonthlyLedger` (a bounded server-side aggregate over the
+ * whole month — never summed from the page) and the list from the month-scoped,
+ * paginated `listTransactions`; `useMonthlyLedger` fuses the two for the selected
+ * month and re-runs when navigation changes it.
  */
 /**
  * The open form: a create scoped to a CTA-chosen type, an edit of one saved
@@ -103,7 +114,11 @@ const openFormKey = (form: OpenForm) =>
 
 export default function CircleTransactions() {
   const circle = useCircle();
-  const transactions = useTransactions(circle.id);
+  // The selected month, defaulting to the current month (the default Ledger view —
+  // glossary). Navigation is pure month arithmetic via `addMonths` (no Date math), so
+  // year boundaries (Dec→Jan) just work.
+  const [month, setMonth] = useState<PlainMonth>(() => currentMonth(new Date()));
+  const { summary, transactions } = useMonthlyLedger(circle.id, month);
   // The open create/edit form, or null when closed. The two CTAs each open a create
   // scoped to their type; a row's Edit action opens an edit, so the form never needs
   // a type dropdown for creation.
@@ -130,6 +145,9 @@ export default function CircleTransactions() {
         ) : null}
       </div>
 
+      <MonthNavigator month={month} onChange={setMonth} />
+      <MonthlyTotals summary={summary} fallbackCurrency={circle.currency} />
+
       {!writable ? (
         <p className="rounded-md border border-neutral-800 p-3 text-sm text-neutral-500">
           This circle is archived. Restore it to add transactions.
@@ -152,10 +170,118 @@ export default function CircleTransactions() {
       <TransactionList
         paginated={transactions}
         currency={circle.currency}
+        monthLabel={formatMonthLabel(month)}
         canEdit={writable}
         onEdit={(transaction) => setOpenForm({ kind: "edit", transaction })}
       />
     </div>
+  );
+}
+
+/** A "YYYY-MM" month as a human label, e.g. "June 2026". Built from the plain month
+ * parts (no timezone parsing) so it matches the stored bucket exactly. */
+function formatMonthLabel(month: PlainMonth): string {
+  const parts = month.split("-");
+  const year = Number(parts[0]);
+  const monthIndex = Number(parts[1]);
+  return new Date(year, monthIndex - 1, 1).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/**
+ * Month/year navigation for the Ledger (PRD 64): previous / next step by one month
+ * (`addMonths`, so Dec↔Jan crosses the year correctly), and the native month input
+ * jumps to any month. The input is the single source of the value; the buttons drive
+ * it through the same `onChange`.
+ */
+function MonthNavigator({
+  month,
+  onChange,
+}: {
+  month: PlainMonth;
+  onChange: (month: PlainMonth) => void;
+}) {
+  return (
+    <fieldset className="flex items-center gap-2">
+      <legend className="sr-only">Select month</legend>
+      <Button
+        type="button"
+        variant="outline"
+        aria-label="Previous month"
+        onClick={() => onChange(addMonths(month, -1))}
+      >
+        ‹
+      </Button>
+      <label htmlFor="ledger-month" className="sr-only">
+        Month
+      </label>
+      <input
+        id="ledger-month"
+        type="month"
+        value={month}
+        onChange={(event) => {
+          // The native control clears to "" when emptied; ignore that so the Ledger
+          // always has a selected month.
+          if (event.target.value) {
+            onChange(event.target.value);
+          }
+        }}
+        className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400"
+      />
+      <Button
+        type="button"
+        variant="outline"
+        aria-label="Next month"
+        onClick={() => onChange(addMonths(month, 1))}
+      >
+        ›
+      </Button>
+    </fieldset>
+  );
+}
+
+/**
+ * The selected month's Income / Expense / Net header. Totals are minor units summed
+ * server-side and formatted ONCE here in the Circle Currency (ADR 0009) — never
+ * summed from formatted strings. `summary` is `undefined` while loading (placeholders
+ * shown) and `null` only for an inaccessible Circle (the guard ejects before this
+ * renders); the currency falls back to the Circle's until the summary resolves.
+ */
+function MonthlyTotals({
+  summary,
+  fallbackCurrency,
+}: {
+  summary: MonthlySummary | null | undefined;
+  fallbackCurrency: string;
+}) {
+  const currency = toCurrencyCode(summary?.currency ?? fallbackCurrency);
+  const totals = summary?.totals;
+  const stats: { label: string; amount: number | undefined; tone: string }[] = [
+    { label: "Income", amount: totals?.incomeMinor, tone: "text-green-400" },
+    { label: "Expenses", amount: totals?.expenseMinor, tone: "text-neutral-100" },
+    {
+      label: "Net",
+      amount: totals?.netMinor,
+      tone: (totals?.netMinor ?? 0) >= 0 ? "text-green-400" : "text-red-400",
+    },
+  ];
+
+  return (
+    <fieldset>
+      <legend className="sr-only">Monthly totals</legend>
+      <dl className="grid grid-cols-3 gap-3">
+        {stats.map((stat) => (
+          <div key={stat.label} className="rounded-md border border-neutral-800 p-3">
+            <dt className="text-xs text-neutral-500">{stat.label}</dt>
+            <dd className={cn("text-sm font-semibold tabular-nums", stat.tone)}>
+              {stat.amount === undefined ? "…" : formatMinorUnits(stat.amount, currency)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </fieldset>
   );
 }
 
@@ -715,11 +841,13 @@ function TransactionForm({
 function TransactionList({
   paginated,
   currency,
+  monthLabel,
   canEdit,
   onEdit,
 }: {
   paginated: PaginatedTransactions;
   currency: string;
+  monthLabel: string;
   canEdit: boolean;
   onEdit: (transaction: Transaction) => void;
 }) {
@@ -728,10 +856,12 @@ function TransactionList({
   if (status === "LoadingFirstPage") {
     return <p className="text-sm text-neutral-500">Loading transactions…</p>;
   }
-  // An inaccessible Circle (ADR 0016) and an empty Circle both arrive as an empty
-  // page — the Circle guard already gated entry, so treat both as nothing to show.
+  // An inaccessible Circle (ADR 0016) and a month with no active Transactions both
+  // arrive as an empty page — the Circle guard already gated entry, so treat both as
+  // nothing to show, naming the month so an empty view reads as "this month is empty"
+  // rather than "this circle is empty".
   if (transactions.length === 0) {
-    return <p className="text-sm text-neutral-500">No transactions yet.</p>;
+    return <p className="text-sm text-neutral-500">No transactions in {monthLabel}.</p>;
   }
 
   return (

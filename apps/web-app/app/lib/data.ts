@@ -1,9 +1,15 @@
 import { api } from "@spend-circle/convex";
-import type { TransactionType } from "@spend-circle/domain";
+import type { PlainMonth, TransactionType } from "@spend-circle/domain";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "./env.js";
-import { MOCK_CATEGORIES, MOCK_CIRCLES, MOCK_MEMBERS, MOCK_TRANSACTIONS } from "./fixtures.js";
+import {
+  MOCK_CATEGORIES,
+  MOCK_CIRCLES,
+  MOCK_MEMBERS,
+  MOCK_MONTHLY_SUMMARY,
+  MOCK_TRANSACTIONS,
+} from "./fixtures.js";
 
 /**
  * The single Circle view contract, derived from the Convex function's return
@@ -115,13 +121,14 @@ export interface PaginatedTransactions {
 /**
  * A Circle's active Transactions, most recent first, paginated at the source so
  * the client never holds an unbounded set — it loads one page and grows on demand
- * (ADR 0006 for the mock fork). TXN-1 uses this to confirm a create landed; the
- * Ledger/Dashboard slices (RPT-*) build their surfaces on the same paginated read.
+ * (ADR 0006 for the mock fork). An optional `month` ("YYYY-MM") scopes the page to
+ * one month at the source — the Monthly Ledger list (RPT-1); omit it for the
+ * all-active read. TXN-1 uses the unscoped form to confirm a create landed.
  */
-export function useTransactions(circleId: Circle["id"]): PaginatedTransactions {
+export function useTransactions(circleId: Circle["id"], month?: PlainMonth): PaginatedTransactions {
   const paginated = usePaginatedQuery(
     api.transactions.listTransactions,
-    MOCKS ? "skip" : { circleId },
+    MOCKS ? "skip" : { circleId, ...(month ? { month } : {}) },
     { initialNumItems: TRANSACTIONS_PAGE_SIZE },
   );
   if (MOCKS) {
@@ -135,6 +142,32 @@ export function useTransactions(circleId: Circle["id"]): PaginatedTransactions {
     transactions: paginated.results,
     status: paginated.status,
     loadMore: () => paginated.loadMore(TRANSACTIONS_PAGE_SIZE),
+  };
+}
+
+/**
+ * The Monthly Ledger's per-month financial summary, derived from `getMonthlyLedger`
+ * so it can't drift from the backend (ADR 0003): that month's Income / Expense / Net
+ * in minor units plus the Circle Currency. `null` ≡ inaccessible Circle (ADR 0016);
+ * `undefined` while loading.
+ */
+export type MonthlySummary = NonNullable<FunctionReturnType<typeof api.ledger.getMonthlyLedger>>;
+export type MonthlyTotals = MonthlySummary["totals"];
+
+/**
+ * The Monthly Ledger surface for one Circle-month (RPT-1): the `summary` (totals +
+ * Currency, computed server-side over the whole month) fused with the month-scoped,
+ * paginated `transactions` list. They are two backend reads (a `usePaginatedQuery`
+ * can't carry totals next to a page, and the totals must sum the entire month while
+ * the list only resolves the visible page), recombined here into the one hook the
+ * route consumes. Mock mode returns fixtures and skips both backend reads (ADR 0006).
+ */
+export function useMonthlyLedger(circleId: Circle["id"], month: PlainMonth) {
+  const queried = useQuery(api.ledger.getMonthlyLedger, MOCKS ? "skip" : { circleId, month });
+  const transactions = useTransactions(circleId, month);
+  return {
+    summary: MOCKS ? MOCK_MONTHLY_SUMMARY : queried,
+    transactions,
   };
 }
 

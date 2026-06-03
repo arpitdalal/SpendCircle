@@ -1,11 +1,12 @@
-import { toPlainDate } from "@spend-circle/domain";
-import { screen, within } from "@testing-library/react";
+import { addMonths, currentMonth, toPlainDate } from "@spend-circle/domain";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type Category,
   type Circle,
   type Member,
+  type MonthlySummary,
   type PaginationStatus,
   TRANSACTIONS_PAGE_SIZE,
   type Transaction,
@@ -79,6 +80,7 @@ function setup(
     status?: PaginationStatus;
     categories?: Category[] | null;
     members?: Member[] | null;
+    monthlySummary?: MonthlySummary | null;
   } = {},
 ) {
   const circle: Circle = {
@@ -104,6 +106,7 @@ function setup(
     members: opts.members === undefined ? [makeMember()] : opts.members,
     transactions: opts.transactions,
     transactionsStatus: opts.status,
+    ...(opts.monthlySummary === undefined ? {} : { monthlySummary: opts.monthlySummary }),
     loadMore: paginatedLoadMore,
     createTransaction,
     updateTransaction,
@@ -116,9 +119,9 @@ afterEach(() => {
 });
 
 describe("CircleTransactions", () => {
-  it("shows an empty state when there are no transactions", () => {
+  it("shows a month-named empty state when the month has no transactions", () => {
     setup({ transactions: [] });
-    expect(screen.getByText(/No transactions yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No transactions in/)).toBeInTheDocument();
   });
 
   it("shows a loading state while the first page resolves", () => {
@@ -380,6 +383,57 @@ describe("CircleTransactions", () => {
     expect(screen.queryByRole("form", { name: /add expense/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
     expect(screen.getByText(/circle is archived/i)).toBeInTheDocument();
+  });
+});
+
+describe("CircleTransactions — Monthly Ledger (RPT-1)", () => {
+  const summaryOf = (
+    incomeMinor: number,
+    expenseMinor: number,
+    netMinor: number,
+  ): MonthlySummary => ({
+    totals: { incomeMinor, expenseMinor, netMinor },
+    currency: "USD",
+  });
+
+  it("renders the month's income, expense, and net totals formatted in the currency", () => {
+    setup({ monthlySummary: summaryOf(500_000, 8_750, 491_250) });
+    const totals = screen.getByRole("group", { name: "Monthly totals" });
+    expect(within(totals).getByText("$5,000.00")).toBeInTheDocument(); // income
+    expect(within(totals).getByText("$87.50")).toBeInTheDocument(); // expense
+    expect(within(totals).getByText("$4,912.50")).toBeInTheDocument(); // net
+  });
+
+  it("shows a negative net when expenses exceed income", () => {
+    setup({ monthlySummary: summaryOf(2_000, 9_000, -7_000) });
+    const totals = screen.getByRole("group", { name: "Monthly totals" });
+    expect(within(totals).getByText("-$70.00")).toBeInTheDocument();
+  });
+
+  it("defaults to the current month", () => {
+    setup();
+    expect(screen.getByLabelText("Month")).toHaveValue(currentMonth(new Date()));
+  });
+
+  it("steps to the previous and next month via the navigator (year-boundary safe)", async () => {
+    const user = userEvent.setup();
+    setup();
+    const monthInput = screen.getByLabelText("Month");
+    const now = currentMonth(new Date());
+
+    await user.click(screen.getByRole("button", { name: "Previous month" }));
+    expect(monthInput).toHaveValue(addMonths(now, -1));
+
+    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(screen.getByRole("button", { name: "Next month" }));
+    expect(monthInput).toHaveValue(addMonths(now, 1));
+  });
+
+  it("jumps to a chosen month and names it in the empty state", () => {
+    setup({ transactions: [] });
+    fireEvent.change(screen.getByLabelText("Month"), { target: { value: "2026-03" } });
+    expect(screen.getByLabelText("Month")).toHaveValue("2026-03");
+    expect(screen.getByText("No transactions in March 2026.")).toBeInTheDocument();
   });
 });
 
