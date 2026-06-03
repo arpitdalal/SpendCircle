@@ -61,13 +61,15 @@ export function useResolvedTransaction({ enabled = true } = {}): Resolution<Tran
   // edit form without a live backend; real mode uses the reactive query (ADR 0006).
   const value = MOCKS && parsed && enabled ? mockEditableTransaction(parsed.id) : queried;
 
+  // `enabled` flows to the primitive, which goes fully inert when false — suppressing
+  // EVERY effect, including the unparseable-ref report/snackbar for a malformed ref. So
+  // an archived (read-only) Circle drops even a malformed edit URL to its own redirect,
+  // never the generic unavailable-link path. `parsed` stays truthful.
   return useResolvedRef<Transaction>({
     rawRef: transactionRef,
     parsed: parsed != null,
-    // While disabled (navigating away), the query is skipped so `value` is `undefined`
-    // — the primitive reads that as still-pending and fires NO effects (no fallback, no
-    // canonicalize), letting the close navigation win.
     value,
     fallback,
+    enabled,
   });
 }

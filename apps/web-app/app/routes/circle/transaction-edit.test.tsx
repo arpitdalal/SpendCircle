@@ -109,6 +109,19 @@ describe("TransactionEdit — unavailable target (anti-enumeration)", () => {
       expect(location()).toBe(`/circles/${REF}/transactions?month=${currentMonth(new Date())}`),
     );
   });
+
+  it("still takes the bad-link path for a malformed ref on a WRITABLE circle", async () => {
+    // The disabled-circle suppression must not leak to the normal case: on a writable
+    // Circle a malformed edit ref is an app-emitted bad link — generic snackbar + report.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { location } = setup({
+      url: `/circles/${REF}/transactions/not-valid!/edit?month=2026-05`,
+    });
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    expect(screen.getByText("That link isn't available.")).toBeInTheDocument();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });
 
 describe("TransactionEdit — return navigation", () => {
@@ -164,6 +177,22 @@ describe("TransactionEdit — archived Circle stays read-only in place", () => {
     await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
     expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
     expect(screen.queryByRole("form", { name: /edit transaction/i })).not.toBeInTheDocument();
+  });
+
+  it("redirects a MALFORMED edit ref silently — no unavailable snackbar, no app-error report", async () => {
+    // An unparseable ref is normally an app-emitted bad link (reported + snackbar). But a
+    // read-only Circle disables resolution entirely, so even a malformed edit URL drops
+    // to the in-place ledger with no snackbar and no spurious app-error report.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { location } = setup({
+      circle: { status: "archived" },
+      editableTransaction: null,
+      url: `/circles/${REF}/transactions/not-valid!/edit?month=2026-05`,
+    });
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 
