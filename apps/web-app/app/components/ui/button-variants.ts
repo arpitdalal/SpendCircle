@@ -1,4 +1,4 @@
-import { type VariantProps, cva } from "class-variance-authority";
+import { cva, type VariantProps } from "class-variance-authority";
 
 // shadcn/ui-style button variants (ADR 0005). Kept separate from `button.tsx` so
 // the component file only exports components (fast refresh / react-doctor).

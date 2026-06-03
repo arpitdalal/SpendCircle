@@ -1,10 +1,10 @@
 import {
   COLOR_PALETTE,
+  categoryInputSchema,
+  colorLabel,
   DEFAULT_COLOR_ID,
   LIMITS,
   type TransactionType,
-  categoryInputSchema,
-  colorLabel,
 } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
 import { Button } from "~/components/ui/button.js";

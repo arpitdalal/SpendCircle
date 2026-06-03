@@ -1,5 +1,5 @@
 import { api } from "@spend-circle/convex";
-import { type PlainMonth, currentMonth, isValidPlainMonth } from "@spend-circle/domain";
+import { currentMonth, isValidPlainMonth, type PlainMonth } from "@spend-circle/domain";
 import { useConvexAuth, useQuery } from "convex/react";
 import { useParams, useSearchParams } from "react-router";
 import { useCircle } from "~/routes/layouts/circle-layout.js";

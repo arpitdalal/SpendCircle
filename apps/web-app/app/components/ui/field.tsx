@@ -30,7 +30,6 @@ export function Field({
 }: ComponentProps<"div"> & FieldVariantProps) {
   return (
     <div
-      role="group"
       data-slot="field"
       data-orientation={orientation ?? "vertical"}
       className={cn(fieldVariants({ orientation }), className)}

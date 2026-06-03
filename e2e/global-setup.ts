@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { type FullConfig, chromium } from "@playwright/test";
+import { chromium, type FullConfig } from "@playwright/test";
 
 const STORAGE_STATE = "e2e/.auth/state.json";
 
@@ -45,6 +45,10 @@ export default async function globalSetup(config: FullConfig) {
       [email, password] as const,
     );
     if (result !== "ok") throw new Error(`E2E sign-in failed: ${result}`);
+
+    // Better Auth 1.6 persists the session for the next app boot, but the already
+    // mounted sign-in route does not synchronously re-resolve Convex auth state.
+    await page.goto(baseURL, { waitUntil: "domcontentloaded" });
 
     // Confirm the authenticated shell actually renders from the real backend.
     await page.getByRole("heading", { name: "Your circles" }).waitFor({ timeout: 30_000 });

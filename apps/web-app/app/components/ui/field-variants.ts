@@ -1,4 +1,4 @@
-import { type VariantProps, cva } from "class-variance-authority";
+import { cva, type VariantProps } from "class-variance-authority";
 
 // shadcn/ui Field orientation variants (ADR 0005). Kept out of `field.tsx` so the
 // component module only exports components (fast refresh / react-doctor). `data-invalid`

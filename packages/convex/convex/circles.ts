@@ -1,4 +1,4 @@
-import { DEFAULT_COLOR_ID, buildRef, circleInputSchema } from "@spend-circle/domain";
+import { buildRef, circleInputSchema, DEFAULT_COLOR_ID } from "@spend-circle/domain";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel.js";
 import { mutation, query } from "./_generated/server.js";
