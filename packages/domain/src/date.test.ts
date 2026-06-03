@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { addMonths, isValidPlainDate, monthOf, monthRange, toPlainDate } from "./date.js";
+import {
+  addMonths,
+  currentMonth,
+  defaultDateInMonth,
+  isValidPlainDate,
+  monthOf,
+  monthRange,
+  toPlainDate,
+} from "./date.js";
 
 describe("isValidPlainDate", () => {
   it("accepts a real date", () => {
@@ -31,5 +39,18 @@ describe("month helpers", () => {
 describe("toPlainDate", () => {
   it("formats a Date using local parts", () => {
     expect(toPlainDate(new Date(2026, 4, 9))).toBe("2026-05-09");
+  });
+});
+
+describe("defaultDateInMonth", () => {
+  const today = new Date(2026, 4, 9); // 2026-05-09
+
+  it("uses today when today is in the selected month", () => {
+    expect(defaultDateInMonth(currentMonth(today), today)).toBe("2026-05-09");
+  });
+
+  it("anchors to the first of a different selected month", () => {
+    expect(defaultDateInMonth("2026-03", today)).toBe("2026-03-01");
+    expect(defaultDateInMonth("2026-12", today)).toBe("2026-12-01");
   });
 });

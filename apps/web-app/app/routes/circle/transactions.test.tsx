@@ -435,6 +435,41 @@ describe("CircleTransactions — Monthly Ledger (RPT-1)", () => {
     expect(screen.getByLabelText("Month")).toHaveValue("2026-03");
     expect(screen.getByText("No transactions in March 2026.")).toBeInTheDocument();
   });
+
+  it("never commits a non-valid month to the ledger", () => {
+    setup({ transactions: [] });
+    const monthInput = screen.getByLabelText("Month");
+    const now = currentMonth(new Date());
+    expect(monthInput).toHaveValue(now);
+
+    // The handler only commits a value `isValidPlainMonth` accepts, so a bad month never
+    // reaches the ledger queries (they throw `Invalid month`). jsdom — like a real
+    // month-picker — sanitizes an out-of-range `type="month"` value to "", so what's
+    // observable here is that the guard refuses to commit it and the month stays put;
+    // the predicate itself (rejecting "2026-13" etc.) is covered in the domain tests.
+    fireEvent.change(monthInput, { target: { value: "2026-13" } });
+    expect(monthInput).toHaveValue(now);
+  });
+
+  it("defaults a create's date into the selected (non-current) month", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategory({ name: "Groceries", type: "expense" })] });
+
+    // Navigate off the current month, then open a create — its date anchors to the
+    // selected month so the new Transaction lands in the visible ledger, not silently
+    // in today's month.
+    fireEvent.change(screen.getByLabelText("Month"), { target: { value: "2026-03" } });
+    await user.click(screen.getByRole("button", { name: "Add expense" }));
+    const form = screen.getByRole("form", { name: /add expense/i });
+    expect(within(form).getByLabelText("Date")).toHaveValue("2026-03-01");
+
+    await user.type(within(form).getByLabelText("Title"), "Back-dated");
+    await user.type(within(form).getByLabelText(/Amount/), "10");
+    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await user.click(within(form).getByRole("button", { name: "Add expense" }));
+
+    expect(createTransaction).toHaveBeenCalledWith(expect.objectContaining({ date: "2026-03-01" }));
+  });
 });
 
 describe("CircleTransactions — edit (TXN-2)", () => {

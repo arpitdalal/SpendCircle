@@ -5,12 +5,13 @@ import {
   type TransactionType,
   addMonths,
   currentMonth,
+  defaultDateInMonth,
   formatMinorUnits,
+  isValidPlainMonth,
   minorUnitsToMajorString,
   parseAmountToMinorUnits,
   toCurrencyCode,
   toMutationArgs,
-  toPlainDate,
   transactionFieldSchemas,
   transactionFormSchema,
 } from "@spend-circle/domain";
@@ -86,9 +87,10 @@ function resolvePaidBy(
 }
 
 /**
- * The Monthly Ledger — the Circle's operational Transaction management surface and
- * its default view (glossary; PRD stories 62–67). It shows ONE selected month: that
- * month's Income / Expense / Net totals, that month's active Transactions (sorted
+ * The Monthly Ledger — the Circle's operational Transaction management surface
+ * (glossary; PRD stories 62–67), reached via the Transactions route (the Circle
+ * index is the Dashboard — RPT-3/4/6). It shows ONE selected month: that month's
+ * Income / Expense / Net totals, that month's active Transactions (sorted
  * Transaction Date desc then created-at desc), and month/year navigation (PRD 64).
  * Archived Transactions are excluded (TXN-3). Dedicated Add Expense / Add Income
  * CTAs (not a type dropdown — PRD 27, 28) open a Transaction form scoped to that
@@ -114,9 +116,9 @@ const openFormKey = (form: OpenForm) =>
 
 export default function CircleTransactions() {
   const circle = useCircle();
-  // The selected month, defaulting to the current month (the default Ledger view —
-  // glossary). Navigation is pure month arithmetic via `addMonths` (no Date math), so
-  // year boundaries (Dec→Jan) just work.
+  // The selected month, defaulting to the current month (the Ledger opens on the
+  // current month). Navigation is pure month arithmetic via `addMonths` (no Date math),
+  // so year boundaries (Dec→Jan) just work.
   const [month, setMonth] = useState<PlainMonth>(() => currentMonth(new Date()));
   const { summary, transactions } = useMonthlyLedger(circle.id, month);
   // The open create/edit form, or null when closed. The two CTAs each open a create
@@ -163,6 +165,7 @@ export default function CircleTransactions() {
           key={openFormKey(openForm)}
           circle={circle}
           mode={openForm}
+          selectedMonth={month}
           onClose={() => setOpenForm(null)}
         />
       ) : null}
@@ -222,9 +225,13 @@ function MonthNavigator({
         type="month"
         value={month}
         onChange={(event) => {
-          // The native control clears to "" when emptied; ignore that so the Ledger
-          // always has a selected month.
-          if (event.target.value) {
+          // Commit only a valid "YYYY-MM". The native control clears to "" when emptied
+          // (ignored, so the Ledger always has a selected month); and where the browser
+          // has no real month picker it degrades to a free-text field that can yield an
+          // out-of-range/garbage month — both ledger queries throw `Invalid month` on
+          // that (ledger.ts/transactions.ts), so reject it here at the source. With this
+          // guard `month` is always valid, so the prev/next `addMonths` never sees NaN.
+          if (isValidPlainMonth(event.target.value)) {
             onChange(event.target.value);
           }
         }}
@@ -329,10 +336,12 @@ type TransactionFormMode =
 function TransactionForm({
   circle,
   mode,
+  selectedMonth,
   onClose,
 }: {
   circle: Circle;
   mode: TransactionFormMode;
+  selectedMonth: PlainMonth;
   onClose: () => void;
 }) {
   const createTransaction = useCreateTransaction();
@@ -407,7 +416,10 @@ function TransactionForm({
           title: "",
           amount: "",
           note: "",
-          date: toPlainDate(new Date()),
+          // Default into the month the Ledger is showing, so a create from a
+          // non-current month lands in the visible ledger (the row + totals confirm
+          // it) instead of silently in today's month.
+          date: defaultDateInMonth(selectedMonth, new Date()),
           categoryIds: [],
           paidByMemberId: "",
         }

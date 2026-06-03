@@ -70,9 +70,15 @@ test("the expense form blocks submit and explains a missing category", async ({
 /**
  * RPT-1 true-E2E: the Monthly Ledger shows ONE selected month — the month's totals
  * (computed server-side by `getMonthlyLedger`) and that month's Transactions — with
- * month navigation. Records an expense (dated today), confirms it lands in the current
- * month with the Net total reflecting it, jumps to a far-past empty month (zero totals,
- * empty list), and navigates back to find the row again — all against the real backend.
+ * month navigation, all against the real backend.
+ *
+ * Totals are asserted EXACTLY, which the shared current month can't support: the suite
+ * runs `fullyParallel` and both projects share one Personal Circle (global-setup mints a
+ * single User per run), and another spec records income there, so the current month's net
+ * is nondeterministic. Instead each project records into its OWN far-future month — empty
+ * at run start (the User is fresh) and never written by any other spec — so the month's
+ * totals are exactly this test's one expense. Navigating the create into that month relies
+ * on the form defaulting its date to the selected month.
  */
 test("the monthly ledger totals a month and navigates between months", async ({
   page,
@@ -80,8 +86,12 @@ test("the monthly ledger totals a month and navigates between months", async ({
   const stamp = `${Date.now()}-${testInfo.project.name}`;
   const categoryName = `E2E L ${stamp}`; // keep ≤ 40 chars (categoryNameMax)
   const title = `E2E Ledger ${stamp}`;
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  // A private month per project (see playwright.config projects) so the two parallel
+  // runs against the shared Personal Circle never share a month's totals.
+  const ledger =
+    testInfo.project.name === "mobile-chromium"
+      ? { month: "2999-11", label: "November 2999" }
+      : { month: "2999-10", label: "October 2999" };
 
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
@@ -91,7 +101,15 @@ test("the monthly ledger totals a month and navigates between months", async ({
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
+  // Select the private month FIRST — it starts empty, so server totals are zero, and the
+  // create form will default its date into this month.
   await page.getByRole("link", { name: "Transactions" }).click();
+  await page.getByLabel("Month", { exact: true }).fill(ledger.month);
+  await expect(page.getByText(`No transactions in ${ledger.label}.`)).toBeVisible();
+  const totals = page.getByRole("group", { name: "Monthly totals" });
+  await expect(totals).toContainText("$0.00");
+
+  // Record an expense into the selected month.
   await page.getByRole("button", { name: "Add expense" }).click();
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
@@ -99,25 +117,22 @@ test("the monthly ledger totals a month and navigates between months", async ({
   await form.getByRole("button", { name: categoryName }).click();
   await form.getByRole("button", { name: "Add expense" }).click();
 
-  // The current month (the default Ledger view) lists the new expense, and the Net
-  // total reflects it (the Personal Circle is shared across the run, so other expenses
-  // may add to the magnitude — assert the sign + a non-zero net, not an exact figure).
+  // The row appears and the month's totals reflect exactly this one expense: a -$12.50 Net.
   const row = page.getByRole("listitem").filter({ hasText: title });
   await expect(row).toBeVisible();
-  const totals = page.getByRole("group", { name: "Monthly totals" });
-  await expect(totals).toContainText("-$"); // a negative net (expense-only month)
-  await expect(page.getByLabel("Month", { exact: true })).toHaveValue(currentMonth);
+  await expect(totals).toContainText("-$12.50");
 
-  // Jump to a far-past month that no test ever writes to: zero totals, empty list.
+  // Jump to a far-past month no spec ever writes to: zero totals, empty list (totals are
+  // per-month, not global).
   await page.getByLabel("Month", { exact: true }).fill("2000-06");
   await expect(page.getByText("No transactions in June 2000.")).toBeVisible();
   await expect(row).toHaveCount(0);
   await expect(totals).toContainText("$0.00");
 
-  // Navigate back to the current month and the expense is there again — the totals are
-  // per-month, not global.
-  await page.getByLabel("Month", { exact: true }).fill(currentMonth);
+  // Navigate back and the expense + its total are there again.
+  await page.getByLabel("Month", { exact: true }).fill(ledger.month);
   await expect(row).toBeVisible();
+  await expect(totals).toContainText("-$12.50");
 });
 
 /**
