@@ -10,8 +10,8 @@ export type PlainMonth = string; // "YYYY-MM"
 const PLAIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PLAIN_MONTH_RE = /^\d{4}-\d{2}$/;
 
-export function isValidPlainDate(value: string): value is PlainDate {
-  if (!PLAIN_DATE_RE.test(value)) {
+export function isValidPlainDate(value: string | null | undefined): value is PlainDate {
+  if (value == null || !PLAIN_DATE_RE.test(value)) {
     return false;
   }
   const [year, month, day] = value.split("-").map(Number) as [number, number, number];
@@ -22,8 +22,8 @@ export function isValidPlainDate(value: string): value is PlainDate {
   return day >= 1 && day <= daysInMonth;
 }
 
-export function isValidPlainMonth(value: string): value is PlainMonth {
-  if (!PLAIN_MONTH_RE.test(value)) {
+export function isValidPlainMonth(value: string | null | undefined): value is PlainMonth {
+  if (value == null || !PLAIN_MONTH_RE.test(value)) {
     return false;
   }
   const month = Number(value.split("-")[1]);

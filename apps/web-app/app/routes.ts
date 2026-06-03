@@ -31,6 +31,11 @@ export default [
       route(":circleRef", "routes/layouts/circle-layout.tsx", [
         index("routes/circle/dashboard.tsx"),
         route("transactions", "routes/circle/transactions.tsx"),
+        // The Transaction edit object route (ADR 0016/0017): a canonical `slug-id`
+        // ref under the resolved Circle, resolving its own target by ID via
+        // `useResolvedTransaction` and falling back to the Circle's Transactions
+        // route. Lands WITH its feature (TXN-5) — no caller-less placeholder.
+        route("transactions/:transactionRef/edit", "routes/circle/transaction-edit.tsx"),
         route("categories", "routes/circle/categories.tsx"),
       ]),
     ]),

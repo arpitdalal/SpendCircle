@@ -112,3 +112,34 @@ export function mockCircle(id: string): Circle {
     currencyLocked: false,
   };
 }
+
+/**
+ * Synthesizes an editable Transaction for the edit object route under MOCKS, so
+ * `/transactions/:transactionRef/edit` renders its prefilled form offline without a
+ * live backend (the parallel of {@link mockCircle} for `getEditableTransaction` —
+ * ADR 0006). Typed against the derived {@link Transaction} contract, so a shape
+ * change to `toTransactionView` fails typecheck here. `canEditFields` is true: the
+ * real query only ever returns a Transaction the viewer may field-edit.
+ */
+export function mockEditableTransaction(id: string): Transaction {
+  const me = {
+    id: "mock-member-you" as Member["id"],
+    displayName: "You",
+    image: undefined,
+  };
+  return {
+    id: id as Transaction["id"],
+    ref: `mock-txn-${id}`,
+    type: "expense",
+    title: "Mock transaction",
+    note: undefined,
+    amountMinorUnits: 1250,
+    date: "2026-05-15",
+    month: "2026-05",
+    status: "active",
+    recordedBy: me,
+    paidBy: me,
+    categories: [{ id: "mock-cat-groceries" as Category["id"], name: "Groceries", color: "green" }],
+    canEditFields: true,
+  };
+}

@@ -4,6 +4,7 @@ import {
   currentMonth,
   defaultDateInMonth,
   isValidPlainDate,
+  isValidPlainMonth,
   monthOf,
   monthRange,
   toPlainDate,
@@ -18,6 +19,31 @@ describe("isValidPlainDate", () => {
     expect(isValidPlainDate("2026-02-30")).toBe(false);
     expect(isValidPlainDate("2026-13-01")).toBe(false);
     expect(isValidPlainDate("2026-1-1")).toBe(false);
+  });
+
+  it("rejects null/undefined (a missing URL/query value)", () => {
+    expect(isValidPlainDate(null)).toBe(false);
+    expect(isValidPlainDate(undefined)).toBe(false);
+  });
+});
+
+describe("isValidPlainMonth", () => {
+  it("accepts a real YYYY-MM month", () => {
+    expect(isValidPlainMonth("2026-05")).toBe(true);
+    expect(isValidPlainMonth("2026-12")).toBe(true);
+  });
+
+  it("rejects out-of-range months and bad shapes", () => {
+    expect(isValidPlainMonth("2026-13")).toBe(false);
+    expect(isValidPlainMonth("2026-00")).toBe(false);
+    expect(isValidPlainMonth("2026-5")).toBe(false);
+    expect(isValidPlainMonth("2026-05-01")).toBe(false);
+    expect(isValidPlainMonth("")).toBe(false);
+  });
+
+  it("rejects null/undefined so an absent `?month=` is treated as invalid", () => {
+    expect(isValidPlainMonth(null)).toBe(false);
+    expect(isValidPlainMonth(undefined)).toBe(false);
   });
 });
 

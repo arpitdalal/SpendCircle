@@ -10,14 +10,27 @@ function isConvexId(candidate: string): boolean {
 }
 
 /**
- * Parses a Circle ref from the URL. The Circle-scoped object guards
- * (transactions/:transactionRef, categories/:categoryRef) parse identically —
- * same `isConvexId` validator, differing only in the route param read and the
- * query subscribed — so when they land they reuse `parseRef(ref, isConvexId)`
- * directly (ADR 0016); only the resolution adapter varies, not the parser. No
- * object-specific wrapper is added until an object guard actually exists.
+ * Parses a Circle ref from the URL. The Circle-scoped object guards parse
+ * identically — same `isConvexId` validator, differing only in the route param
+ * read and the query subscribed (ADR 0016); only the resolution adapter varies,
+ * not the parser.
  */
 export function parseCircleRef(ref: string | undefined): ParsedRef | null {
+  if (!ref) {
+    return null;
+  }
+  return parseRef(ref, isConvexId);
+}
+
+/**
+ * Parses a Transaction ref from the `/transactions/:transactionRef/edit` object
+ * route (TXN-5). Identical parsing to {@link parseCircleRef} — the same domain
+ * `parseRef` + `isConvexId` (ADR 0016); only the route param and the subscribed
+ * query (`getEditableTransaction`) differ, owned by `useResolvedTransaction`. A
+ * malformed ref returns `null`, which the adapter treats as unparseable (an
+ * app-emitted bad link) and reports while still falling back generically.
+ */
+export function parseTransactionRef(ref: string | undefined): ParsedRef | null {
   if (!ref) {
     return null;
   }

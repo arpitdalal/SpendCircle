@@ -173,8 +173,10 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   const row = page.getByRole("listitem").filter({ hasText: title });
   await expect(row).toBeVisible();
 
-  // Edit: change the title + amount, save, and see the row update live.
-  await row.getByRole("button", { name: `Edit ${title}` }).click();
+  // Edit: open the canonical edit object route (TXN-5), change the title + amount,
+  // save, and see the row update live back on the ledger.
+  await row.getByRole("link", { name: `Edit ${title}` }).click();
+  await expect(page).toHaveURL(/\/transactions\/[^/]+\/edit\?month=/);
   const editForm = page.getByRole("form", { name: /edit transaction/i });
   await editForm.getByLabel("Title").fill(editedTitle);
   await editForm.getByLabel(/Amount/).fill("25.00");
@@ -185,7 +187,7 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   await expect(editedRow).toContainText("-$25.00"); // still an expense, new amount
 
   // Type Change: switch to Income — confirm, re-pick the income category, save.
-  await editedRow.getByRole("button", { name: `Edit ${editedTitle}` }).click();
+  await editedRow.getByRole("link", { name: `Edit ${editedTitle}` }).click();
   const typeForm = page.getByRole("form", { name: /edit transaction/i });
   await typeForm.getByRole("button", { name: "Income" }).click();
   await typeForm.getByRole("alertdialog").getByRole("button", { name: "Change type" }).click();
@@ -197,4 +199,66 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   const incomeRow = page.getByRole("listitem").filter({ hasText: editedTitle });
   await expect(incomeRow).toContainText("+$25.00"); // flipped to income
   await expect(incomeRow).toContainText(incomeCat);
+});
+
+/**
+ * TXN-5 true-E2E: the Transactions page is URL-restorable. The selected Monthly Ledger
+ * month, the Add form, and an edit deep link all survive a full reload — proving the
+ * URL (not transient React state) owns navigation (ADR 0017) against the real router
+ * and self-hosted backend. Uses a private far-future month per project so the parallel
+ * runs never collide on the shared Personal Circle.
+ */
+test("the transactions page restores month, add form, and edit link across reload", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${Date.now()}-${testInfo.project.name}`;
+  const categoryName = `E2E U ${stamp}`; // ≤ 40 chars (categoryNameMax)
+  const title = `E2E URL ${stamp}`;
+  const month = testInfo.project.name === "mobile-chromium" ? "2998-04" : "2998-03";
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Personal/ }).click();
+
+  await page.getByRole("link", { name: "Categories" }).click();
+  await page.getByLabel(/New expense category/).fill(categoryName);
+  await page.getByRole("button", { name: "Add category" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
+
+  // A bare Transactions route normalizes to a month in the URL.
+  await page.getByRole("link", { name: "Transactions" }).click();
+  await expect(page).toHaveURL(/\/transactions\?month=\d{4}-\d{2}/);
+
+  // Select the private month; the URL owns it and survives reload.
+  await page.getByLabel("Month", { exact: true }).fill(month);
+  await expect(page).toHaveURL(new RegExp(`month=${month}`));
+  await page.reload();
+  await expect(page.getByLabel("Month", { exact: true })).toHaveValue(month);
+
+  // Opening Add expense deep-links new=expense and the form survives reload.
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await expect(page).toHaveURL(new RegExp(`month=${month}&new=expense`));
+  await page.reload();
+  await expect(page.getByRole("form", { name: /add expense/i })).toBeVisible();
+
+  // Record into the private month, then open its edit deep link and reload it.
+  const form = page.getByRole("form", { name: /add expense/i });
+  await form.getByLabel("Title").fill(title);
+  await form.getByLabel(/Amount/).fill("9.00");
+  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("button", { name: "Add expense" }).click();
+
+  const row = page.getByRole("listitem").filter({ hasText: title });
+  await expect(row).toBeVisible();
+  await row.getByRole("link", { name: `Edit ${title}` }).click();
+  await expect(page).toHaveURL(new RegExp(`/transactions/[^/]+/edit\\?month=${month}`));
+  // The edit form is fetched by id, so a reload reopens it on the latest server values.
+  await page.reload();
+  await expect(
+    page.getByRole("form", { name: /edit transaction/i }).getByLabel("Title"),
+  ).toHaveValue(title);
+
+  // Closing returns to the ledger with the same month preserved.
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page).toHaveURL(new RegExp(`/transactions\\?month=${month}`));
+  await expect(row).toBeVisible();
 });
