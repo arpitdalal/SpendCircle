@@ -27,6 +27,7 @@ import { Textarea } from "~/components/ui/textarea.js";
 import {
   type Category,
   type Circle,
+  type Member,
   type PaginatedTransactions,
   type Transaction,
   useCategories,
@@ -42,6 +43,43 @@ const TYPE_LABEL: Record<TransactionType, string> = {
   expense: "Expense",
   income: "Income",
 };
+
+const STALE_PAID_BY_ERROR =
+  "The selected payer is no longer a member of this circle. Pick a current member.";
+
+/**
+ * Resolves a selected Paid By (a form string) to a current Member's branded id.
+ *
+ * Returns `{ ok: false }` only when a NON-EMPTY selection no longer matches a current
+ * Member AND isn't the Transaction's existing Paid By — i.e. the picked Member was
+ * removed from the Circle while the form was open. The caller BLOCKS submit on that
+ * with a visible message rather than silently dropping the change to self / leaving it
+ * unchanged (README §4 "no silent failures"; a stale form must never "succeed" — see
+ * QA-1). Keeping the existing Paid By (even a now-Removed one) stays an allowed no-op,
+ * and an empty selection defers to the server default — mirroring the keep-attached /
+ * block-newly-added asymmetry the archived-Category guard uses (QA-2). The server is
+ * the authority either way (ADR 0015); this is the courtesy that surfaces the hazard.
+ *
+ * No cast: the resolved id is the branded `Member["id"]` off the loaded `members` row
+ * or the Transaction's own Paid By — never the opaque form string widened to an id.
+ */
+function resolvePaidBy(
+  selected: string,
+  members: Member[],
+  currentPaidById?: Member["id"],
+): { ok: true; memberId?: Member["id"] } | { ok: false } {
+  if (!selected) {
+    return { ok: true, memberId: undefined }; // nothing picked → server applies its default
+  }
+  const current = members.find((member) => member.id === selected)?.id;
+  if (current) {
+    return { ok: true, memberId: current };
+  }
+  if (currentPaidById && selected === currentPaidById) {
+    return { ok: true, memberId: currentPaidById }; // unchanged existing Paid By — a no-op
+  }
+  return { ok: false }; // selected Member is gone — block, don't drop
+}
 
 /**
  * Monthly Ledger / Transactions surface (PRD stories 62–67). TXN-1 lands the core
@@ -286,9 +324,14 @@ function TransactionForm({
       try {
         if (mode.kind === "create") {
           const args = toMutationArgs(value, selfMemberId);
-          const paidByMemberId = args.paidByMemberId
-            ? (members ?? []).find((member) => member.id === args.paidByMemberId)?.id
-            : undefined;
+          // `toMutationArgs` already collapsed a self / unpicked Paid By to undefined;
+          // resolve any explicit pick, blocking if that Member was removed mid-form
+          // rather than silently defaulting back to self.
+          const paidBy = resolvePaidBy(args.paidByMemberId ?? "", members ?? []);
+          if (!paidBy.ok) {
+            setSubmitError(STALE_PAID_BY_ERROR);
+            return;
+          }
           await createTransaction({
             circleId: circle.id,
             type: args.type,
@@ -297,7 +340,7 @@ function TransactionForm({
             amountMinorUnits: args.amountMinorUnits,
             date: args.date,
             categoryIds,
-            paidByMemberId,
+            paidByMemberId: paidBy.memberId,
           });
         } else {
           // Re-parse the (already form-validated) amount to minor units (ADR 0009).
@@ -305,13 +348,15 @@ function TransactionForm({
           if (!parsed.ok) {
             throw new Error("amount failed to parse after validation");
           }
-          // Resolve the selected Paid By to a current Member's id, or the existing
-          // (possibly Removed) Paid By when unchanged; omit only if unresolvable so the
-          // server leaves it untouched.
+          // Resolve the selected Paid By to a current Member's id, keeping the existing
+          // (possibly Removed) Paid By as a no-op; a pick that was removed mid-edit can't
+          // resolve, so block rather than silently leave Paid By unchanged.
           const selected = value.paidByMemberId || selfMemberId;
-          const paidByMemberId =
-            (members ?? []).find((member) => member.id === selected)?.id ??
-            (selected === mode.transaction.paidBy.id ? mode.transaction.paidBy.id : undefined);
+          const paidBy = resolvePaidBy(selected, members ?? [], mode.transaction.paidBy.id);
+          if (!paidBy.ok) {
+            setSubmitError(STALE_PAID_BY_ERROR);
+            return;
+          }
           // Send every field the form owns; the server diffs against the stored
           // Transaction and records only what changed. `note` is sent always (""
           // clears it); `type` + the new Categories drive the Type Change path.
@@ -323,7 +368,7 @@ function TransactionForm({
             amountMinorUnits: parsed.minorUnits,
             date: value.date,
             categoryIds,
-            ...(paidByMemberId ? { paidByMemberId } : {}),
+            ...(paidBy.memberId ? { paidByMemberId: paidBy.memberId } : {}),
           });
         }
         onClose();

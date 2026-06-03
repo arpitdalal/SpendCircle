@@ -218,6 +218,37 @@ describe("CircleTransactions", () => {
     );
   });
 
+  it("blocks creating when the selected Paid By member is removed mid-form", async () => {
+    const user = userEvent.setup();
+    // A mutable members list the query double reads by reference, so removing a Member
+    // in place models the reactive `listMembers` dropping them while the form is open.
+    const members: Member[] = [
+      makeMember(),
+      makeMember({ id: testId<Member["id"]>("mem-y"), displayName: "Yuki", isSelf: false }),
+    ];
+    const { rerenderInCircle } = setup({
+      categories: [makeCategory({ name: "Groceries", type: "expense" })],
+      members,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Add expense" }));
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await user.type(within(form).getByLabelText("Title"), "Dinner");
+    await user.type(within(form).getByLabelText(/Amount/), "20");
+    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await user.selectOptions(within(form).getByLabelText("Paid by"), "mem-y");
+
+    // Another Member removes Yuki from the circle while the form is open.
+    members.splice(1, 1);
+    rerenderInCircle(<CircleTransactions />);
+
+    await user.click(within(form).getByRole("button", { name: "Add expense" }));
+
+    // The stale pick is surfaced, never silently dropped to self, and nothing is created.
+    expect(await within(form).findByText(/no longer a member/i)).toBeInTheDocument();
+    expect(createTransaction).not.toHaveBeenCalled();
+  });
+
   it("reveals required errors on submit and does not create when fields are empty", async () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategory({ name: "Groceries", type: "expense" })] });
@@ -563,6 +594,62 @@ describe("CircleTransactions — edit (TXN-2)", () => {
     await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
     const form = screen.getByRole("form", { name: /edit transaction/i });
     expect(within(form).getByRole("option", { name: "Rex (removed)" })).toBeInTheDocument();
+  });
+
+  it("blocks saving when a newly selected Paid By member is removed mid-edit", async () => {
+    const user = userEvent.setup();
+    // Mutable members list (read by reference by the query double); removing Yuki in
+    // place models the reactive `listMembers` dropping them mid-edit.
+    const members: Member[] = [
+      makeMember(), // self, the Transaction's current Paid By
+      makeMember({ id: testId<Member["id"]>("mem-y"), displayName: "Yuki", isSelf: false }),
+    ];
+    const { rerenderInCircle } = setup({
+      transactions: [makeTransaction({ title: "Weekly shop" })],
+      members,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    await user.selectOptions(within(form).getByLabelText("Paid by"), "mem-y");
+
+    // Yuki is removed from the circle before Save.
+    members.splice(1, 1);
+    rerenderInCircle(<CircleTransactions />);
+
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+
+    // Surfaced, not silently left unchanged — and nothing is saved (server stays the
+    // authority; this is the courtesy block, mirroring the archived-category guard).
+    expect(await within(form).findByText(/no longer a member/i)).toBeInTheDocument();
+    expect(updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it("still saves a no-op when keeping a now-removed current Paid By", async () => {
+    const user = userEvent.setup();
+    // The Transaction's Paid By is Rex, who is no longer a current Member. Keeping him
+    // (the unchanged value) must remain an allowed no-op, not a blocked stale pick.
+    setup({
+      transactions: [
+        makeTransaction({
+          title: "Weekly shop",
+          paidBy: { id: testId<Member["id"]>("mem-rex"), displayName: "Rex", image: undefined },
+        }),
+      ],
+      members: [makeMember()],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Edit Weekly shop" }));
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    await user.clear(within(form).getByLabelText("Title"));
+    await user.type(within(form).getByLabelText("Title"), "Edited");
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+
+    // No block: keeping the removed Paid By sends it unchanged; the server no-ops it.
+    expect(within(form).queryByText(/no longer a member/i)).not.toBeInTheDocument();
+    expect(updateTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Edited", paidByMemberId: "mem-rex" }),
+    );
   });
 
   it("surfaces a generic error and reports the failure when the edit fails", async () => {

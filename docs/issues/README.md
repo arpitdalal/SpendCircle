@@ -110,6 +110,7 @@ graph TD
   %% Quality / Validation
   TXN2 --> QA1[QA-1 · Concurrency e2e validation]
   TXN3 --> QA1
+  MEM5 --> QA1
 
   %% Platform
   TXN1 --> EXP1[EXP-1 · CSV Export]
@@ -128,8 +129,8 @@ graph TD
 - **Tier 3 — collaborate + report:** `MEM-2…9`, `RPT-2`, `RPT-4`, `RPT-5`, `RPT-6`,
   `EML-2`, `CS-4`.
 - **Tier 4 — wire the cross-cutting net + validate under load:** `NTF-2` (fans out to every
-  event emitted by the slices above) and `QA-1` (concurrency e2e; needs `TXN-2` + `TXN-3`
-  shipped). Both run last.
+  event emitted by the slices above) and `QA-1` (concurrency e2e; needs `TXN-2` + `TXN-3` for the
+  archive-vs-edit race, and `MEM-5` for the Paid-By-removed-mid-edit race). Both run last.
 
 ---
 

@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Status** | Todo |
-| **Depends on** | TXN-2, TXN-3, MEM-1 |
+| **Depends on** | TXN-2, TXN-3, MEM-1, MEM-5 |
 | **Unlocks** | — (terminal; the home for future concurrency/stale-write e2e scenarios) |
 | **PRD stories** | Live read-only / revocation promise (same basis as the §5.7 live-update bar) |
 | **ADRs** | 0015, 0016, 0018, 0019 |
-| **Glossary** | Transaction, Recorded By, Paid By, Archive, Owner, Member |
+| **Glossary** | Transaction, Recorded By, Paid By, Archive, Owner, Member, Removed Member |
 
 ## Intent
 
@@ -21,7 +21,8 @@ makes the E2E surface (mock-mode could never race two sessions over one row).
 It is deliberately the **last** validation slice, like NTF-2 — and it is the standing home for
 concurrency/stale-write scenarios. It ships seeded with the canonical case (Owner archives a
 Transaction while its Recorded By is mid-edit); future races (two Members editing distinct
-fields, Currency-lock race, Category archive vs. attach) are appended here as their features land.
+fields, Currency-lock race, Category archive vs. attach, **Paid By target removed mid-edit**) are
+appended here as their features land.
 
 ## Implement
 
@@ -43,6 +44,28 @@ fields, Currency-lock race, Category archive vs. attach) are appended here as th
 - **No new app code is expected.** If a step exposes a gap (e.g. the edit form swallows the
   rejection or applies a stale write), that is a bug fixed at its owning slice (TXN-2 / TXN-3)
   with a regression test — not patched or skipped here.
+
+### Appended scenario — Paid By target removed mid-edit (needs MEM-5)
+
+A second interleaving on the same form surface, added once **MEM-5 (Remove Member)** ships (hence
+the dependency): session **A = Recorded By** opens the edit form and **selects another current
+Member as Paid By**; session **B = Owner** then **removes that Member** from the Circle and A
+submits. The hazard is a *stale selection* (not stale-archived state): A's chosen Paid By no longer
+resolves to a current Member.
+
+- **Shipped behavior to lock in (TXN-2):** the form must **block the save with an accessible
+  message** ("the selected payer is no longer a member… pick a current member") rather than
+  silently dropping the change — leaving Paid By unchanged on edit, or defaulting back to self on
+  create. This mirrors the keep-existing / block-newly-added asymmetry of the archived-Category
+  guard ([QA-2](QA-2-archived-category-mid-creation.md)): **keeping** the Transaction's existing
+  (now-Removed) Paid By stays an allowed no-op; **newly picking** a Member who is then removed is
+  blocked. Server stays the authority — `updateTransaction` / `createTransaction` reject a Removed
+  Member as Paid By (`requireCurrentMember`, ADR 0015) as the backstop.
+- A component test already covers the client block by mutating the doubled `listMembers` mid-form
+  ([transactions.test.tsx](../../apps/web-app/app/routes/circle/transactions.test.tsx)); this slice
+  adds the **real-backend, two-context** proof — only achievable once MEM-5 can drive the live
+  removal — that the reactive `listMembers` flip reaches the open form and the block holds end to
+  end.
 
 ## Why this way
 
