@@ -1,4 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { type Page, expect, test } from "@playwright/test";
+
+/**
+ * Select a Ledger month through the native month input the way the UI commits it:
+ * set the value, then blur. The Ledger commits the chosen month on BLUR (not per
+ * keystroke) so a multi-keystroke year is entered whole and never pushes junk history
+ * for the transient values the year segment emits while filling; `fill` alone sets the
+ * value without committing it to the URL/ledger.
+ */
+async function selectMonth(page: Page, month: string) {
+  const input = page.getByLabel("Month", { exact: true });
+  await input.fill(month);
+  await input.blur();
+}
 
 /**
  * TRUE-E2E (ADR 0019): record a Transaction through the real frontend → Convex
@@ -104,7 +117,7 @@ test("the monthly ledger totals a month and navigates between months", async ({
   // Select the private month FIRST — it starts empty, so server totals are zero, and the
   // create form will default its date into this month.
   await page.getByRole("link", { name: "Transactions" }).click();
-  await page.getByLabel("Month", { exact: true }).fill(ledger.month);
+  await selectMonth(page, ledger.month);
   await expect(page.getByText(`No transactions in ${ledger.label}.`)).toBeVisible();
   const totals = page.getByRole("group", { name: "Monthly totals" });
   await expect(totals).toContainText("$0.00");
@@ -124,15 +137,54 @@ test("the monthly ledger totals a month and navigates between months", async ({
 
   // Jump to a far-past month no spec ever writes to: zero totals, empty list (totals are
   // per-month, not global).
-  await page.getByLabel("Month", { exact: true }).fill("2000-06");
+  await selectMonth(page, "2000-06");
   await expect(page.getByText("No transactions in June 2000.")).toBeVisible();
   await expect(row).toHaveCount(0);
   await expect(totals).toContainText("$0.00");
 
   // Navigate back and the expense + its total are there again.
-  await page.getByLabel("Month", { exact: true }).fill(ledger.month);
+  await selectMonth(page, ledger.month);
   await expect(row).toBeVisible();
   await expect(totals).toContainText("-$12.50");
+});
+
+/**
+ * Regression (TXN-5): typing a multi-digit year into the native month input must
+ * register the WHOLE year. The input was controlled straight off the async URL state,
+ * so each keystroke of a 4-digit year re-rendered with the not-yet-updated month and
+ * snapped the half-typed year segment back — only the first digit or two survived. This
+ * types the date digit-by-digit (NOT `fill`, which sets the value atomically and hid the
+ * bug in both jsdom and Playwright) and asserts the full year lands. A private far-future
+ * month per project keeps the parallel runs from colliding.
+ */
+test("the month input registers a whole multi-digit year typed digit-by-digit", async ({
+  page,
+}, testInfo) => {
+  const target =
+    testInfo.project.name === "mobile-chromium"
+      ? { value: "2997-08", label: "August 2997" }
+      : { value: "2997-07", label: "July 2997" };
+  const [year, mm] = target.value.split("-");
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: "Transactions" }).click();
+  await expect(page).toHaveURL(/\/transactions\?month=\d{4}-\d{2}/);
+
+  // Drive the native segments with real, separate keystrokes — the exact path that lost
+  // digits before (NOT `fill`, which sets the value atomically and hid the bug). Focus
+  // lands on the month segment; type MM, step to the year segment, then type the 4-digit
+  // year digit-by-digit so a reset of the year buffer would surface as a dropped year.
+  const input = page.getByLabel("Month", { exact: true });
+  await input.focus();
+  await input.pressSequentially(mm, { delay: 50 });
+  await input.press("ArrowRight");
+  await input.pressSequentially(year, { delay: 50 });
+  await input.blur();
+
+  await expect(page).toHaveURL(new RegExp(`month=${target.value}`));
+  await expect(input).toHaveValue(target.value);
+  await expect(page.getByText(`No transactions in ${target.label}.`)).toBeVisible();
 });
 
 /**
@@ -229,7 +281,7 @@ test("the transactions page restores month, add form, and edit link across reloa
   await expect(page).toHaveURL(/\/transactions\?month=\d{4}-\d{2}/);
 
   // Select the private month; the URL owns it and survives reload.
-  await page.getByLabel("Month", { exact: true }).fill(month);
+  await selectMonth(page, month);
   await expect(page).toHaveURL(new RegExp(`month=${month}`));
   await page.reload();
   await expect(page.getByLabel("Month", { exact: true })).toHaveValue(month);

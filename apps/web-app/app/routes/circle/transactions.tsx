@@ -7,7 +7,7 @@ import {
   isValidPlainMonth,
   toCurrencyCode,
 } from "@spend-circle/domain";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Link, useSearchParams } from "react-router";
 import { TransactionForm } from "~/components/transaction-form.js";
 import { Button } from "~/components/ui/button.js";
@@ -185,8 +185,26 @@ function formatMonthLabel(month: PlainMonth): string {
 /**
  * Month/year navigation for the Ledger (PRD 64): previous / next step by one month
  * (`addMonths`, so Dec↔Jan crosses the year correctly), and the native month input
- * jumps to any month. The input is the single source of the value; the buttons drive
- * it through the same `onChange`.
+ * jumps to any month.
+ *
+ * The native `<input type="month">` is UNCONTROLLED (`defaultValue` + a ref), not a
+ * React-controlled `value`. Typing a 4-digit year is a multi-keystroke edit of the
+ * year segment, and writing `value` back into the control mid-edit — from ANY source,
+ * even synchronous local state — resets the browser's in-progress segment buffer and
+ * drops digits (the TXN-5 regression: month moved from synchronous local state to async
+ * URL state, but reflecting any value back is the real fault). Leaving the input
+ * uncontrolled lets the browser fully own segment editing, so the whole year always
+ * registers; we push external month changes (prev/next, a deep link, normalization)
+ * into the DOM through the ref, and read the value back only on commit.
+ *
+ * Commit happens on blur / Enter, not per keystroke: typing "2026" navigates ONCE to
+ * the finished month, never pushing junk history entries (and ledger queries) for the
+ * transient 0002 → 0020 → 0202 the year segment emits while filling. Only a valid
+ * "YYYY-MM" commits; the native control clears to "" when emptied and degrades to a
+ * free-text field (out-of-range/garbage) where the browser has no real month picker —
+ * both make the ledger queries throw `Invalid month` (ledger.ts/transactions.ts), so an
+ * invalid/partial value reverts to the selected month rather than committing. With that
+ * guard `month` is always valid, so the prev/next `addMonths` never sees NaN.
  */
 function MonthNavigator({
   month,
@@ -195,6 +213,32 @@ function MonthNavigator({
   month: PlainMonth;
   onChange: (month: PlainMonth) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // The input is uncontrolled, so `defaultValue` only seeds the first mount; push later
+  // external month changes (prev/next, deep link, normalization) into the DOM directly.
+  // Guarded on inequality so this never clobbers a value the user is mid-typing.
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input && input.value !== month) {
+      input.value = month;
+    }
+  }, [month]);
+
+  const commit = () => {
+    const input = inputRef.current;
+    if (!input) {
+      return;
+    }
+    if (isValidPlainMonth(input.value)) {
+      if (input.value !== month) {
+        onChange(input.value);
+      }
+    } else {
+      input.value = month; // revert a cleared/partial value to the selected month
+    }
+  };
+
   return (
     <fieldset className="flex items-center gap-2">
       <legend className="sr-only">Select month</legend>
@@ -210,18 +254,14 @@ function MonthNavigator({
         Month
       </label>
       <input
+        ref={inputRef}
         id="ledger-month"
         type="month"
-        value={month}
-        onChange={(event) => {
-          // Commit only a valid "YYYY-MM". The native control clears to "" when emptied
-          // (ignored, so the Ledger always has a selected month); and where the browser
-          // has no real month picker it degrades to a free-text field that can yield an
-          // out-of-range/garbage month — both ledger queries throw `Invalid month` on
-          // that (ledger.ts/transactions.ts), so reject it here at the source. With this
-          // guard `month` is always valid, so the prev/next `addMonths` never sees NaN.
-          if (isValidPlainMonth(event.target.value)) {
-            onChange(event.target.value);
+        defaultValue={month}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
           }
         }}
         className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400"

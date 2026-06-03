@@ -162,10 +162,26 @@ describe("CircleTransactions — month URL state (TXN-5)", () => {
     expect(screen.getByLabelText("Month")).toHaveValue("2026-04");
   });
 
-  it("jumps to a chosen month via the month input and names it in the empty state", () => {
-    setup({ transactions: [] });
-    fireEvent.change(screen.getByLabelText("Month"), { target: { value: "2026-03" } });
+  it("jumps to a chosen month via the month input and names it in the empty state", async () => {
+    const { location } = setup({ transactions: [] });
+    const input = screen.getByLabelText("Month");
+    // The draft tracks the input immediately, but commit (and the ledger month) only
+    // lands on blur — never per keystroke — so a multi-keystroke year is entered whole.
+    fireEvent.change(input, { target: { value: "2026-03" } });
+    expect(input).toHaveValue("2026-03");
+    fireEvent.blur(input);
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-03`));
     expect(screen.getByLabelText("Month")).toHaveValue("2026-03");
+    expect(screen.getByText("No transactions in March 2026.")).toBeInTheDocument();
+  });
+
+  it("reverts an emptied month input to the selected month on blur (always has a month)", () => {
+    setup({ initialEntries: [`/circles/${REF}/transactions?month=2026-03`], transactions: [] });
+    const input = screen.getByLabelText("Month");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    // A cleared/partial value never commits; the input snaps back to the selected month.
+    expect(input).toHaveValue("2026-03");
     expect(screen.getByText("No transactions in March 2026.")).toBeInTheDocument();
   });
 });
