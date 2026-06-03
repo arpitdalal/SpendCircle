@@ -48,6 +48,17 @@ export function currentMonth(date: Date): PlainMonth {
   return toPlainDate(date).slice(0, 7);
 }
 
+/**
+ * The date a new Transaction should default to while a given month is in view.
+ * If `today` falls in the selected month, use today (the common case — recording
+ * as you go); otherwise anchor to the first of the selected month so the create
+ * lands inside the month the user is looking at, not silently in the current one.
+ */
+export function defaultDateInMonth(month: PlainMonth, today: Date): PlainDate {
+  const todayDate = toPlainDate(today);
+  return monthOf(todayDate) === month ? todayDate : `${month}-01`;
+}
+
 /** Moves a "YYYY-MM" month by `delta` months (negative moves backward). */
 export function addMonths(month: PlainMonth, delta: number): PlainMonth {
   const [year, monthIndex] = month.split("-").map(Number) as [number, number];

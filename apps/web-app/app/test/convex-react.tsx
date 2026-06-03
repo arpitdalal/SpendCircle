@@ -4,7 +4,14 @@ import { type FunctionReference, getFunctionName } from "convex/server";
 import type { ReactElement } from "react";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { type Mock, vi } from "vitest";
-import type { Category, Circle, Member, PaginationStatus, Transaction } from "~/lib/data.js";
+import type {
+  Category,
+  Circle,
+  Member,
+  MonthlySummary,
+  PaginationStatus,
+  Transaction,
+} from "~/lib/data.js";
 import type { CircleOutletContext } from "~/routes/layouts/circle-layout.js";
 
 /**
@@ -38,9 +45,16 @@ const NAME = {
   listCategories: getFunctionName(api.categories.listCategories),
   listMembers: getFunctionName(api.members.listMembers),
   listTransactions: getFunctionName(api.transactions.listTransactions),
+  getMonthlyLedger: getFunctionName(api.ledger.getMonthlyLedger),
   createTransaction: getFunctionName(api.transactions.createTransaction),
   updateTransaction: getFunctionName(api.transactions.updateTransaction),
   createCategory: getFunctionName(api.categories.createCategory),
+};
+
+/** A zero Monthly Ledger summary — the default for tests that don't drive totals. */
+const EMPTY_MONTHLY_SUMMARY: MonthlySummary = {
+  totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
+  currency: "USD",
 };
 
 /** Models the `listCategories` backend contract: filter by type, optionally include
@@ -63,6 +77,9 @@ interface ConvexState {
   transactionsStatus?: PaginationStatus;
   /** The paginated `loadMore`; assert against it for "Load more" wiring. */
   loadMore?: () => void;
+  /** `getMonthlyLedger` summary (totals + currency); `undefined` ≡ loading, `null` ≡
+   * inaccessible Circle. Defaults to a zero summary so the totals header renders. */
+  monthlySummary?: MonthlySummary | null;
   /** The `createTransaction` / `createCategory` mutation spies the test owns.
    *
    * These are plain spies the caller configures. To assert the backend-guard
@@ -90,6 +107,7 @@ export function configureConvex(state: ConvexState = {}) {
     transactions = [],
     transactionsStatus = "Exhausted",
     loadMore = () => {},
+    monthlySummary = EMPTY_MONTHLY_SUMMARY,
     createTransaction,
     updateTransaction,
     createCategory,
@@ -105,6 +123,8 @@ export function configureConvex(state: ConvexState = {}) {
           return categories == null ? categories : fakeListCategories(categories, args);
         case NAME.listMembers:
           return members;
+        case NAME.getMonthlyLedger:
+          return monthlySummary;
         default:
           return undefined;
       }

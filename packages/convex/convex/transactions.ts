@@ -1,6 +1,8 @@
 import {
   type TransactionType,
+  addMonths,
   formatMinorUnits,
+  isValidPlainMonth,
   monthOf,
   toCurrencyCode,
   transactionCreateSchema,
@@ -32,13 +34,26 @@ interface CategoryRef {
  * and reusing it collapses the otherwise-N+1 reads in {@link toTransactionView}.
  * Scoped to a single query call — never shared across requests.
  */
-interface ViewCaches {
+export interface ViewCaches {
   members: Map<Id<"members">, MemberRef>;
   categories: Map<Id<"categories">, CategoryRef | null>;
 }
 
-function newViewCaches(): ViewCaches {
+export function newViewCaches(): ViewCaches {
   return { members: new Map(), categories: new Map() };
+}
+
+/**
+ * The half-open plain-date range `[month-start, next-month-start)` that captures
+ * exactly one "YYYY-MM" month. Plain dates are zero-padded "YYYY-MM-DD" strings,
+ * so every date in `month` sorts at or after the bare `month` prefix and strictly
+ * before the next month's prefix — letting a date-ordered index (`by_circle_status_date`)
+ * range a month at the source instead of bucketing in memory (ADR 0009 dates;
+ * README §4 index-backed reads). Shared by the Ledger list and its totals so the
+ * two never disagree on what a month contains.
+ */
+export function monthDateRange(month: string): { start: string; endExclusive: string } {
+  return { start: month, endExclusive: addMonths(month, 1) };
 }
 
 /**
@@ -98,7 +113,7 @@ async function categoryRef(
  * 44). The UI gates its edit affordance on this flag, but the server re-checks on
  * `updateTransaction` — the flag is the courtesy, not the enforcement (ADR 0015).
  */
-async function toTransactionView(
+export async function toTransactionView(
   ctx: QueryCtx,
   txn: Doc<"transactions">,
   caches: ViewCaches,
@@ -139,27 +154,46 @@ export type TransactionView = Awaited<ReturnType<typeof toTransactionView>>;
  * then created-at desc via `_creationTime` — the Monthly Ledger sort, PRD story
  * 64). Paginated at the source off `by_circle_status_date`: the database returns
  * one ordered page, so nothing unbounded is ever loaded or sorted in memory. This
- * is the read TXN-1 needs to confirm a create landed and the basis the Ledger /
- * Dashboard / live-update slices (RPT-*) build on; archived Transactions are
- * excluded from this active surface (TXN-3 owns archived views).
+ * is the read TXN-1 needs to confirm a create landed and the list half of the
+ * Monthly Ledger (RPT-1); archived Transactions are excluded from this active
+ * surface (TXN-3 owns archived views).
+ *
+ * An optional `month` ("YYYY-MM") scopes the page to one month by ranging the SAME
+ * date-ordered index to `[month, next-month)` — the Ledger's month-scoped list
+ * (RPT-1). The range is applied at the source (never an in-memory `month` filter
+ * over an unbounded set — README §4), and because the index already orders by
+ * date the page stays date-desc within the month with no extra sort. The Ledger's
+ * income/expense/net totals are a separate bounded aggregate (`ledger.getMonthlyLedger`):
+ * `usePaginatedQuery` can't carry totals alongside a page, and the totals must sum
+ * the WHOLE month while the list only resolves the visible page, so they are two
+ * reads fused on the client into the slice's `{ transactions, totals }` surface.
  *
  * Anti-enumeration (ADR 0016): an inaccessible or missing Circle returns an empty,
  * exhausted page — indistinguishable from an accessible Circle with no
  * Transactions, so nothing about the Circle's existence leaks.
  */
 export const listTransactions = query({
-  args: { circleId: v.id("circles"), paginationOpts: paginationOptsValidator },
+  args: {
+    circleId: v.id("circles"),
+    paginationOpts: paginationOptsValidator,
+    month: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
     if (!access) {
       return { page: [], isDone: true, continueCursor: "" };
     }
+    if (args.month !== undefined && !isValidPlainMonth(args.month)) {
+      throw new Error("Invalid month");
+    }
+    const range = args.month !== undefined ? monthDateRange(args.month) : undefined;
 
     const result = await ctx.db
       .query("transactions")
-      .withIndex("by_circle_status_date", (q) =>
-        q.eq("circleId", args.circleId).eq("status", "active"),
-      )
+      .withIndex("by_circle_status_date", (q) => {
+        const scoped = q.eq("circleId", args.circleId).eq("status", "active");
+        return range ? scoped.gte("date", range.start).lt("date", range.endExclusive) : scoped;
+      })
       .order("desc")
       .paginate(args.paginationOpts);
 

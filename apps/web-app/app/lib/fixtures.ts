@@ -1,4 +1,4 @@
-import type { Category, Circle, Member, Transaction } from "./data.js";
+import type { Category, Circle, Member, MonthlySummary, Transaction } from "./data.js";
 
 /**
  * Mock fixture data for E2E renders without a live backend (ADR 0006). These are
@@ -87,6 +87,17 @@ export const MOCK_MEMBERS: Member[] = [
  * a created Transaction is reflected optimistically by the form in mock mode.
  */
 export const MOCK_TRANSACTIONS: Transaction[] = [];
+
+/**
+ * Mock Monthly Ledger summary, typed against the derived {@link MonthlySummary}
+ * contract so a shape change to `getMonthlyLedger` fails typecheck here (ADR 0003).
+ * Zeros match the empty {@link MOCK_TRANSACTIONS} so the Ledger renders a coherent
+ * empty month under MOCKS.
+ */
+export const MOCK_MONTHLY_SUMMARY: MonthlySummary = {
+  totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
+  currency: "USD",
+};
 
 export function mockCircle(id: string): Circle {
   return {
