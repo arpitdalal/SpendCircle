@@ -28,12 +28,13 @@ import { type Resolution, useResolvedRef } from "./use-resolved-ref.js";
  * Circle root: an archived Circle stays accessible, so its edit links land back on
  * the in-place read-only ledger rather than ejecting through the unavailable path.
  *
- * `enabled` lets the route stop resolving while it is navigating away (e.g. right after
- * a successful save). Without it, a save that changes the Title changes the
- * Transaction's canonical ref, and the still-mounted resolver would canonicalize the
- * now-stale URL slug with a `replace` — racing the close navigation and dragging the
- * User back onto the edit route. Disabling skips the query AND every effect, so the
- * close wins (see `transaction-edit.tsx`).
+ * `enabled` lets the route stop resolving when it should not be showing the form at
+ * all — skipping the query AND every effect (no fallback, no canonicalize), so the
+ * route's own navigation always wins (see `transaction-edit.tsx`). Two cases need it:
+ * a successful save that renames the Transaction changes its canonical ref, so a live
+ * resolver would canonicalize the now-stale slug and race the close; and an archived
+ * (read-only) Circle must drop the edit URL to the in-place ledger without ever taking
+ * the generic unavailable-link path, even when the target itself resolves to `null`.
  */
 export function useResolvedTransaction({ enabled = true } = {}): Resolution<Transaction> {
   const circle = useCircle();

@@ -1,7 +1,7 @@
 import { currentMonth } from "@spend-circle/domain";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Route } from "react-router";
+import { Route, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Circle, Transaction } from "~/lib/data.js";
 import {
@@ -11,6 +11,7 @@ import {
   makeMemberView,
   makeTransactionView,
   renderCircleRoutes,
+  testId,
 } from "~/test/convex-react.js";
 
 /**
@@ -153,5 +154,88 @@ describe("TransactionEdit — archived Circle stays read-only in place", () => {
     expect(screen.queryByRole("form", { name: /edit transaction/i })).not.toBeInTheDocument();
     // Read-only redirect, not the unavailable-link path — no snackbar.
     expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
+  });
+
+  it("redirects without the unavailable snackbar even when the target resolves to null", async () => {
+    // An archived Circle must drop ANY edit URL to the read-only ledger — including one
+    // whose target is unavailable. The resolver is disabled while read-only, so the
+    // generic unavailable-link path can never fire and race the redirect.
+    const { location } = setup({ circle: { status: "archived" }, editableTransaction: null });
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: /edit transaction/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("TransactionEdit — target change without a loading gap", () => {
+  /** A nav control rendered as always-mounted chrome so clicking it changes the edit
+   * param WITHOUT unmounting the route — the Back/Forward-to-cached-target case. */
+  function GoTo({ to }: { to: string }) {
+    const navigate = useNavigate();
+    return (
+      <button type="button" onClick={() => navigate(to)}>
+        go
+      </button>
+    );
+  }
+
+  it("remounts the form so a navigated-to target never carries the previous one's state", async () => {
+    const user = userEvent.setup();
+    // Alpha is an Expense, Beta an Income. The type segment is plain component state
+    // seeded from the Transaction at MOUNT (not a re-syncable form default), so it is
+    // the state that genuinely sticks if the form is reused — a reused Expense form
+    // would still mark "Expense" pressed for an Income target, the wrong type to save.
+    const alpha = makeTransactionView({
+      id: testId<Transaction["id"]>("t1"),
+      ref: "alpha-t1",
+      title: "Alpha",
+      type: "expense",
+    });
+    const beta = makeTransactionView({
+      id: testId<Transaction["id"]>("t2"),
+      ref: "beta-t2",
+      title: "Beta",
+      type: "income",
+      categories: [
+        {
+          id: testId<Transaction["categories"][number]["id"]>("cat-pay"),
+          name: "Pay",
+          color: "teal",
+        },
+      ],
+    });
+    configureConvex({
+      categories: [
+        makeCategoryView(),
+        makeCategoryView({
+          id: testId<ReturnType<typeof makeCategoryView>["id"]>("cat-pay"),
+          name: "Pay",
+          type: "income",
+        }),
+      ],
+      members: [makeMemberView()],
+      // Both targets resolve synchronously (cached) — no pending Splash gap to remount
+      // the form for us, so the id-keying is what must do it.
+      editableTransaction: (args) => (args.transactionId === "t2" ? beta : alpha),
+      updateTransaction,
+    });
+    renderCircleRoutes(makeCircleView(), ROUTES, {
+      initialEntries: [`/circles/${REF}/transactions/alpha-t1/edit?month=2026-05`],
+      chrome: <GoTo to={`/circles/${REF}/transactions/beta-t2/edit?month=2026-05`} />,
+    });
+
+    const form = () => screen.getByRole("form", { name: /edit transaction/i });
+    expect(within(form()).getByLabelText("Title")).toHaveValue("Alpha");
+    expect(
+      within(form()).getByRole("button", { name: "Expense", pressed: true }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "go" }));
+    // Without id-keying the reused Expense form would still mark "Expense" pressed for
+    // the Income target; remounting reflects Beta's income type and title.
+    await waitFor(() => expect(within(form()).getByLabelText("Title")).toHaveValue("Beta"));
+    expect(
+      within(form()).getByRole("button", { name: "Income", pressed: true }),
+    ).toBeInTheDocument();
   });
 });

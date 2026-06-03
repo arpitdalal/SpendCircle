@@ -33,36 +33,48 @@ export default function TransactionEdit() {
   const ledgerUrl = `/circles/${circle.ref}/transactions?month=${month}`;
   const writable = circle.status === "active";
 
-  // Set the instant we begin leaving (cancel or successful save). It stops the resolver
-  // (below) so a save that renamed the Transaction — changing its canonical ref — can't
-  // canonicalize the now-stale URL slug and race us back onto the edit route. The close
-  // navigation then wins cleanly.
+  // Set the instant we begin leaving (cancel or successful save).
   const [closing, setClosing] = useState(false);
   const close = () => {
     setClosing(true);
     navigate(ledgerUrl);
   };
 
-  const resolution = useResolvedTransaction({ enabled: !closing });
+  // The route only resolves an edit target while it should actually show the form: a
+  // writable Circle and not already leaving. BOTH off-states must stop the resolver, so
+  // its unavailable / canonicalize effects can never fire and race the route's own
+  // navigation (ADR 0017):
+  //   - `!writable` (archived): the Circle is read-only, so ANY edit URL — even one
+  //     whose target resolves to `null` — must land on the in-place read-only ledger
+  //     via the redirect below, never the generic unavailable-link snackbar.
+  //   - `closing`: a save that renamed the Transaction changes its canonical ref, so a
+  //     live resolver would canonicalize the now-stale URL slug with a `replace` and
+  //     drag us back onto the edit route; gating lets the close navigation win.
+  const active = writable && !closing;
+  const resolution = useResolvedTransaction({ enabled: active });
 
-  // An archived Circle is accessible but read-only: an edit URL there must not open the
-  // form (and `updateTransaction` would reject anyway — ADR 0015). Drop the form state
-  // and land on the in-place read-only ledger rather than ejecting through the
-  // unavailable-link path (ADR 0017). Replace so the dead edit URL leaves no Back entry.
+  // An archived Circle is accessible but read-only: drop the edit form state and land on
+  // the in-place read-only ledger (ADR 0017). Replace so the dead edit URL leaves no
+  // Back entry. The resolver is already disabled above, so this is the only exit.
   useEffect(() => {
     if (!writable) {
       navigate(ledgerUrl, { replace: true });
     }
   }, [writable, navigate, ledgerUrl]);
 
-  // While the target resolves, while the archived-Circle redirect is in flight, or while
-  // closing, show the splash rather than flashing a form that's about to be torn down.
-  if (!writable || closing || resolution.status === "pending") {
+  // While inactive (archived redirect or closing, both in flight) or while the target
+  // resolves, show the splash rather than flashing a form about to be torn down.
+  if (!active || resolution.status === "pending") {
     return <Splash label="Opening transaction…" />;
   }
 
   return (
+    // Keyed by the resolved Transaction id so navigating edit→edit between two targets
+    // that resolve without a loading gap (e.g. Back/Forward to a cached one) REMOUNTS
+    // the form instead of reusing it with the previous Transaction's TanStack defaults
+    // and type state — the same id-keying the inline ledger form used.
     <TransactionForm
+      key={resolution.value.id}
       circle={circle}
       mode={{ kind: "edit", transaction: resolution.value }}
       selectedMonth={month}

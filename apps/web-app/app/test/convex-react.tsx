@@ -84,8 +84,13 @@ interface ConvexState {
   monthlySummary?: MonthlySummary | null;
   /** `getEditableTransaction` edit target (TXN-5); `undefined` ≡ loading, `null` ≡
    * unavailable (missing / inaccessible / wrong-Circle / archived / not-editable —
-   * all collapsed by the server). Drives the edit object route's resolution. */
-  editableTransaction?: Transaction | null;
+   * all collapsed by the server). Drives the edit object route's resolution. A function
+   * resolves per query args (e.g. by `transactionId`) so a test can model two distinct
+   * cached targets while navigating edit→edit without a loading gap. */
+  editableTransaction?:
+    | Transaction
+    | null
+    | ((args: Record<string, unknown>) => Transaction | null | undefined);
   /** The `createTransaction` / `createCategory` mutation spies the test owns.
    *
    * These are plain spies the caller configures. To assert the backend-guard
@@ -135,7 +140,9 @@ export function configureConvex(state: ConvexState = {}) {
         case NAME.getMonthlyLedger:
           return monthlySummary;
         case NAME.getEditableTransaction:
-          return editableTransaction;
+          return typeof editableTransaction === "function"
+            ? editableTransaction(args)
+            : editableTransaction;
         default:
           return undefined;
       }
@@ -282,16 +289,20 @@ function LocationProbe() {
  *
  * `routes` is the caller's `<Route>` subtree (the routes under test), kept generic so
  * this helper never imports route modules — the test wires only the routes it needs.
+ * `chrome` is an optional always-mounted node rendered inside the Router but outside
+ * `Routes` (so it has router context and survives route changes) — e.g. a nav control a
+ * test uses to drive an in-route param change (edit→edit) without unmounting the route.
  */
 export function renderCircleRoutes(
   circle: Circle,
   routes: ReactNode,
-  opts: { initialEntries?: string[] } = {},
+  opts: { initialEntries?: string[]; chrome?: ReactNode } = {},
 ) {
   const wrap = (current: Circle) => (
     <SnackbarProvider>
       <MemoryRouter initialEntries={opts.initialEntries ?? ["/"]}>
         <LocationProbe />
+        {opts.chrome}
         <Routes>
           <Route element={<Outlet context={{ circle: current } satisfies CircleOutletContext} />}>
             {routes}
