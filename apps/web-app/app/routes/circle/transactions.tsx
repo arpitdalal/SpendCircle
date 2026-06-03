@@ -248,7 +248,7 @@ function TransactionForm({
   // shows. Only current Members can be NEWLY selected (the server rejects assigning a
   // Removed Member); keeping the existing one is a no-op the server allows.
   const paidByOptions = (members ?? []).map((member) => ({
-    value: member.id as string,
+    value: member.id,
     label: member.isSelf ? `${member.displayName} (You)` : member.displayName,
   }));
   if (mode.kind === "edit") {
