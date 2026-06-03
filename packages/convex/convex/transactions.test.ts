@@ -1,4 +1,4 @@
-import { formatMinorUnits } from "@spend-circle/domain";
+import { buildRef, formatMinorUnits } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
@@ -1318,5 +1318,203 @@ describe("updateTransaction — lifecycle edges", () => {
     await expect(
       t.mutation(api.transactions.updateTransaction, { transactionId: id, title: "x" }),
     ).rejects.toThrow("Circle is archived");
+  });
+});
+
+describe("listTransactions — view shape", () => {
+  it("returns the canonical slug-id ref on each row (TXN-5)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { title: "Weekly shop" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const result = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    expect(result.page[0]?.ref).toBe(buildRef("Weekly shop", id));
+  });
+});
+
+describe("getEditableTransaction — edit target resolution (TXN-5)", () => {
+  it("returns the editable Transaction with its canonical ref for the Recorded By Member", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { title: "Weekly shop" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const view = await t.query(api.transactions.getEditableTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    expect(view?.id).toBe(id);
+    expect(view?.ref).toBe(buildRef("Weekly shop", id));
+    expect(view?.canEditFields).toBe(true);
+  });
+
+  it("returns null for a missing Transaction (deleted)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    await t.run((ctx) => ctx.db.delete(id));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    expect(
+      await t.query(api.transactions.getEditableTransaction, {
+        circleId: f.circleId,
+        transactionId: id,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for a malformed Transaction id (normalizes to null, never throws)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    expect(
+      await t.query(api.transactions.getEditableTransaction, {
+        circleId: f.circleId,
+        transactionId: "not-a-real-id",
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null when the Transaction belongs to a different Circle than the URL's", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const other = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, other));
+    // The caller can access BOTH circles, but the ref names `f` while the Transaction
+    // lives in `other` — a wrong-Circle link must not resolve (anti-enumeration).
+    await t.run((ctx) =>
+      ctx.db.insert("members", {
+        circleId: other.circleId,
+        userId: f.owner._id,
+        role: "member",
+        status: "active",
+        displayName: f.owner.displayName,
+        joinedAt: Date.now(),
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    expect(
+      await t.query(api.transactions.getEditableTransaction, {
+        circleId: f.circleId,
+        transactionId: id,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for an archived (frozen) Transaction — an edit link means active", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { status: "archived" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    expect(
+      await t.query(api.transactions.getEditableTransaction, {
+        circleId: f.circleId,
+        transactionId: id,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for a non-recorder Member — even the Owner (no edit via the URL)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { memberId: alexMemberId, user: alex } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "alex@example.com", "Alex"),
+    );
+    // Alex records it; the Owner (who can moderate but not field-edit) opens the link.
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { recordedByMemberId: alexMemberId }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    expect(
+      await t.query(api.transactions.getEditableTransaction, {
+        circleId: f.circleId,
+        transactionId: id,
+      }),
+    ).toBeNull();
+
+    // Alex (the recorder) does resolve it.
+    mockCurrentUser.mockResolvedValue(alex);
+    const view = await t.query(api.transactions.getEditableTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    expect(view?.id).toBe(id);
+  });
+
+  it("returns null when the caller is not a member of the Circle (inaccessible ≡ missing)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    const outsider = await t.run((ctx) => makeUser(ctx, "out@example.com", "Outsider"));
+    mockCurrentUser.mockResolvedValue(outsider);
+
+    expect(
+      await t.query(api.transactions.getEditableTransaction, {
+        circleId: f.circleId,
+        transactionId: id,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for a Removed Member (live revocation)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { memberId, user } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "rex@example.com", "Rex"),
+    );
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { recordedByMemberId: memberId }));
+    mockCurrentUser.mockResolvedValue(user);
+    // While active + the recorder, Rex resolves it.
+    expect(
+      (
+        await t.query(api.transactions.getEditableTransaction, {
+          circleId: f.circleId,
+          transactionId: id,
+        })
+      )?.id,
+    ).toBe(id);
+    // Removed: access collapses to null even on his own Transaction.
+    await t.run((ctx) => ctx.db.patch(memberId, { status: "removed", removedAt: Date.now() }));
+    expect(
+      await t.query(api.transactions.getEditableTransaction, {
+        circleId: f.circleId,
+        transactionId: id,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null when unauthenticated", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    mockCurrentUser.mockResolvedValue(null);
+
+    expect(
+      await t.query(api.transactions.getEditableTransaction, {
+        circleId: f.circleId,
+        transactionId: id,
+      }),
+    ).toBeNull();
+  });
+
+  it("still resolves the recorder's active Transaction in an archived Circle (route owns read-only)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    await t.run((ctx) => ctx.db.patch(f.circleId, { status: "archived", archivedAt: Date.now() }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    // The query does not special-case an archived Circle (a Member keeps access); the
+    // edit route surfaces read-only in place rather than ejecting (ADR 0017).
+    const view = await t.query(api.transactions.getEditableTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    expect(view?.id).toBe(id);
   });
 });

@@ -1,6 +1,7 @@
 import {
   type TransactionType,
   addMonths,
+  buildRef,
   formatMinorUnits,
   isValidPlainMonth,
   monthOf,
@@ -133,6 +134,11 @@ export async function toTransactionView(
 
   return {
     id: txn._id,
+    // The canonical "slug-id" ref (ADR 0016): the ledger row links its Edit action
+    // to `/transactions/<ref>/edit`, and the edit-target resolver returns it so a
+    // stale title slug in the URL canonicalizes (TXN-5). Built from the SAME title +
+    // id the view already carries, so the link and the resolved object never disagree.
+    ref: buildRef(txn.title, txn._id),
     type: txn.type,
     title: txn.title,
     note: txn.note,
@@ -202,6 +208,58 @@ export const listTransactions = query({
       result.page.map((txn) => toTransactionView(ctx, txn, caches, access.membership._id)),
     );
     return { ...result, page };
+  },
+});
+
+/**
+ * Resolves the edit TARGET behind `/circles/:circleRef/transactions/:transactionRef/edit`
+ * (TXN-5): one Transaction fetched by its authoritative ID, NOT found in the visible
+ * ledger page (the target may be off-page or in another month — that is why the Ledger
+ * list can't serve it). An edit deep link means "open an editable active Transaction,"
+ * so this returns the Transaction view ONLY when the caller may actually field-edit it,
+ * and `null` for every other case — missing, inaccessible Circle, the Transaction
+ * belonging to a DIFFERENT Circle than the URL's, an archived (frozen) Transaction, or
+ * one the caller didn't record. The route adapter feeds that `null` into the shared
+ * unavailable-link fallback (ADR 0016/0017), so all of those collapse to the same
+ * observable outcome and nothing about the Transaction's existence or another Member's
+ * activity leaks.
+ *
+ * It deliberately does NOT grant the Owner edit access through this path: the Owner
+ * moderates lifecycle (archive/restore — TXN-3) but may not rewrite another Member's
+ * fields (PRD story 38), matching `updateTransaction`'s `isRecorder` gate (ADR 0015) —
+ * the server stays the authority and this read mirrors it so the UI never opens a form
+ * a save would reject. An archived Circle is handled a layer up (the route surfaces
+ * read-only in place rather than ejecting), so this resolver does not special-case it.
+ *
+ * Both ids arrive as raw strings (the `circleId` from the resolved Circle, the
+ * `transactionId` from the URL ref) and normalize to `null` when malformed — the same
+ * uniform unavailable outcome as a missing row (ADR 0016), never a throw.
+ */
+export const getEditableTransaction = query({
+  args: { circleId: v.string(), transactionId: v.string() },
+  handler: async (ctx, args) => {
+    const transactionId = ctx.db.normalizeId("transactions", args.transactionId);
+    const circleId = ctx.db.normalizeId("circles", args.circleId);
+    if (!transactionId || !circleId) {
+      return null;
+    }
+    const access = await resolveCircleAccess(ctx, circleId);
+    if (!access) {
+      return null;
+    }
+    const txn = await ctx.db.get(transactionId);
+    // Wrong Circle, missing, archived (frozen), or not recorded by the caller all
+    // collapse to the same `null` — anti-enumeration parity with an inaccessible
+    // Circle (ADR 0016). Only the Recorded By Member may edit fields (PRD story 38).
+    if (
+      !txn ||
+      txn.circleId !== circleId ||
+      txn.status !== "active" ||
+      txn.recordedByMemberId !== access.membership._id
+    ) {
+      return null;
+    }
+    return toTransactionView(ctx, txn, newViewCaches(), access.membership._id);
   },
 });
 

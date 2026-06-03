@@ -144,3 +144,37 @@ describe("useResolvedRef", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 });
+
+describe("useResolvedRef — disabled (inert)", () => {
+  it("is pending with no effects for an unparseable ref when disabled", () => {
+    // The key case: a malformed ref must NOT fire the unavailable/report path while the
+    // adapter has disabled resolution (e.g. an archived read-only route that redirects
+    // itself) — otherwise the generic bad-link snackbar races the route's own nav.
+    const result = resolve({ enabled: false, parsed: false, value: undefined });
+    expect(result).toEqual({ status: "pending" });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(showUnavailable).not.toHaveBeenCalled();
+    expect(reportAppError).not.toHaveBeenCalled();
+  });
+
+  it("is pending with no fallback for a null (inaccessible) value when disabled", () => {
+    const result = resolve({ enabled: false, parsed: true, value: null, fallback: "/safe" });
+    expect(result).toEqual({ status: "pending" });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(showUnavailable).not.toHaveBeenCalled();
+  });
+
+  it("does not canonicalize a stale ref when disabled", () => {
+    location.pathname = "/circles/c1";
+    const value: TestRef = { ref: "home-c1", name: "Home" };
+    resolve({ enabled: false, rawRef: "c1", value });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("stays pending even with a ready value when disabled", () => {
+    const value: TestRef = { ref: "home-c1", name: "Home" };
+    const result = resolve({ enabled: false, rawRef: "home-c1", value });
+    expect(result).toEqual({ status: "pending" });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});

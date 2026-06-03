@@ -46,6 +46,15 @@ export interface ResolvedRefOptions<T extends { ref: string }> {
    * Defaults to `"link"` (the generic bad-link message).
    */
   unavailableTarget?: UnavailableTarget;
+  /**
+   * When `false`, the resolution is INERT: always `pending`, and EVERY effect is
+   * suppressed — no unavailable snackbar/report, no fallback, no canonicalize —
+   * regardless of `parsed`/`value`. An adapter sets this when its route is
+   * deliberately not showing the object (e.g. navigating away after a save, or an
+   * archived read-only surface that owns its own redirect), so the resolver can never
+   * fire a side effect that races the route's own navigation. Defaults to `true`.
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -80,17 +89,20 @@ function canonicalizeRefSegment(
 export function useResolvedRef<T extends { ref: string }>(
   options: ResolvedRefOptions<T>,
 ): Resolution<T> {
-  const { rawRef, parsed, value, fallback, unavailableTarget = "link" } = options;
+  const { rawRef, parsed, value, fallback, unavailableTarget = "link", enabled = true } = options;
   const navigate = useNavigate();
   const location = useLocation();
   const { showUnavailable } = useSnackbar();
 
-  const unparseable = !parsed;
+  // Disabled ⇒ fully inert: no outcome is "unavailable" or "stale", so no effect runs.
+  // This is what lets an adapter suppress EVERY side effect (incl. the unparseable-ref
+  // report/snackbar) while its route deliberately isn't showing the object.
+  const unparseable = enabled && !parsed;
   // A resolved query of `null` means missing or inaccessible — indistinguishable.
-  const inaccessible = parsed && value === null;
+  const inaccessible = enabled && parsed && value === null;
   const unavailable = unparseable || inaccessible;
   // A resolved value whose canonical ref differs from the URL ⇒ stale slug.
-  const staleRef = value != null && rawRef != null && value.ref !== rawRef;
+  const staleRef = enabled && value != null && rawRef != null && value.ref !== rawRef;
 
   useEffect(() => {
     if (!unavailable) {
@@ -111,7 +123,9 @@ export function useResolvedRef<T extends { ref: string }>(
     }
   }, [staleRef, value, rawRef, location, navigate]);
 
-  if (!value) {
+  // Inert (disabled) reports `pending` even with a value in hand, so the route stays on
+  // its splash/redirect path and never renders the object it's navigating away from.
+  if (!enabled || !value) {
     return { status: "pending" };
   }
   return { status: "ready", value };

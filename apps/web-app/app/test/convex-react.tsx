@@ -1,8 +1,8 @@
 import { api } from "@spend-circle/convex";
 import { render } from "@testing-library/react";
 import { type FunctionReference, getFunctionName } from "convex/server";
-import type { ReactElement } from "react";
-import { MemoryRouter, Outlet, Route, Routes } from "react-router";
+import type { ReactElement, ReactNode } from "react";
+import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router";
 import { type Mock, vi } from "vitest";
 import type {
   Category,
@@ -12,6 +12,7 @@ import type {
   PaginationStatus,
   Transaction,
 } from "~/lib/data.js";
+import { SnackbarProvider } from "~/lib/snackbar.js";
 import type { CircleOutletContext } from "~/routes/layouts/circle-layout.js";
 
 /**
@@ -45,6 +46,7 @@ const NAME = {
   listCategories: getFunctionName(api.categories.listCategories),
   listMembers: getFunctionName(api.members.listMembers),
   listTransactions: getFunctionName(api.transactions.listTransactions),
+  getEditableTransaction: getFunctionName(api.transactions.getEditableTransaction),
   getMonthlyLedger: getFunctionName(api.ledger.getMonthlyLedger),
   createTransaction: getFunctionName(api.transactions.createTransaction),
   updateTransaction: getFunctionName(api.transactions.updateTransaction),
@@ -80,6 +82,15 @@ interface ConvexState {
   /** `getMonthlyLedger` summary (totals + currency); `undefined` ≡ loading, `null` ≡
    * inaccessible Circle. Defaults to a zero summary so the totals header renders. */
   monthlySummary?: MonthlySummary | null;
+  /** `getEditableTransaction` edit target (TXN-5); `undefined` ≡ loading, `null` ≡
+   * unavailable (missing / inaccessible / wrong-Circle / archived / not-editable —
+   * all collapsed by the server). Drives the edit object route's resolution. A function
+   * resolves per query args (e.g. by `transactionId`) so a test can model two distinct
+   * cached targets while navigating edit→edit without a loading gap. */
+  editableTransaction?:
+    | Transaction
+    | null
+    | ((args: Record<string, unknown>) => Transaction | null | undefined);
   /** The `createTransaction` / `createCategory` mutation spies the test owns.
    *
    * These are plain spies the caller configures. To assert the backend-guard
@@ -108,6 +119,9 @@ export function configureConvex(state: ConvexState = {}) {
     transactionsStatus = "Exhausted",
     loadMore = () => {},
     monthlySummary = EMPTY_MONTHLY_SUMMARY,
+    // No default: absent ≡ `undefined` ≡ loading (the codebase's reactive-query
+    // convention); a test passes `null` to model an unavailable edit target.
+    editableTransaction,
     createTransaction,
     updateTransaction,
     createCategory,
@@ -125,6 +139,10 @@ export function configureConvex(state: ConvexState = {}) {
           return members;
         case NAME.getMonthlyLedger:
           return monthlySummary;
+        case NAME.getEditableTransaction:
+          return typeof editableTransaction === "function"
+            ? editableTransaction(args)
+            : editableTransaction;
         default:
           return undefined;
       }
@@ -181,6 +199,124 @@ export function renderInCircle(circle: Circle, element: ReactElement) {
     ...result,
     rerenderInCircle: (node: ReactElement, nextCircle: Circle = circle) =>
       result.rerender(wrap(node, nextCircle)),
+  };
+}
+
+/**
+ * Shared view-shape builders for the Transaction surfaces (the ledger, the form, the
+ * edit route). One definition each — typed against the derived `~/lib/data.js`
+ * contracts so a `to*View` change fails typecheck here — driven by a partial override
+ * so each test states only what differs (CLAUDE.md: one helper, not copy-pasted
+ * fixtures tweaked per file). Ids default to stable slugs; pass overrides for the rest.
+ */
+export function makeCircleView(over: Partial<Circle> = {}): Circle {
+  return {
+    id: testId<Circle["id"]>("c1"),
+    ref: "trip-c1",
+    name: "Trip",
+    kind: "regular",
+    currency: "USD",
+    color: "blue",
+    mark: "T",
+    status: "active",
+    currencyLocked: false,
+    ...over,
+  };
+}
+
+export function makeCategoryView(over: Partial<Category> = {}): Category {
+  return {
+    id: testId<Category["id"]>("cat-groceries"),
+    name: "Groceries",
+    type: "expense",
+    color: "green",
+    status: "active",
+    creator: { displayName: "You", image: undefined },
+    ...over,
+  };
+}
+
+export function makeMemberView(over: Partial<Member> = {}): Member {
+  return {
+    id: testId<Member["id"]>("mem-you"),
+    displayName: "You",
+    image: undefined,
+    role: "owner",
+    status: "active",
+    joinedAt: 0,
+    isSelf: true,
+    ...over,
+  };
+}
+
+export function makeTransactionView(over: Partial<Transaction> = {}): Transaction {
+  return {
+    id: testId<Transaction["id"]>("t1"),
+    ref: "weekly-shop-t1",
+    type: "expense",
+    title: "Weekly shop",
+    note: undefined,
+    amountMinorUnits: 1250,
+    date: "2026-05-15",
+    month: "2026-05",
+    status: "active",
+    recordedBy: { id: testId<Member["id"]>("mem-you"), displayName: "You", image: undefined },
+    paidBy: { id: testId<Member["id"]>("mem-you"), displayName: "You", image: undefined },
+    categories: [
+      { id: testId<Category["id"]>("cat-groceries"), name: "Groceries", color: "green" },
+    ],
+    canEditFields: true,
+    ...over,
+  };
+}
+
+/** Surfaces the live URL (pathname + search) so URL-state tests can assert it. */
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname + location.search}</output>;
+}
+
+/**
+ * Renders Circle-scoped ROUTES under a real `MemoryRouter` so URL-owned state (the
+ * ledger `month`, the `new` create param, and the edit object route — TXN-5/ADR 0017)
+ * is exercised end to end: the test seeds the address bar via `initialEntries`, reads
+ * it back through {@link LocationProbe} (`location()`), and the real route logic,
+ * `useSearchParams`, `useResolvedTransaction`, and `useSnackbar` all run. The Circle is
+ * supplied through the same Outlet context channel the Circle guard uses, so the real
+ * `useCircle` runs; `rerender(nextCircle)` models the reactive `getCircle` flipping
+ * (e.g. archived mid-edit). `SnackbarProvider` wraps so the unavailable-link fallback
+ * has its real context.
+ *
+ * `routes` is the caller's `<Route>` subtree (the routes under test), kept generic so
+ * this helper never imports route modules — the test wires only the routes it needs.
+ * `chrome` is an optional always-mounted node rendered inside the Router but outside
+ * `Routes` (so it has router context and survives route changes) — e.g. a nav control a
+ * test uses to drive an in-route param change (edit→edit) without unmounting the route.
+ */
+export function renderCircleRoutes(
+  circle: Circle,
+  routes: ReactNode,
+  opts: { initialEntries?: string[]; chrome?: ReactNode } = {},
+) {
+  const wrap = (current: Circle) => (
+    <SnackbarProvider>
+      <MemoryRouter initialEntries={opts.initialEntries ?? ["/"]}>
+        <LocationProbe />
+        {opts.chrome}
+        <Routes>
+          <Route element={<Outlet context={{ circle: current } satisfies CircleOutletContext} />}>
+            {routes}
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </SnackbarProvider>
+  );
+  const result = render(wrap(circle));
+  return {
+    ...result,
+    rerender: (nextCircle: Circle = circle) => result.rerender(wrap(nextCircle)),
+    /** The current URL (pathname + search), e.g. `/circles/trip-c1/transactions?month=2026-05`. */
+    location: () => result.getByTestId("location").textContent ?? "",
   };
 }
 
