@@ -11,7 +11,7 @@
  */
 export const VIEWER_LOCALE_FALLBACK = "en-US";
 
-export function viewerLocale(): string {
+export function viewerLocale() {
   if (typeof navigator !== "undefined" && navigator.language) {
     return navigator.language;
   }
