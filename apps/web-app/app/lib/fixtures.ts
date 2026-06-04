@@ -120,6 +120,7 @@ const MOCK_DASHBOARD_RECENT: Transaction[] = [
     paidBy: { id: "mock-member-you" as Member["id"], displayName: "You", image: undefined },
     categories: [{ id: "mock-cat-salary" as Category["id"], name: "Salary", color: "teal" }],
     canEditFields: true,
+    canArchive: true,
   },
   {
     id: "mock-dash-expense" as Transaction["id"],
@@ -135,6 +136,7 @@ const MOCK_DASHBOARD_RECENT: Transaction[] = [
     paidBy: { id: "mock-member-alex" as Member["id"], displayName: "Alex", image: undefined },
     categories: [{ id: "mock-cat-groceries" as Category["id"], name: "Groceries", color: "green" }],
     canEditFields: true,
+    canArchive: true,
   },
 ];
 
@@ -187,5 +189,6 @@ export function mockEditableTransaction(id: string): Transaction {
     paidBy: me,
     categories: [{ id: "mock-cat-groceries" as Category["id"], name: "Groceries", color: "green" }],
     canEditFields: true,
+    canArchive: true,
   };
 }

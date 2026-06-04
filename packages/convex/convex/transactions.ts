@@ -17,6 +17,7 @@ import { requireCircleAccess, requireTransactionAccess, resolveCircleAccess } fr
 import { type HistoryChange, recordEvent, transactionEntity } from "./history.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
+const lifecycleStatus = v.union(v.literal("active"), v.literal("archived"));
 
 interface MemberRef {
   id: Id<"members">;
@@ -111,14 +112,18 @@ async function categoryRef(
  * `canEditFields` is resolved HERE against the viewer's Member: only the Recorded By
  * Member may edit a Transaction's fields (TXN-2), and because it compares to the
  * caller's stable member row, a Removed→rejoined User regains it automatically (PRD
- * 44). The UI gates its edit affordance on this flag, but the server re-checks on
- * `updateTransaction` — the flag is the courtesy, not the enforcement (ADR 0015).
+ * 44). `canArchive` is the TXN-3 counterpart — the Recorded By Member OR the Owner may
+ * archive/restore it (the Owner moderates lifecycle without gaining field edit, so the
+ * two flags are deliberately distinct). The UI gates its affordances on these flags,
+ * but the server re-checks on every mutation — they are the courtesy, not the
+ * enforcement (ADR 0015), matching the `requireTransactionAccess` predicates in `guard.ts`.
  */
 export async function toTransactionView(
   ctx: QueryCtx,
   txn: Doc<"transactions">,
   caches: ViewCaches,
   viewerMemberId: Id<"members">,
+  viewerIsOwner: boolean,
 ) {
   const links = await ctx.db
     .query("transactionCategories")
@@ -150,19 +155,26 @@ export async function toTransactionView(
     paidBy: await memberRef(ctx, txn.paidByMemberId, caches),
     categories,
     canEditFields: txn.recordedByMemberId === viewerMemberId,
+    canArchive: txn.recordedByMemberId === viewerMemberId || viewerIsOwner,
   };
 }
 
 export type TransactionView = Awaited<ReturnType<typeof toTransactionView>>;
 
 /**
- * Lists a Circle's active Transactions, most recent first (Transaction Date desc,
- * then created-at desc via `_creationTime` — the Monthly Ledger sort, PRD story
- * 64). Paginated at the source off `by_circle_status_date`: the database returns
- * one ordered page, so nothing unbounded is ever loaded or sorted in memory. This
- * is the read TXN-1 needs to confirm a create landed and the list half of the
- * Monthly Ledger (RPT-1); archived Transactions are excluded from this active
- * surface (TXN-3 owns archived views).
+ * Lists a Circle's Transactions of one lifecycle status, most recent first
+ * (Transaction Date desc, then created-at desc via `_creationTime` — the Monthly
+ * Ledger sort, PRD story 64). Paginated at the source off `by_circle_status_date`:
+ * the database returns one ordered page, so nothing unbounded is ever loaded or
+ * sorted in memory. This is the read TXN-1 needs to confirm a create landed and the
+ * list half of the Monthly Ledger (RPT-1).
+ *
+ * `status` defaults to `"active"` — the normal surface that EXCLUDES archived
+ * Transactions (TXN-3: archived ⇒ excluded unless a view explicitly asks for them).
+ * Passing `"archived"` is the dedicated archived view the Restore affordance reads
+ * from (TXN-3); it ranges the SAME index by the `archived` status prefix, so it is
+ * equally bounded and index-backed — never a `.filter()` over the whole table. The
+ * Search/Dashboard archive *filters* (RPT-2/RPT-3) build on this same contract.
  *
  * An optional `month` ("YYYY-MM") scopes the page to one month by ranging the SAME
  * date-ordered index to `[month, next-month)` — the Ledger's month-scoped list
@@ -183,6 +195,7 @@ export const listTransactions = query({
     circleId: v.id("circles"),
     paginationOpts: paginationOptsValidator,
     month: v.optional(v.string()),
+    status: v.optional(lifecycleStatus),
   },
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
@@ -192,12 +205,13 @@ export const listTransactions = query({
     if (args.month !== undefined && !isValidPlainMonth(args.month)) {
       throw new Error("Invalid month");
     }
+    const status = args.status ?? "active";
     const range = args.month !== undefined ? monthDateRange(args.month) : undefined;
 
     const result = await ctx.db
       .query("transactions")
       .withIndex("by_circle_status_date", (q) => {
-        const scoped = q.eq("circleId", args.circleId).eq("status", "active");
+        const scoped = q.eq("circleId", args.circleId).eq("status", status);
         return range ? scoped.gte("date", range.start).lt("date", range.endExclusive) : scoped;
       })
       .order("desc")
@@ -205,7 +219,9 @@ export const listTransactions = query({
 
     const caches = newViewCaches();
     const page = await Promise.all(
-      result.page.map((txn) => toTransactionView(ctx, txn, caches, access.membership._id)),
+      result.page.map((txn) =>
+        toTransactionView(ctx, txn, caches, access.membership._id, access.isOwner),
+      ),
     );
     return { ...result, page };
   },
@@ -259,7 +275,7 @@ export const getEditableTransaction = query({
     ) {
       return null;
     }
-    return toTransactionView(ctx, txn, newViewCaches(), access.membership._id);
+    return toTransactionView(ctx, txn, newViewCaches(), access.membership._id, access.isOwner);
   },
 });
 
@@ -658,6 +674,103 @@ export const updateTransaction = mutation({
       actor: access.membership,
       action: typeChanges ? "type changed" : "edited",
       changes,
+    });
+
+    return args.transactionId;
+  },
+});
+
+/**
+ * Archives a Transaction — the moderation / void path that preserves the record
+ * instead of deleting it (TXN-3; PRD stories 39, 40, 41, 46). An Archived
+ * Transaction is frozen (edits rejected — TXN-2), excluded from Dashboard totals and
+ * the default active Ledger/Search, and surfaced only in the dedicated archived view
+ * (`listTransactions` with `status:"archived"`) until restored.
+ *
+ * Flow: `requireTransactionAccess` (folds in `requireCircleAccess`, ADR 0015) →
+ * `assertWritable` (an archived Circle is read-only, so neither archive nor restore
+ * works there) → permission: `canArchive` = the Recorded By Member OR the Owner.
+ * This is deliberately a DIFFERENT predicate than `isRecorder` (which gates field
+ * edits): the Owner moderates lifecycle here but `updateTransaction` still rejects an
+ * Owner editing another Member's fields, so archiving never becomes a field-edit
+ * backdoor (PRD story 39). A Removed creator already failed access above ("Transaction
+ * not found"); a rejoined creator matches their stable member row and passes (PRD 44).
+ *
+ * Archiving an already-archived Transaction is REJECTED (not a silent no-op) so a
+ * stale UI or a lost archive-vs-edit race surfaces rather than masquerading as success
+ * (README §4 no silent failures; QA-1). Records an `"archived"` event with the
+ * moderator as actor and no field changes (the lifecycle flip is the event — ADR 0018).
+ *
+ * Anti-enumeration (ADR 0016): a missing Transaction and one whose Circle the caller
+ * can't access both throw the same "Transaction not found".
+ */
+export const archiveTransaction = mutation({
+  args: { transactionId: v.id("transactions") },
+  handler: async (ctx, args) => {
+    const access = await requireTransactionAccess(ctx, args.transactionId);
+    access.assertWritable(); // an archived Circle is read-only (PRD story 79)
+
+    // The Recorded By Member OR the Owner may archive (PRD story 39). This is NOT
+    // `isRecorder`: the Owner moderates lifecycle without gaining field-edit rights.
+    if (!access.canArchive) {
+      throw new Error("Only the recorder or the owner can archive this transaction");
+    }
+
+    const txn = access.transaction;
+    // Reject a redundant archive rather than silently succeeding — a no-op would hide a
+    // stale UI or a concurrent edit/archive race (QA-1).
+    if (txn.status !== "active") {
+      throw new Error("Transaction is already archived");
+    }
+
+    await ctx.db.patch(txn._id, { status: "archived", archivedAt: Date.now() });
+
+    await recordEvent(ctx, {
+      entity: transactionEntity(txn._id),
+      actor: access.membership, // the moderator who archived it
+      action: "archived",
+      changes: [],
+    });
+
+    return args.transactionId;
+  },
+});
+
+/**
+ * Restores an Archived Transaction back to active (TXN-3; PRD stories 40, 41) — it
+ * re-enters Dashboard totals and the default active Ledger/Search and becomes editable
+ * by its Recorded By Member again. The mirror of {@link archiveTransaction}: same
+ * `canArchive` permission (Recorded By creator or Owner — PRD story 41), same
+ * `assertWritable` (an archived Circle must be restored first before any of its
+ * Transactions can be), and the same anti-enumeration "Transaction not found".
+ *
+ * Restoring a Transaction that is already active is REJECTED for the same
+ * no-silent-failure reason archiving a redundant one is. Records a `"restored"` event
+ * with the moderator as actor and no field changes, and clears `archivedAt`.
+ */
+export const restoreTransaction = mutation({
+  args: { transactionId: v.id("transactions") },
+  handler: async (ctx, args) => {
+    const access = await requireTransactionAccess(ctx, args.transactionId);
+    access.assertWritable(); // an archived Circle is read-only (PRD story 79)
+
+    if (!access.canArchive) {
+      throw new Error("Only the recorder or the owner can restore this transaction");
+    }
+
+    const txn = access.transaction;
+    if (txn.status !== "archived") {
+      throw new Error("Transaction is not archived");
+    }
+
+    // Setting `archivedAt` to undefined removes the field (it is schema-optional).
+    await ctx.db.patch(txn._id, { status: "active", archivedAt: undefined });
+
+    await recordEvent(ctx, {
+      entity: transactionEntity(txn._id),
+      actor: access.membership, // the moderator who restored it
+      action: "restored",
+      changes: [],
     });
 
     return args.transactionId;

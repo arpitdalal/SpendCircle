@@ -133,7 +133,9 @@ export const getDashboard = query({
       .slice(0, RECENT_TRANSACTIONS_LIMIT);
     const caches = newViewCaches();
     const recent = await Promise.all(
-      recentDocs.map((txn) => toTransactionView(ctx, txn, caches, access.membership._id)),
+      recentDocs.map((txn) =>
+        toTransactionView(ctx, txn, caches, access.membership._id, access.isOwner),
+      ),
     );
 
     return {

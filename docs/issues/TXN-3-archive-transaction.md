@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done · PR pending |
 | **Labels** | `area:transactions`, `backend`, `ui` |
 | **Depends on** | TXN-1 |
 | **Unlocks** | (RPT-* exclude archived from totals; RPT-2 archive filter) |
