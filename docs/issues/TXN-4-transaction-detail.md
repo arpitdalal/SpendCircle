@@ -7,7 +7,7 @@
 | **Depends on** | TXN-1 (benefits from TXN-2, TXN-3 events) |
 | **Unlocks** | — |
 | **PRD stories** | 76, 77, 80 |
-| **ADRs** | 0003, 0016, 0017, 0018 |
+| **ADRs** | 0003, 0016, 0017, 0018, 0021 |
 | **Glossary** | Audit Metadata, Transaction History |
 
 ## Intent
@@ -45,9 +45,10 @@ timezone (glossary: Audit Metadata).
 - **This is the reference object route.** Build the adapter as a thin shell over
   `useResolvedRef` exactly as documented — do not re-implement the parse/canonicalize/fallback
   dance. The next object route (`categories/:categoryRef`, if/when needed) copies this.
-- **History values are frozen strings** (already written by TXN-1/2/3 via `recordEvent`); the
-  view just lists them — never re-resolve. No raw IDs appear because the writers never stored
-  them (PRD 80).
+- **History values are frozen display-safe values** (already written by TXN-1/2/3 via
+  `recordEvent`): text values are stored as strings, while money values store minor units plus
+  Currency and render in the viewer locale (ADR 0021). The view never re-resolves raw entity
+  IDs; no raw IDs appear because the writers never stored them (PRD 80).
 
 ## How to test
 
@@ -58,8 +59,9 @@ timezone (glossary: Audit Metadata).
 - **Access:** `getTransaction` for a non-member → `null`; for a Transaction in another Circle
   → `null`; missing id → `null` (anti-enumeration).
 - **History content:** events render newest-first with actor display name, field names, old/
-  new values; **assert no raw `Id` strings** appear in rendered changes; archived/restored/
-  type-change events present after performing those actions.
+  new values; money values render in viewer locale from typed minor-units + Currency values;
+  **assert no raw `Id` strings** appear in rendered changes; archived/restored/type-change
+  events present after performing those actions.
 - **Audit Metadata:** created-by/at and updated-by/at correct; updated-by reflects the last
   editor; timestamps shown with stored offset (not viewer tz).
 - **E2E:** open a Transaction, see history reflecting an edit and an archive.

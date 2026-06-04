@@ -149,7 +149,7 @@ The created-by, created-at, updated-by, and updated-at details for a **Transacti
 _Avoid_: Activity Log
 
 **Transaction History**:
-The immutable change history for a **Transaction**, including created, edited, archived, and restored events. Current Members can view Transaction History in Transaction detail, including the acting Member, changed field names, and old and new values for amount, Transaction Date, Title, Note, Transaction type, Paid By, and Categories; internal IDs are not shown.
+The immutable change history for a **Transaction**, including created, edited, archived, and restored events. Current Members can view Transaction History in Transaction detail, including the acting Member, changed field names, and old and new values for amount, Transaction Date, Title, Note, Transaction type, Paid By, and Categories; amount changes retain their **Currency**, and internal IDs are not shown.
 _Avoid_: Hidden Audit Trail
 
 **Expense**:
@@ -201,7 +201,7 @@ A per-**Circle** way to find **Transactions** by Title, Note, Category name, typ
 _Avoid_: Global Search
 
 **Export**:
-A CSV download of **Transactions** from one **Circle**. Any current **Member** can Export Transactions they can view; Export includes active Transactions by default and can optionally include Archived Transactions. V1 supports Export but does not support importing Transactions.
+A CSV download of **Transactions** from one **Circle**. Any current **Member** can Export Transactions they can view; Export includes active Transactions by default and can optionally include Archived Transactions, and exported amounts identify the **Currency** explicitly. V1 supports Export but does not support importing Transactions.
 _Avoid_: Import
 
 **Notification Center**:

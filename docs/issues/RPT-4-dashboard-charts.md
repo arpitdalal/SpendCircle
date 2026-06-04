@@ -6,7 +6,7 @@
 | **Labels** | `area:reporting`, `backend`, `ui` |
 | **Depends on** | RPT-3 |
 | **PRD stories** | 70, 71, 72 |
-| **ADRs** | 0005, 0009, 0015 |
+| **ADRs** | 0005, 0009, 0015, 0021 |
 | **Glossary** | Dashboard, Comparison Range |
 
 ## Intent
@@ -25,7 +25,7 @@ Income/Expense bars with a Net line overlay** (PRD 72), across a **Comparison Ra
     netMinor }[]` + currency.
 - **Web:** Recharts grouped bar (income, expense) + line (net) overlay; comparison-range
   selector (1/3/6/12, default 6); shares the Paid By filter with RPT-3. Format axes/tooltips via
-  Circle Currency.
+  the viewer locale and Circle Currency.
 
 ## Why this way
 

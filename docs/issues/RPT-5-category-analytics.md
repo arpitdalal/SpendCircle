@@ -6,7 +6,7 @@
 | **Labels** | `area:reporting`, `backend`, `ui` |
 | **Depends on** | RPT-3 |
 | **PRD stories** | 58, 73 |
-| **ADRs** | 0005, 0009, 0015 |
+| **ADRs** | 0005, 0009, 0015, 0021 |
 | **Glossary** | Dashboard, Category, Archived Category |
 
 ## Intent
@@ -27,8 +27,9 @@ not vanish because a label was archived.
     list `{ categoryId→ref, name, color, status, taggedTotalMinor, txnCount }[]` sorted desc.
     Include Archived Categories that are attached to in-period active Transactions; mark their
     `status` so the UI can badge them.
-- **Web:** a ranked bar/list (Recharts or list) labeled as tagged spend, with a note that totals
-  are non-additive; archived categories badged; respects Paid By + month.
+- **Web:** a ranked bar/list (Recharts or list) labeled as tagged spend, with viewer-locale
+  money display and a note that totals are non-additive; archived categories badged; respects
+  Paid By + month.
 
 ## Why this way
 

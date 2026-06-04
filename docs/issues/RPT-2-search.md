@@ -6,7 +6,7 @@
 | **Labels** | `area:reporting`, `backend`, `ui` |
 | **Depends on** | TXN-1, RPT-1 |
 | **PRD stories** | 41, 65, 66, 67 |
-| **ADRs** | 0009, 0015, 0016 |
+| **ADRs** | 0009, 0015, 0016, 0021 |
 | **Glossary** | Search, Archived Transaction, Archived Category, Removed Member |
 
 ## Intent
@@ -34,7 +34,8 @@ matching historical Transactions exist** (PRD: Search/Removed Member/Archived Ca
     `listCategories`/`listMembers` with the include flags.
 - **Web:** Search UI integrated into the Ledger: text box, type toggle, category multi-select,
   Recorded By / Paid By selectors (showing removed members where relevant), date-range / all-time
-  controls, amount-range, and an archive-only toggle. Results reuse the ledger row + totals.
+  controls, amount-range, and an archive-only toggle. Results reuse the ledger row + totals,
+  including viewer-locale money display.
 
 ## Why this way
 

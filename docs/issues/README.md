@@ -164,12 +164,12 @@ explicitly in the PR and flag it — never skip it silently.
 - **Anti-enumeration (ADR 0016).** Missing and inaccessible are indistinguishable: same
   `"Circle not found"` throw on mutations, same `null` from resolver queries, same
   unavailable-link snackbar + fallback in the UI. Never leak whether an object exists.
-- **Audit on every change (ADR 0018).** Any mutation that changes an audited entity
+- **Audit on every change (ADR 0018, ADR 0021).** Any mutation that changes an audited entity
   (Circle, Transaction, Category — incl. membership/ownership/lifecycle events) MUST call
-  `recordEvent` with pre-formatted human strings (money via Circle Currency, dates plain
-  `YYYY-MM-DD`, Members as Display Name, Categories as names — never raw IDs). This holds
-  **even when that entity's history *view* ships in a later slice** — write the events now
-  so the view has data when it lands.
+  `recordEvent` with display-safe values (money as typed minor units plus Currency, dates
+  plain `YYYY-MM-DD`, Members as Display Name, Categories as names — never raw IDs). This
+  holds **even when that entity's history *view* ships in a later slice** — write the events
+  now so the view has data when it lands.
 - **Derive view types across the seam (ADR 0003).** New client-facing shape ⇒ a Convex
   function returns it ⇒ derive the type with `FunctionReturnType` in `data.ts`. Never
   hand-write a parallel `interface` for a mocked path; that's the drift this foundation
@@ -238,7 +238,8 @@ pass — happy paths alone are a review rejection. For each slice, cover:
    archived), exactly one Member row per (Circle, User), ≥1 Category per Transaction, no
    duplicate Categories, single Owner, Personal Circle stays solo.
 6. **History/audit** — assert the mutation recorded the expected event(s) with correct
-   `action`, formatted `from`/`to`, actor, and **no raw IDs** in `changes`.
+   `action`, display-safe `from`/`to` values, actor, typed money where relevant, and **no raw
+   IDs** in `changes`.
 7. **Live-update relevance** — where the PRD promises live read-only/revocation (e.g.
    archived-live, removed-live), assert the query result flips when the underlying row
    changes (convex-test: mutate, re-query).
@@ -325,6 +326,8 @@ Each slice file in this directory uses this structure:
 - [EML-2 · Invitation email](EML-2-invitation-email.md)
 
 ### Platform
+- [MNT-1 · React Router v8 future flag adoption](MNT-1-react-router-v8-flags.md)
+- [MNT-2 · Locale-safe money formatting](MNT-2-locale-safe-money-formatting.md)
 - [EXP-1 · CSV Export](EXP-1-csv-export.md)
 - [FBK-1 · Feedback](FBK-1-feedback.md)
 - [SET-1 · Settings: App Version + analytics opt-out](SET-1-settings.md)
