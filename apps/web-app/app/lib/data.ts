@@ -119,22 +119,35 @@ export interface PaginatedTransactions {
   loadMore: () => void;
 }
 
+/** A Transaction's lifecycle status — `"active"` by default, `"archived"` for the
+ * dedicated archived view (TXN-3). Re-derived from the view type so it can't drift. */
+export type TransactionStatus = Transaction["status"];
+
 /**
- * A Circle's active Transactions, most recent first, paginated at the source so
- * the client never holds an unbounded set — it loads one page and grows on demand
- * (ADR 0006 for the mock fork). An optional `month` ("YYYY-MM") scopes the page to
- * one month at the source — the Monthly Ledger list (RPT-1); omit it for the
- * all-active read. TXN-1 uses the unscoped form to confirm a create landed.
+ * A Circle's Transactions of one lifecycle status, most recent first, paginated at
+ * the source so the client never holds an unbounded set — it loads one page and grows
+ * on demand (ADR 0006 for the mock fork). An optional `month` ("YYYY-MM") scopes the
+ * page to one month at the source — the Monthly Ledger list (RPT-1); omit it for the
+ * all-status read. TXN-1 uses the unscoped active form to confirm a create landed;
+ * `status: "archived"` is the archived view the Restore affordance reads (TXN-3),
+ * which the backend ranges off the same index. `status` defaults to `"active"` — the
+ * normal surface that excludes archived Transactions.
  */
-export function useTransactions(circleId: Circle["id"], month?: PlainMonth): PaginatedTransactions {
+export function useTransactions(
+  circleId: Circle["id"],
+  month?: PlainMonth,
+  options?: { status?: TransactionStatus },
+): PaginatedTransactions {
+  const status = options?.status ?? "active";
   const paginated = usePaginatedQuery(
     api.transactions.listTransactions,
-    MOCKS ? "skip" : { circleId, ...(month ? { month } : {}) },
+    MOCKS ? "skip" : { circleId, status, ...(month ? { month } : {}) },
     { initialNumItems: TRANSACTIONS_PAGE_SIZE },
   );
   if (MOCKS) {
     return {
-      transactions: MOCK_TRANSACTIONS,
+      // Archived has no offline fixtures; the active list powers the populated path.
+      transactions: status === "active" ? MOCK_TRANSACTIONS : [],
       status: "Exhausted",
       loadMore: () => {},
     };
@@ -162,10 +175,19 @@ export type MonthlyTotals = MonthlySummary["totals"];
  * can't carry totals next to a page, and the totals must sum the entire month while
  * the list only resolves the visible page), recombined here into the one hook the
  * route consumes. Mock mode returns fixtures and skips both backend reads (ADR 0006).
+ *
+ * `status` selects the month's active list (default) or its archived list (TXN-3 — the
+ * surface the Restore affordance reads). The `summary` totals are always the month's
+ * ACTIVE Income/Expense/Net (archived Transactions never count — Dashboard contract),
+ * independent of which list the toggle shows.
  */
-export function useMonthlyLedger(circleId: Circle["id"], month: PlainMonth) {
+export function useMonthlyLedger(
+  circleId: Circle["id"],
+  month: PlainMonth,
+  options?: { status?: TransactionStatus },
+) {
   const queried = useQuery(api.ledger.getMonthlyLedger, MOCKS ? "skip" : { circleId, month });
-  const transactions = useTransactions(circleId, month);
+  const transactions = useTransactions(circleId, month, { status: options?.status ?? "active" });
   return {
     summary: MOCKS ? MOCK_MONTHLY_SUMMARY : queried,
     transactions,
@@ -236,4 +258,19 @@ export function useCreateTransaction() {
  */
 export function useUpdateTransaction() {
   return useMutation(api.transactions.updateTransaction);
+}
+
+/**
+ * The Archive-Transaction mutation (TXN-3), behind the same seam as create/edit. The
+ * server enforces the permission (Recorded By creator or Owner — moderation, never a
+ * field-edit backdoor) and that the Circle is writable; this hook just exposes the call
+ * the ledger row awaits. Restoring is its mirror.
+ */
+export function useArchiveTransaction() {
+  return useMutation(api.transactions.archiveTransaction);
+}
+
+/** The Restore-Transaction mutation (TXN-3): the mirror of {@link useArchiveTransaction}. */
+export function useRestoreTransaction() {
+  return useMutation(api.transactions.restoreTransaction);
 }

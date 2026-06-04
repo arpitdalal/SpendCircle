@@ -40,6 +40,8 @@ const NOW_MONTH = currentMonth(new Date());
 
 const createTransaction = vi.fn();
 const updateTransaction = vi.fn();
+const archiveTransaction = vi.fn();
+const restoreTransaction = vi.fn();
 const paginatedLoadMore = vi.fn();
 
 const ROUTES = (
@@ -58,6 +60,7 @@ function setup(
   opts: {
     circle?: Partial<Circle>;
     transactions?: Transaction[];
+    archivedTransactions?: Transaction[];
     status?: PaginationStatus;
     categories?: Category[] | null;
     members?: Member[] | null;
@@ -70,15 +73,22 @@ function setup(
   createTransaction.mockResolvedValue("new-id");
   updateTransaction.mockReset();
   updateTransaction.mockResolvedValue("t1");
+  archiveTransaction.mockReset();
+  archiveTransaction.mockResolvedValue("t1");
+  restoreTransaction.mockReset();
+  restoreTransaction.mockResolvedValue("t1");
   configureConvex({
     categories: opts.categories === undefined ? [makeCategoryView()] : opts.categories,
     members: opts.members === undefined ? [makeMemberView()] : opts.members,
     transactions: opts.transactions,
+    archivedTransactions: opts.archivedTransactions,
     transactionsStatus: opts.status,
     ...(opts.monthlySummary === undefined ? {} : { monthlySummary: opts.monthlySummary }),
     loadMore: paginatedLoadMore,
     createTransaction,
     updateTransaction,
+    archiveTransaction,
+    restoreTransaction,
   });
   const initialEntries = opts.initialEntries ?? [`/circles/${REF}/transactions?month=2026-05`];
   return { circle, ...renderCircleRoutes(circle, ROUTES, { initialEntries }) };
@@ -324,5 +334,132 @@ describe("CircleTransactions — Monthly Ledger totals (RPT-1)", () => {
     setup({ monthlySummary: summaryOf(2_000, 9_000, -7_000) });
     const totals = screen.getByRole("group", { name: "Monthly totals" });
     expect(within(totals).getByText("-$70.00")).toBeInTheDocument();
+  });
+});
+
+describe("CircleTransactions — archive / restore (TXN-3)", () => {
+  it("archives a row the viewer can archive and calls the mutation by id", async () => {
+    const user = userEvent.setup();
+    setup({
+      transactions: [
+        makeTransactionView({
+          id: testId<Transaction["id"]>("t1"),
+          title: "Weekly shop",
+          canArchive: true,
+        }),
+      ],
+    });
+    await user.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    expect(archiveTransaction).toHaveBeenCalledWith({ transactionId: testId("t1") });
+  });
+
+  it("hides the Archive action on rows the viewer can't archive", () => {
+    setup({
+      transactions: [
+        makeTransactionView({ title: "Theirs", canArchive: false, canEditFields: false }),
+      ],
+    });
+    expect(screen.queryByRole("button", { name: "Archive Theirs" })).not.toBeInTheDocument();
+  });
+
+  it("hides the Archive action in an archived (read-only) Circle", () => {
+    setup({
+      circle: { status: "archived" },
+      transactions: [makeTransactionView({ title: "Mine", canArchive: true })],
+    });
+    expect(screen.queryByRole("button", { name: "Archive Mine" })).not.toBeInTheDocument();
+  });
+
+  it("toggles to the archived view via the URL and lists archived transactions", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      transactions: [makeTransactionView({ title: "Active one" })],
+      archivedTransactions: [
+        makeTransactionView({
+          id: testId<Transaction["id"]>("a1"),
+          ref: "old-buy-a1",
+          title: "Old buy",
+          status: "archived",
+        }),
+      ],
+    });
+    // Active view first.
+    expect(screen.getByText("Active one")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05&view=archived`);
+    expect(screen.getByText("Old buy")).toBeInTheDocument();
+    expect(screen.queryByText("Active one")).not.toBeInTheDocument();
+  });
+
+  it("reads the archived view from the URL (reload-restorable) and freezes the rows", () => {
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&view=archived`],
+      archivedTransactions: [
+        makeTransactionView({ title: "Old buy", status: "archived", canArchive: true }),
+      ],
+    });
+    // Frozen: no Edit affordance in the archived view, even for an own row.
+    expect(screen.queryByRole("link", { name: "Edit Old buy" })).not.toBeInTheDocument();
+    // The Add CTAs belong to the active view only.
+    expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore Old buy" })).toBeInTheDocument();
+  });
+
+  it("restores an archived row and calls the mutation by id", async () => {
+    const user = userEvent.setup();
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&view=archived`],
+      archivedTransactions: [
+        makeTransactionView({
+          id: testId<Transaction["id"]>("a1"),
+          title: "Old buy",
+          status: "archived",
+          canArchive: true,
+        }),
+      ],
+    });
+    await user.click(screen.getByRole("button", { name: "Restore Old buy" }));
+    expect(restoreTransaction).toHaveBeenCalledWith({ transactionId: testId("a1") });
+  });
+
+  it("names the archived empty state for the month", () => {
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&view=archived`],
+      archivedTransactions: [],
+    });
+    expect(screen.getByText("No archived transactions in May 2026.")).toBeInTheDocument();
+  });
+
+  it("drops a redundant view=active and an invalid view from the URL", async () => {
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&view=bogus`],
+    });
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+  });
+
+  it("closes an open create form when switching to the archived view", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&new=expense`],
+    });
+    expect(screen.getByRole("form", { name: /add expense/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05&view=archived`);
+    expect(screen.queryByRole("form", { name: /add expense/i })).not.toBeInTheDocument();
+  });
+
+  it("surfaces a failed archive in the snackbar and keeps the row actionable", async () => {
+    const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    setup({ transactions: [makeTransactionView({ title: "Weekly shop", canArchive: true })] });
+    // After setup() seeds the default resolve; override with a one-shot rejection.
+    archiveTransaction.mockRejectedValueOnce(new Error("boom"));
+
+    await user.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    expect(await screen.findByText(/couldn't archive the transaction/i)).toBeInTheDocument();
+    // Re-enabled for a retry after the failure.
+    expect(screen.getByRole("button", { name: "Archive Weekly shop" })).toBeEnabled();
+    consoleError.mockRestore();
   });
 });

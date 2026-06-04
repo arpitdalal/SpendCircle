@@ -53,6 +53,8 @@ const NAME = {
   getPaidByFilterOptions: getFunctionName(api.dashboard.getPaidByFilterOptions),
   createTransaction: getFunctionName(api.transactions.createTransaction),
   updateTransaction: getFunctionName(api.transactions.updateTransaction),
+  archiveTransaction: getFunctionName(api.transactions.archiveTransaction),
+  restoreTransaction: getFunctionName(api.transactions.restoreTransaction),
   createCategory: getFunctionName(api.categories.createCategory),
 };
 
@@ -85,8 +87,12 @@ interface ConvexState {
   categories?: Category[] | null;
   /** `listMembers` — `undefined` ≡ loading, `null` ≡ inaccessible. */
   members?: Member[] | null;
-  /** `listTransactions` page (paginated). */
+  /** `listTransactions` page (paginated) — the ACTIVE-status page. */
   transactions?: Transaction[];
+  /** `listTransactions` page for `status: "archived"` — the archived view's page
+   * (TXN-3). Dispatched by the query's `status` arg so the active/archived toggle reads
+   * two distinct lists; defaults to empty (an archived view with nothing in it). */
+  archivedTransactions?: Transaction[];
   transactionsStatus?: PaginationStatus;
   /** The paginated `loadMore`; assert against it for "Load more" wiring. */
   loadMore?: () => void;
@@ -123,6 +129,8 @@ interface ConvexState {
    * second config shape speculatively. */
   createTransaction?: Mock;
   updateTransaction?: Mock;
+  archiveTransaction?: Mock;
+  restoreTransaction?: Mock;
   createCategory?: Mock;
 }
 
@@ -134,6 +142,7 @@ export function configureConvex(state: ConvexState = {}) {
     categories,
     members,
     transactions = [],
+    archivedTransactions = [],
     transactionsStatus = "Exhausted",
     loadMore = () => {},
     monthlySummary = EMPTY_MONTHLY_SUMMARY,
@@ -144,6 +153,8 @@ export function configureConvex(state: ConvexState = {}) {
     editableTransaction,
     createTransaction,
     updateTransaction,
+    archiveTransaction,
+    restoreTransaction,
     createCategory,
   } = state;
 
@@ -173,10 +184,20 @@ export function configureConvex(state: ConvexState = {}) {
     },
   );
 
-  convexReactMock.usePaginatedQuery.mockImplementation((fn: FunctionReference<"query">) =>
-    getFunctionName(fn) === NAME.listTransactions
-      ? { results: transactions, status: transactionsStatus, loadMore }
-      : { results: [], status: "Exhausted", loadMore: () => {} },
+  convexReactMock.usePaginatedQuery.mockImplementation(
+    (fn: FunctionReference<"query">, args: Record<string, unknown> | "skip") => {
+      if (getFunctionName(fn) !== NAME.listTransactions) {
+        return { results: [], status: "Exhausted", loadMore: () => {} };
+      }
+      // The active/archived toggle (TXN-3) reads two distinct pages by the query's
+      // `status` arg, so the doubles dispatch on it just as the backend does.
+      const archived = args !== "skip" && args.status === "archived";
+      return {
+        results: archived ? archivedTransactions : transactions,
+        status: transactionsStatus,
+        loadMore,
+      };
+    },
   );
 
   const noop = vi.fn();
@@ -186,6 +207,10 @@ export function configureConvex(state: ConvexState = {}) {
         return createTransaction ?? noop;
       case NAME.updateTransaction:
         return updateTransaction ?? noop;
+      case NAME.archiveTransaction:
+        return archiveTransaction ?? noop;
+      case NAME.restoreTransaction:
+        return restoreTransaction ?? noop;
       case NAME.createCategory:
         return createCategory ?? noop;
       default:
@@ -290,6 +315,7 @@ export function makeTransactionView(over: Partial<Transaction> = {}): Transactio
       { id: testId<Category["id"]>("cat-groceries"), name: "Groceries", color: "green" },
     ],
     canEditFields: true,
+    canArchive: true,
     ...over,
   };
 }

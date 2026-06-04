@@ -1336,6 +1336,329 @@ describe("listTransactions — view shape", () => {
   });
 });
 
+describe("archiveTransaction — permissions (TXN-3)", () => {
+  it("lets the Recorded By Member archive their own Transaction", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: member.memberId }),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    await t.run(async (ctx) => {
+      const txn = await ctx.db.get(id);
+      expect(txn?.status).toBe("archived");
+      expect(txn?.archivedAt).toBeTypeOf("number");
+    });
+  });
+
+  it("lets the Owner archive another Member's Transaction (moderation)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: member.memberId }),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(id))?.status).toBe("archived");
+    });
+  });
+
+  it("forbids a non-owner, non-creator Member", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    // Recorded by the owner; Maya is neither the recorder nor the owner.
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: f.ownerMemberId }),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+    await expect(
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    ).rejects.toThrow(/only the recorder or the owner/i);
+  });
+
+  it("forbids a Removed creator, then allows them again on rejoin (PRD 44)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: member.memberId }),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+
+    await t.run((ctx) =>
+      ctx.db.patch(member.memberId, { status: "removed", removedAt: Date.now() }),
+    );
+    await expect(
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    ).rejects.toThrow("Transaction not found");
+
+    await t.run((ctx) => ctx.db.patch(member.memberId, { status: "active" }));
+    await expect(
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    ).resolves.toBeTruthy();
+  });
+
+  it("hides existence from a non-member, an unauthenticated caller, and a missing Transaction", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+
+    mockCurrentUser.mockResolvedValue(stranger);
+    await expect(
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    ).rejects.toThrow("Transaction not found");
+
+    mockCurrentUser.mockResolvedValue(null);
+    await expect(
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    ).rejects.toThrow("Transaction not found");
+
+    await t.run((ctx) => ctx.db.delete(id));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await expect(
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    ).rejects.toThrow("Transaction not found");
+  });
+});
+
+describe("archiveTransaction — Owner gains no field-edit via this path (TXN-3)", () => {
+  it("rejects the Owner editing fields of a Transaction they archived", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: member.memberId }),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    // Even after restoring it (so it's no longer frozen), the Owner still can't edit
+    // another Member's fields — archive/restore is moderation only (PRD 39).
+    await t.mutation(api.transactions.restoreTransaction, { transactionId: id });
+    await expect(
+      t.mutation(api.transactions.updateTransaction, { transactionId: id, title: "Owner rewrite" }),
+    ).rejects.toThrow(/only the member who recorded/i);
+  });
+});
+
+describe("archiveTransaction — frozen & state edges (TXN-3)", () => {
+  it("rejects archiving an already-archived Transaction (no silent no-op)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { status: "archived" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await expect(
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    ).rejects.toThrow(/already archived/i);
+  });
+
+  it("freezes the Transaction — editing an archived one is rejected (TXN-2 invariant)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    await expect(
+      t.mutation(api.transactions.updateTransaction, { transactionId: id, title: "x" }),
+    ).rejects.toThrow(/archived transactions can't be edited/i);
+  });
+
+  it("rejects archiving in an archived Circle", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    await t.run((ctx) => ctx.db.patch(f.circleId, { status: "archived", archivedAt: Date.now() }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await expect(
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    ).rejects.toThrow("Circle is archived");
+  });
+});
+
+describe("archiveTransaction — reporting contract & history (TXN-3)", () => {
+  it("excludes an archived Transaction from the default active list, includes it in the archived view", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { title: "Weekly shop" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+
+    const active = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    expect(active.page).toHaveLength(0);
+
+    const archived = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      status: "archived",
+      ...firstPage(25),
+    });
+    expect(archived.page.map((txn) => txn.title)).toEqual(["Weekly shop"]);
+    expect(archived.page[0]?.status).toBe("archived");
+  });
+
+  it("records an 'archived' event with the moderator as actor, no field changes, no raw ids", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: member.memberId }),
+    );
+    // The OWNER moderates — the actor must be the owner, not the recorder.
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+
+    await t.run(async (ctx) => {
+      const events = await historyOf(ctx, id);
+      expect(events[0]?.action).toBe("archived");
+      expect(events[0]?.actorMemberId).toBe(f.ownerMemberId);
+      expect(events[0]?.changes).toEqual([]);
+    });
+  });
+});
+
+describe("restoreTransaction (TXN-3)", () => {
+  it("lets the Recorded By Member restore their own archived Transaction", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: member.memberId, status: "archived" }),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+    await t.mutation(api.transactions.restoreTransaction, { transactionId: id });
+    await t.run(async (ctx) => {
+      const txn = await ctx.db.get(id);
+      expect(txn?.status).toBe("active");
+      expect(txn?.archivedAt).toBeUndefined(); // cleared on restore
+    });
+  });
+
+  it("lets the Owner restore another Member's archived Transaction", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: member.memberId, status: "archived" }),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.mutation(api.transactions.restoreTransaction, { transactionId: id });
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(id))?.status).toBe("active");
+    });
+  });
+
+  it("forbids a non-owner, non-creator Member", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: f.ownerMemberId, status: "archived" }),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+    await expect(
+      t.mutation(api.transactions.restoreTransaction, { transactionId: id }),
+    ).rejects.toThrow(/only the recorder or the owner/i);
+  });
+
+  it("rejects restoring an active Transaction (no silent no-op)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await expect(
+      t.mutation(api.transactions.restoreTransaction, { transactionId: id }),
+    ).rejects.toThrow(/not archived/i);
+  });
+
+  it("rejects restoring in an archived Circle", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { status: "archived" }));
+    await t.run((ctx) => ctx.db.patch(f.circleId, { status: "archived", archivedAt: Date.now() }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await expect(
+      t.mutation(api.transactions.restoreTransaction, { transactionId: id }),
+    ).rejects.toThrow("Circle is archived");
+  });
+
+  it("records a 'restored' event with the moderator as actor and no field changes", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { status: "archived" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.mutation(api.transactions.restoreTransaction, { transactionId: id });
+    await t.run(async (ctx) => {
+      const events = await historyOf(ctx, id);
+      expect(events[0]?.action).toBe("restored");
+      expect(events[0]?.actorMemberId).toBe(f.ownerMemberId);
+      expect(events[0]?.changes).toEqual([]);
+    });
+  });
+
+  it("re-enters the active list and is editable by its recorder again after restore", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { title: "Weekly shop" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    await t.mutation(api.transactions.restoreTransaction, { transactionId: id });
+
+    const active = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    expect(active.page.map((txn) => txn.title)).toEqual(["Weekly shop"]);
+    // Editing works again now that it's no longer frozen.
+    await expect(
+      t.mutation(api.transactions.updateTransaction, { transactionId: id, title: "Edited again" }),
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe("listTransactions — canArchive flag (TXN-3)", () => {
+  it("marks canArchive for the recorder and the Owner, but not a non-owner non-creator", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    await t.run((ctx) =>
+      seedTransaction(ctx, f, { title: "Owner txn", recordedByMemberId: f.ownerMemberId }),
+    );
+    await t.run((ctx) =>
+      seedTransaction(ctx, f, { title: "Maya txn", recordedByMemberId: member.memberId }),
+    );
+
+    // The Owner can archive both (own + moderation).
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const ownerView = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    const ownerByTitle = new Map(ownerView.page.map((txn) => [txn.title, txn.canArchive]));
+    expect(ownerByTitle.get("Owner txn")).toBe(true);
+    expect(ownerByTitle.get("Maya txn")).toBe(true);
+
+    // Maya can archive only her own; canEditFields tracks recorder-only too.
+    mockCurrentUser.mockResolvedValue(member.user);
+    const mayaView = await t.query(api.transactions.listTransactions, {
+      circleId: f.circleId,
+      ...firstPage(25),
+    });
+    const mayaArchive = new Map(mayaView.page.map((txn) => [txn.title, txn.canArchive]));
+    expect(mayaArchive.get("Owner txn")).toBe(false);
+    expect(mayaArchive.get("Maya txn")).toBe(true);
+  });
+});
+
 describe("getEditableTransaction — edit target resolution (TXN-5)", () => {
   it("returns the editable Transaction with its canonical ref for the Recorded By Member", async () => {
     const t = convexTest(schema, modules);

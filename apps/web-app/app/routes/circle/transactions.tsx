@@ -7,7 +7,7 @@ import {
   type TransactionType,
   toCurrencyCode,
 } from "@spend-circle/domain";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { TransactionForm } from "~/components/transaction-form.js";
 import { Button } from "~/components/ui/button.js";
@@ -15,8 +15,13 @@ import {
   type Circle,
   type MonthlySummary,
   type PaginatedTransactions,
+  type Transaction,
+  type TransactionStatus,
+  useArchiveTransaction,
   useMonthlyLedger,
+  useRestoreTransaction,
 } from "~/lib/data.js";
+import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -56,17 +61,27 @@ export default function CircleTransactions() {
   // re-applied inline (not via `monthValid`) so TS narrows `rawMonth` to a `PlainMonth`.
   const month: PlainMonth = isValidPlainMonth(rawMonth) ? rawMonth : currentMonth(new Date());
 
+  // The list status the toggle selects: the month's active Transactions (default) or
+  // its archived ones (TXN-3 — the surface the Restore affordance reads). Only the
+  // explicit "archived" value switches; anything else (incl. absent) is active.
+  const rawView = searchParams.get("view");
+  const archivedView = rawView === "archived";
+  const status: TransactionStatus = archivedView ? "archived" : "active";
+
   const rawNew = searchParams.get("new");
-  // The open create form's type, or null. A read-only Circle drops the form state
-  // entirely (the write surface collapses — ADR 0017), so `new` only opens a form on
-  // a writable Circle. An invalid `new` value is treated as no form (and dropped below).
+  // The open create form's type, or null. Creating belongs to the active view only and a
+  // read-only Circle drops the form entirely (the write surface collapses — ADR 0017),
+  // so `new` only opens a form on a writable Circle in the active view. An invalid value
+  // is treated as no form (and dropped below).
   const createType: TransactionType | null =
-    writable && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
+    writable && !archivedView && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
 
   // Normalize malformed/unsupported UI query state with REPLACE navigation rather than
-  // treating it as an unavailable object (ADR 0017): backfill a missing/invalid month
-  // to the current month, and drop a `new` that is invalid or not allowed here (the
-  // Circle is read-only). Replace so these corrections never litter the Back stack.
+  // treating it as an unavailable object (ADR 0017): backfill a missing/invalid month to
+  // the current month, drop a redundant `view=active` (active is the absent default) and
+  // an invalid `view`, and drop a `new` that is invalid or not allowed here (read-only
+  // Circle, or the archived view where creating doesn't apply). Replace so these
+  // corrections never litter the Back stack.
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
     let changed = false;
@@ -74,7 +89,11 @@ export default function CircleTransactions() {
       next.set("month", month);
       changed = true;
     }
-    const newAllowed = writable && (rawNew === "expense" || rawNew === "income");
+    if (rawView !== null && rawView !== "archived") {
+      next.delete("view");
+      changed = true;
+    }
+    const newAllowed = writable && !archivedView && (rawNew === "expense" || rawNew === "income");
     if (rawNew !== null && !newAllowed) {
       next.delete("new");
       changed = true;
@@ -82,9 +101,9 @@ export default function CircleTransactions() {
     if (changed) {
       setSearchParams(next, { replace: true });
     }
-  }, [searchParams, monthValid, month, rawNew, writable, setSearchParams]);
+  }, [searchParams, monthValid, month, rawNew, rawView, archivedView, writable, setSearchParams]);
 
-  const { summary, transactions } = useMonthlyLedger(circle.id, month);
+  const { summary, transactions } = useMonthlyLedger(circle.id, month, { status });
 
   // Month changes PUSH a normal history entry (Back returns to the prior month).
   const goToMonth = (next: PlainMonth) => {
@@ -119,11 +138,29 @@ export default function CircleTransactions() {
     );
   };
 
+  // Toggle the active/archived list (TXN-3): set `view=archived` or drop the param for
+  // the active default, keeping the month. Switching to a view also closes any open
+  // create form (`new`) since it only applies to the active view. PUSH so Back returns
+  // to the prior view.
+  const goToView = (next: TransactionStatus) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set("month", month);
+      params.delete("new");
+      if (next === "archived") {
+        params.set("view", "archived");
+      } else {
+        params.delete("view");
+      }
+      return params;
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold">Transactions</h2>
-        {writable ? (
+        {writable && !archivedView ? (
           <div className="flex gap-2">
             <Button type="button" onClick={() => openCreate("expense")}>
               Add expense
@@ -137,6 +174,8 @@ export default function CircleTransactions() {
 
       <MonthNavigator month={month} onChange={goToMonth} />
       <MonthlyTotals summary={summary} fallbackCurrency={circle.currency} />
+
+      <ViewToggle archivedView={archivedView} onChange={goToView} />
 
       {!writable ? (
         <p className="rounded-md border border-neutral-800 p-3 text-sm text-neutral-500">
@@ -164,8 +203,49 @@ export default function CircleTransactions() {
         month={month}
         monthLabel={formatMonthLabel(month)}
         canEdit={writable}
+        archivedView={archivedView}
       />
     </div>
+  );
+}
+
+/**
+ * Active / Archived list switch for the Ledger (TXN-3). The archived view is where an
+ * Archived Transaction is restorable; the active view is the normal surface. Two
+ * `aria-pressed` toggle buttons (not a `<select>`) so the state is announced and
+ * keyboard-operable, owned by the `view` URL param so it survives reload (ADR 0017).
+ */
+function ViewToggle({
+  archivedView,
+  onChange,
+}: {
+  archivedView: boolean;
+  onChange: (status: TransactionStatus) => void;
+}) {
+  const options: { status: TransactionStatus; label: string; active: boolean }[] = [
+    { status: "active", label: "Active", active: !archivedView },
+    { status: "archived", label: "Archived", active: archivedView },
+  ];
+  return (
+    <fieldset className="flex items-center gap-2">
+      <legend className="sr-only">Show active or archived transactions</legend>
+      {options.map((option) => (
+        <button
+          key={option.status}
+          type="button"
+          aria-pressed={option.active}
+          onClick={() => onChange(option.status)}
+          className={cn(
+            "rounded-md border px-3 py-1 text-sm transition-colors",
+            option.active
+              ? "border-neutral-100 bg-neutral-100 text-neutral-900"
+              : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </fieldset>
   );
 }
 
@@ -332,6 +412,11 @@ function MonthlyTotals({
  * the Recorded By Member) and the Circle is writable; the server re-checks on save and
  * the edit-target query re-checks on open, so this is the courtesy, not the enforcement
  * (ADR 0015).
+ *
+ * Archive / Restore are the TXN-3 lifecycle actions, gated on `canArchive` (the Recorded
+ * By Member OR the Owner — server-enforced moderation, not a field-edit backdoor) and a
+ * writable Circle. In the ACTIVE view a row offers Edit + Archive; in the ARCHIVED view
+ * a row is FROZEN — no Edit affordance — and offers only Restore.
  */
 function TransactionList({
   paginated,
@@ -339,24 +424,32 @@ function TransactionList({
   month,
   monthLabel,
   canEdit,
+  archivedView,
 }: {
   paginated: PaginatedTransactions;
   circle: Circle;
   month: PlainMonth;
   monthLabel: string;
   canEdit: boolean;
+  archivedView: boolean;
 }) {
   const { transactions, status, loadMore } = paginated;
 
   if (status === "LoadingFirstPage") {
     return <p className="text-sm text-neutral-500">Loading transactions…</p>;
   }
-  // An inaccessible Circle (ADR 0016) and a month with no active Transactions both
-  // arrive as an empty page — the Circle guard already gated entry, so treat both as
-  // nothing to show, naming the month so an empty view reads as "this month is empty"
-  // rather than "this circle is empty".
+  // An inaccessible Circle (ADR 0016) and a month with no Transactions of this status
+  // both arrive as an empty page — the Circle guard already gated entry, so treat both
+  // as nothing to show, naming the month (and whether this is the archived view) so an
+  // empty view reads as "this month is empty" rather than "this circle is empty".
   if (transactions.length === 0) {
-    return <p className="text-sm text-neutral-500">No transactions in {monthLabel}.</p>;
+    return (
+      <p className="text-sm text-neutral-500">
+        {archivedView
+          ? `No archived transactions in ${monthLabel}.`
+          : `No transactions in ${monthLabel}.`}
+      </p>
+    );
   }
 
   return (
@@ -383,7 +476,9 @@ function TransactionList({
               {txn.type === "income" ? "+" : "-"}
               {formatMinorUnits(txn.amountMinorUnits, toCurrencyCode(circle.currency))}
             </span>
-            {canEdit && txn.canEditFields ? (
+            {/* Active rows can be edited (recorder only) + archived; archived rows are
+                frozen (no Edit) and can only be restored. */}
+            {!archivedView && canEdit && txn.canEditFields ? (
               <Button asChild variant="outline">
                 <Link
                   to={`/circles/${circle.ref}/transactions/${txn.ref}/edit?month=${month}`}
@@ -392,6 +487,9 @@ function TransactionList({
                   Edit
                 </Link>
               </Button>
+            ) : null}
+            {canEdit && txn.canArchive ? (
+              <LifecycleButton transaction={txn} action={archivedView ? "restore" : "archive"} />
             ) : null}
           </li>
         ))}
@@ -408,5 +506,60 @@ function TransactionList({
         </Button>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The Archive / Restore button for one Transaction row (TXN-3). The mutation is the
+ * authority on the permission and the writable-Circle rule (ADR 0015); this disables
+ * itself while in flight (guarding double-submit) and surfaces an unexpected failure
+ * through the snackbar rather than swallowing it (README §4 no silent failures). On
+ * success the reactive list drops the row from this view — no manual navigation. The
+ * `aria-label` names the Transaction so the action is unambiguous to assistive tech.
+ */
+const LIFECYCLE_COPY = {
+  archive: { idle: "Archive", busy: "Archiving…", error: "Couldn't archive the transaction." },
+  restore: { idle: "Restore", busy: "Restoring…", error: "Couldn't restore the transaction." },
+} as const;
+
+function LifecycleButton({
+  transaction,
+  action,
+}: {
+  transaction: Transaction;
+  action: "archive" | "restore";
+}) {
+  const archiveTransaction = useArchiveTransaction();
+  const restoreTransaction = useRestoreTransaction();
+  const { show } = useSnackbar();
+  const [pending, setPending] = useState(false);
+  const copy = LIFECYCLE_COPY[action];
+
+  const onClick = async () => {
+    setPending(true);
+    try {
+      const run = action === "archive" ? archiveTransaction : restoreTransaction;
+      await run({ transactionId: transaction.id });
+      // The reactive list re-queries and drops the row from this view on success.
+    } catch (error) {
+      // Known guard rejections (permission, archived Circle) can't normally be reached
+      // from here (the affordance is already gated), so anything thrown is unexpected:
+      // surface it (Sentry once it lands — ADR 0012) and tell the user, never swallow.
+      console.error(`${action}Transaction failed`, error);
+      show(`${copy.error} Please try again.`);
+      setPending(false); // keep the row actionable for a retry
+    }
+  };
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={pending}
+      onClick={onClick}
+      aria-label={`${copy.idle} ${transaction.title}`}
+    >
+      {pending ? copy.busy : copy.idle}
+    </Button>
   );
 }

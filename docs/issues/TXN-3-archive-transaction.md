@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done · [PR #71](https://github.com/arpitdalal/SpendCircle/pull/71) |
 | **Labels** | `area:transactions`, `backend`, `ui` |
 | **Depends on** | TXN-1 |
 | **Unlocks** | (RPT-* exclude archived from totals; RPT-2 archive filter) |
