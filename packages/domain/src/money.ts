@@ -65,23 +65,56 @@ export function isValidMinorUnits(minorUnits: number): boolean {
   return Number.isInteger(minorUnits) && minorUnits > 0 && minorUnits <= MAX_AMOUNT_MINOR;
 }
 
-/** Formats integer minor units as a localized currency string for display. */
-export function formatMinorUnits(
-  minorUnits: number,
-  currency: CurrencyCode,
-  locale?: string,
-): string {
-  const { decimals } = getCurrency(currency);
-  const major = minorUnits / 10 ** decimals;
+/**
+ * A semantic money value: integer minor units paired with the ISO Currency they
+ * are denominated in. This is the unit that flows across the seam — including
+ * frozen into immutable history (ADR 0021) — so a value carries its own meaning
+ * and never depends on re-resolving mutable Circle state to be formatted.
+ */
+export interface Money {
+  minorUnits: number;
+  currency: CurrencyCode;
+}
+
+export function money(minorUnits: number, currency: CurrencyCode): Money {
+  return { minorUnits, currency };
+}
+
+/**
+ * Formats a money value as a localized currency string for VIEWER display.
+ *
+ * `locale` is REQUIRED, on purpose: an omitted locale makes `Intl.NumberFormat`
+ * fall back to the runtime's ambient locale (the process locale under Node), so a
+ * call site that "forgets" it silently leaks server/terminal locale into the UI
+ * and makes tests pass or fail by terminal language (ADR 0021). Forcing the
+ * caller to name a presentation locale removes that footgun at the type level —
+ * web UI passes the viewer locale, never the ambient default. Server/Convex code
+ * must NOT call this at all: it has no viewer locale to honor.
+ */
+export function formatMoney(value: Money, locale: string): string {
+  const { decimals } = getCurrency(value.currency);
+  const major = value.minorUnits / 10 ** decimals;
   return new Intl.NumberFormat(locale, {
     style: "currency",
-    currency,
+    currency: value.currency,
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(major);
 }
 
-/** Formats minor units as a plain decimal string (no symbol), e.g. for inputs/CSV. */
+/**
+ * The positive plain-decimal amount for a money value — currency-decimal aware,
+ * no symbol, grouping, or locale. This is the EXPORT/file presentation policy
+ * (ADR 0021): a CSV row carries this unambiguous decimal plus a separate ISO
+ * Currency column, never a locale-specific symbol. Also the right form to prefill
+ * a numeric `<input>`.
+ */
+export function formatMoneyAmount(value: Money): string {
+  const { decimals } = getCurrency(value.currency);
+  return (value.minorUnits / 10 ** decimals).toFixed(decimals);
+}
+
+/** Formats minor units as a plain decimal string (no symbol), e.g. for inputs. */
 export function minorUnitsToMajorString(minorUnits: number): string {
   return (minorUnits / 10 ** MONEY_DECIMALS).toFixed(MONEY_DECIMALS);
 }

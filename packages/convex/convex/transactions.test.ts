@@ -1,4 +1,4 @@
-import { buildRef, formatMinorUnits } from "@spend-circle/domain";
+import { buildRef } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
@@ -160,17 +160,41 @@ describe("createTransaction — happy path", () => {
       expect(event?.changes).toEqual([
         { field: "type", to: "expense" },
         { field: "title", to: "Weekly shop" },
-        { field: "amount", to: formatMinorUnits(1250, "USD") },
+        // Amount freezes a typed money value, not a formatted string (ADR 0021):
+        // no `from`/`to`, no symbol, no locale baked in.
+        { field: "amount", toMoney: { minorUnits: 1250, currency: "USD" } },
         { field: "date", to: "2026-05-15" },
         { field: "paidBy", to: "Olive Owner" },
         { field: "categories", to: "Groceries, Dining" },
         { field: "note", to: "eggs and milk" },
       ]);
       for (const change of event?.changes ?? []) {
-        expect(change.to).not.toBe(id);
-        expect(change.to).not.toBe(f.groceriesId);
-        expect(change.to).not.toBe(f.ownerMemberId);
+        for (const value of [change.from, change.to]) {
+          expect(value).not.toBe(id);
+          expect(value).not.toBe(f.groceriesId);
+          expect(value).not.toBe(f.ownerMemberId);
+        }
       }
+    });
+  });
+
+  it("freezes the typed amount with the Circle's own Currency (not a default)", async () => {
+    // ADR 0021: the money value freezes the Circle Currency at event time, so a
+    // non-USD Circle records that Currency — never a hardcoded USD or an ambient
+    // locale's currency.
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx, { currency: "EUR" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+      amountMinorUnits: 4500,
+    });
+
+    await t.run(async (ctx) => {
+      const amount = (await historyOf(ctx, id))[0]?.changes.find((c) => c.field === "amount");
+      expect(amount).toEqual({ field: "amount", toMoney: { minorUnits: 4500, currency: "EUR" } });
     });
   });
 
@@ -845,7 +869,12 @@ describe("updateTransaction — field edits", () => {
       expect(events[0]?.actorMemberId).toBe(f.ownerMemberId);
       expect(events[0]?.changes).toEqual([
         { field: "title", from: "Weekly shop", to: "Big shop" },
-        { field: "amount", from: formatMinorUnits(1250, "USD"), to: formatMinorUnits(5000, "USD") },
+        // Typed money from/to, frozen with the Circle Currency (ADR 0021).
+        {
+          field: "amount",
+          fromMoney: { minorUnits: 1250, currency: "USD" },
+          toMoney: { minorUnits: 5000, currency: "USD" },
+        },
         { field: "date", from: "2026-05-15", to: "2026-06-02" },
       ]);
     });

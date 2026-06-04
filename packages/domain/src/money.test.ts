@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatMinorUnits,
+  formatMoney,
+  formatMoneyAmount,
   isValidMinorUnits,
   MAX_AMOUNT_MINOR,
   minorUnitsToMajorString,
+  money,
   parseAmountToMinorUnits,
 } from "./money.js";
 
@@ -50,12 +52,44 @@ describe("isValidMinorUnits", () => {
   });
 });
 
-describe("formatting", () => {
-  it("formats minor units with the currency symbol", () => {
-    expect(formatMinorUnits(1250, "USD", "en-US")).toBe("$12.50");
+describe("formatMoney", () => {
+  it("formats a money value with the currency symbol in the given locale", () => {
+    expect(formatMoney(money(1250, "USD"), "en-US")).toBe("$12.50");
   });
 
-  it("renders a plain decimal string", () => {
+  it("disambiguates USD for a non-US viewer locale", () => {
+    // An Australian/Canadian-style viewer sees a qualified form so USD is not
+    // confused with the local dollar — the whole point of an explicit locale.
+    // Normalize the various Unicode spaces ICU may insert before the amount.
+    const normalize = (value: string) => value.replace(/\s/g, " ");
+    expect(formatMoney(money(1250, "USD"), "en-CA")).toBe("US$12.50");
+    expect(normalize(formatMoney(money(1250, "USD"), "en-AU"))).toBe("USD 12.50");
+  });
+
+  it("formats the local currency without qualification for its own locale", () => {
+    expect(formatMoney(money(1250, "AUD"), "en-AU")).toBe("$12.50");
+  });
+
+  it("does NOT depend on the ambient runtime locale (regression for ADR 0021)", () => {
+    // The same value + viewer locale renders identically no matter what locale
+    // the process runs under — the bug MNT-2 fixes was an omitted locale.
+    const original = process.env.LANG;
+    try {
+      process.env.LANG = "en_CA.UTF-8";
+      expect(formatMoney(money(500000, "USD"), "en-US")).toBe("$5,000.00");
+    } finally {
+      process.env.LANG = original;
+    }
+  });
+});
+
+describe("formatMoneyAmount", () => {
+  it("renders a plain positive decimal string with no symbol (export form)", () => {
+    expect(formatMoneyAmount(money(1250, "USD"))).toBe("12.50");
+    expect(formatMoneyAmount(money(MAX_AMOUNT_MINOR, "USD"))).toBe("999999999.99");
+  });
+
+  it("renders a plain decimal string from minor units", () => {
     expect(minorUnitsToMajorString(1250)).toBe("12.50");
   });
 });

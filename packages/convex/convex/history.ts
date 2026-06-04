@@ -8,30 +8,48 @@ import type { MutationCtx, QueryCtx } from "./_generated/server.js";
  * never `ctx.db.insert("histories", …)` directly, so the event shape and the
  * "no raw IDs, frozen text" invariant live in exactly one place.
  *
- * The audit is immutable: each `change` carries human-readable strings formatted
- * ONCE here at write time and never re-resolved, so a line always shows what was
- * true when it was written. Callers are responsible for formatting `from`/`to`
- * with the right domain context BEFORE handing them over — money via the Circle
- * Currency (ADR 0009), dates as plain `YYYY-MM-DD`, Members as their Display
- * Name, Categories as their names — and must never pass a raw internal id. The
- * typed `*Entity` constructors below are the only way to name the audited
- * entity, which keeps a stray string from being mistaken for an entity id.
+ * The audit is immutable: each `change` carries frozen values written ONCE here
+ * and never re-resolved, so a line always shows what was true when it was written.
+ * Textual values are formatted by the caller BEFORE handing them over — dates as
+ * plain `YYYY-MM-DD`, Members as their Display Name, Categories as their names —
+ * and must never be a raw internal id.
  *
- * Deliberately NOT here yet: shared `describeChange`-style formatters for money /
- * dates / Member / Category values. The only events recorded today are Circle
- * "created"/"renamed", whose values are plain names that need no formatting.
- * Building generic formatters now would be untested, caller-less code (it fails
- * the deletion test). They belong next to the first Transaction/Category event
- * that needs them, composed at the call site from the domain helpers — `recordEvent`
- * already accepts pre-formatted strings precisely so that composition stays at the
- * boundary and the audit's frozen-text invariant is never the formatter's problem.
+ * Money is the exception (ADR 0021): an amount change freezes a SEMANTIC money
+ * value — `{ minorUnits, currency }` via the `moneyChange` helper — NOT a
+ * formatted string. History stores meaning, not presentation, so the value can be
+ * rendered for the viewer's locale at read time instead of being locked to the
+ * server/terminal locale at write time. The typed `*Entity` constructors below are
+ * the only way to name the audited entity, which keeps a stray string from being
+ * mistaken for an entity id.
  */
 
-/** A change to one field of an entity. `from` is omitted on a created event, `to` on an archived one. */
+/**
+ * A change to one field of an entity. Textual fields use `from`/`to` (omitted on a
+ * created/archived event respectively); MONEY fields use `fromMoney`/`toMoney`
+ * (typed semantic values, ADR 0021) instead — build them with `moneyChange`.
+ */
 export interface HistoryChange {
   field: string;
   from?: string;
   to?: string;
+  fromMoney?: HistoryMoney;
+  toMoney?: HistoryMoney;
+}
+
+/** A frozen semantic money value: integer minor units plus the ISO Currency at event time (ADR 0021). */
+export interface HistoryMoney {
+  minorUnits: number;
+  currency: string;
+}
+
+/**
+ * Builds a money `HistoryChange` from typed semantic values (ADR 0021). Pass the
+ * Circle Currency at event time; `from` is omitted on a created event. This keeps
+ * amount events off the preformatted-string path entirely — no `Intl` at write
+ * time, so a server/terminal locale can never leak into a frozen history row.
+ */
+export function moneyChange(field: string, to: HistoryMoney, from?: HistoryMoney): HistoryChange {
+  return { field, ...(from ? { fromMoney: from } : {}), toMoney: to };
 }
 
 /**

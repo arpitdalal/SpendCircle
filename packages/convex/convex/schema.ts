@@ -169,13 +169,18 @@ export default defineSchema({
   // Transaction / Category id) alone keys an entity's history — read by_entity
   // newest-first — and access is resolved through the entity's Circle, not a
   // denormalized column. `changes` is an array of { field, from?, to? } of human
-  // strings formatted ONCE at write time (money via the Circle Currency, dates
-  // plain, Members as Display Name, Categories as names); `from` is absent on a
-  // "created" event, `to` on an "archived" one. Values are frozen — never
-  // re-resolved — so a line always shows what was true when it was written, and
-  // raw internal IDs never appear inside `changes` (PRD story 80). We rejected a
-  // reference-based history that re-resolves display values at read time; see
-  // ADR 0018.
+  // strings formatted ONCE at write time (dates plain, Members as Display Name,
+  // Categories as names); `from` is absent on a "created" event, `to` on an
+  // "archived" one. Values are frozen — never re-resolved — so a line always shows
+  // what was true when it was written, and raw internal IDs never appear inside
+  // `changes` (PRD story 80). We rejected a reference-based history that re-resolves
+  // display values at read time; see ADR 0018.
+  //
+  // Money is the exception to the preformatted-string rule (ADR 0021): an amount
+  // change freezes a SEMANTIC money value — integer `minorUnits` plus the Circle
+  // `currency` at event time — in `fromMoney`/`toMoney`, NOT a formatted string.
+  // History stores meaning, not presentation, so a row renders for the viewer's
+  // locale at read time instead of locking the event to a server/terminal locale.
   histories: defineTable({
     entityId: v.string(),
     actorMemberId: v.optional(v.id("members")), // absent ⇒ system action
@@ -185,6 +190,9 @@ export default defineSchema({
         field: v.string(),
         from: v.optional(v.string()),
         to: v.optional(v.string()),
+        // Typed money (ADR 0021) — used by money fields instead of from/to.
+        fromMoney: v.optional(v.object({ minorUnits: v.number(), currency: v.string() })),
+        toMoney: v.optional(v.object({ minorUnits: v.number(), currency: v.string() })),
       }),
     ),
     createdAt: v.number(),
