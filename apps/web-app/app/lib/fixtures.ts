@@ -1,4 +1,13 @@
-import type { Category, Circle, Dashboard, Member, MonthlySummary, Transaction } from "./data.js";
+import type {
+  Category,
+  Circle,
+  Dashboard,
+  Member,
+  MonthlySummary,
+  Transaction,
+  TransactionDetail,
+  TransactionHistoryEvent,
+} from "./data.js";
 
 /**
  * Mock fixture data for E2E renders without a live backend (ADR 0006). These are
@@ -192,3 +201,64 @@ export function mockEditableTransaction(id: string): Transaction {
     canArchive: true,
   };
 }
+
+/**
+ * Synthesizes a Transaction DETAIL view for the detail object route under MOCKS (TXN-4),
+ * so `/transactions/:transactionRef` renders offline without a live backend (the parallel
+ * of {@link mockEditableTransaction} for `getTransaction` — ADR 0006). Typed against the
+ * derived {@link TransactionDetail} contract, so a shape change to `toTransactionDetailView`
+ * fails typecheck here. It is an editable Transaction plus its Audit Metadata block.
+ */
+export function mockTransactionDetail(id: string): TransactionDetail {
+  const me = {
+    id: "mock-member-you" as Member["id"],
+    displayName: "You",
+    image: undefined,
+  };
+  return {
+    ...mockEditableTransaction(id),
+    audit: {
+      createdBy: me,
+      createdAt: Date.UTC(2026, 4, 15, 9, 30),
+      updatedBy: me,
+      updatedAt: Date.UTC(2026, 4, 16, 14, 5),
+    },
+  };
+}
+
+/**
+ * Mock Transaction History, typed against the derived {@link TransactionHistoryEvent}
+ * contract so a shape change to `toHistoryEventView` fails typecheck here (ADR 0003).
+ * Newest-first (the query's order), spanning a money edit and the original create so the
+ * offline detail surface renders a populated, ID-free history with both a text and a typed
+ * money change.
+ */
+export const MOCK_TRANSACTION_HISTORY: TransactionHistoryEvent[] = [
+  {
+    id: "mock-hist-edit" as TransactionHistoryEvent["id"],
+    action: "edited",
+    createdAt: Date.UTC(2026, 4, 16, 14, 5),
+    actor: { displayName: "You", image: undefined },
+    changes: [
+      { field: "title", from: "Mock transaction", to: "Mock transaction" },
+      {
+        field: "amount",
+        fromMoney: { minorUnits: 1000, currency: "USD" },
+        toMoney: { minorUnits: 1250, currency: "USD" },
+      },
+    ],
+  },
+  {
+    id: "mock-hist-create" as TransactionHistoryEvent["id"],
+    action: "created",
+    createdAt: Date.UTC(2026, 4, 15, 9, 30),
+    actor: { displayName: "You", image: undefined },
+    changes: [
+      { field: "title", to: "Mock transaction" },
+      { field: "amount", toMoney: { minorUnits: 1000, currency: "USD" } },
+      { field: "date", to: "2026-05-15" },
+      { field: "paidBy", to: "You" },
+      { field: "categories", to: "Groceries" },
+    ],
+  },
+];

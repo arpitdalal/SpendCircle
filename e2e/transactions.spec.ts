@@ -371,3 +371,73 @@ test("the transactions page restores month, add form, and edit link across reloa
   await expect(page).toHaveURL(new RegExp(`/transactions\\?month=${month}`));
   await expect(row).toBeVisible();
 });
+
+/**
+ * TXN-4 true-E2E: the Transaction detail object route shows Audit Metadata + a live
+ * Transaction History reflecting real actions. Records → edits → opens the detail and sees
+ * the created + edited events with Audit Metadata, then archives and re-opens the detail to
+ * see the archived event — all against the real frontend → Convex → DB → reactive history
+ * read path. A private far-future month per project keeps the parallel runs from colliding
+ * on the shared Personal Circle.
+ */
+test("the transaction detail shows audit metadata and history reflecting an edit and an archive", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${Date.now()}-${testInfo.project.name}`;
+  const categoryName = `E2E D ${stamp}`; // ≤ 40 chars (categoryNameMax)
+  const title = `E2E Detail ${stamp}`;
+  const month = testInfo.project.name === "mobile-chromium" ? "2994-06" : "2994-05";
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Personal/ }).click();
+
+  await page.getByRole("link", { name: "Categories" }).click();
+  await page.getByLabel(/New expense category/).fill(categoryName);
+  await page.getByRole("button", { name: "Add category" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
+
+  // Record an expense into the private month.
+  await page.getByRole("link", { name: "Transactions" }).click();
+  await selectMonth(page, month);
+  await page.getByRole("button", { name: "Add expense" }).click();
+  const form = page.getByRole("form", { name: /add expense/i });
+  await form.getByLabel("Title").fill(title);
+  await form.getByLabel(/Amount/).fill("10.00");
+  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("button", { name: "Add expense" }).click();
+
+  const row = page.getByRole("listitem").filter({ hasText: title });
+  await expect(row).toBeVisible();
+
+  // Edit just the amount (the title — and so the detail link — stays stable) to record an
+  // "edited" event with an amount change.
+  await row.getByRole("link", { name: `Edit ${title}` }).click();
+  const editForm = page.getByRole("form", { name: /edit transaction/i });
+  await editForm.getByLabel(/Amount/).fill("25.00");
+  await editForm.getByRole("button", { name: "Save changes" }).click();
+  await expect(row).toContainText("-$25.00");
+
+  // Archive it (active view) → an "archived" event. The row leaves the active list.
+  await row.getByRole("button", { name: `Archive ${title}` }).click();
+  await expect(row).toHaveCount(0);
+
+  // Open the archived Transaction's detail (via its title link, available on archived rows
+  // too) and see its Audit Metadata + the full history: created, edited, and archived.
+  await page.getByRole("button", { name: "Archived" }).click();
+  const archivedRow = page.getByRole("listitem").filter({ hasText: title });
+  await archivedRow.getByRole("link", { name: `View ${title}` }).click();
+  await expect(page).toHaveURL(/\/transactions\/[^/]+$/);
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+
+  const audit = page.getByRole("region", { name: "Audit metadata" });
+  await expect(audit).toContainText("Created by");
+  await expect(audit).toContainText("Last updated by");
+  await expect(audit).toContainText("UTC"); // stored-zone, never the viewer timezone
+
+  const history = page.getByRole("region", { name: "History" });
+  await expect(history).toContainText("created");
+  await expect(history).toContainText("edited");
+  await expect(history).toContainText("archived");
+  // The money change rendered as a formatted amount, not a raw id or minor-unit integer.
+  await expect(history).toContainText("$25.00");
+});

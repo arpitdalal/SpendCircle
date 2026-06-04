@@ -13,7 +13,14 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import { type MutationCtx, mutation, type QueryCtx, query } from "./_generated/server.js";
 import { requireCircleAccess, requireTransactionAccess, resolveCircleAccess } from "./guard.js";
-import { type HistoryChange, moneyChange, recordEvent, transactionEntity } from "./history.js";
+import {
+  type HistoryChange,
+  latestEntityEvent,
+  moneyChange,
+  paginateEntityHistory,
+  recordEvent,
+  transactionEntity,
+} from "./history.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
 const lifecycleStatus = v.union(v.literal("active"), v.literal("archived"));
@@ -161,6 +168,51 @@ export async function toTransactionView(
 export type TransactionView = Awaited<ReturnType<typeof toTransactionView>>;
 
 /**
+ * A Transaction shaped for its DETAIL surface (TXN-4): the full {@link toTransactionView}
+ * plus its **Audit Metadata** (PRD story 76). Audit Metadata is the created/updated
+ * by+at summary that sits above the full Transaction History list:
+ *
+ *   - `createdBy` is the Recorded By Member (the Member who created the record — by
+ *     definition Recorded By), `createdAt` the stored creation instant.
+ *   - `updatedBy` / `updatedAt` come from the NEWEST history event — the last Member to
+ *     change the record and when — so the pair is always internally consistent (both
+ *     read from the same event), and reflects lifecycle changes (archive/restore) too,
+ *     not just field edits. A record with no history yet (only possible for a directly
+ *     seeded row, never through the create mutation) falls back to the created pair.
+ *
+ * Timestamps are epoch millis (no stored offset — domain/date.ts notes audit/history
+ * timestamps are epoch millis) surfaced RAW. The view never converts them to a zone:
+ * the client renders them in a fixed reference zone, never the viewer's timezone
+ * (Audit Metadata glossary), so the value crossing the seam stays presentation-free.
+ * No raw IDs leak — only Display Names and timestamps appear.
+ */
+export async function toTransactionDetailView(
+  ctx: QueryCtx,
+  txn: Doc<"transactions">,
+  caches: ViewCaches,
+  viewerMemberId: Id<"members">,
+  viewerIsOwner: boolean,
+) {
+  const base = await toTransactionView(ctx, txn, caches, viewerMemberId, viewerIsOwner);
+  const latest = await latestEntityEvent(ctx, transactionEntity(txn._id));
+  const updatedBy =
+    latest?.actorMemberId != null
+      ? await memberRef(ctx, latest.actorMemberId, caches)
+      : base.recordedBy;
+  return {
+    ...base,
+    audit: {
+      createdBy: base.recordedBy,
+      createdAt: txn.createdAt,
+      updatedBy,
+      updatedAt: latest?.createdAt ?? txn.updatedAt,
+    },
+  };
+}
+
+export type TransactionDetailView = Awaited<ReturnType<typeof toTransactionDetailView>>;
+
+/**
  * Lists a Circle's Transactions of one lifecycle status, most recent first
  * (Transaction Date desc, then created-at desc via `_creationTime` — the Monthly
  * Ledger sort, PRD story 64). Paginated at the source off `by_circle_status_date`:
@@ -277,6 +329,135 @@ export const getEditableTransaction = query({
     return toTransactionView(ctx, txn, newViewCaches(), access.membership._id, access.isOwner);
   },
 });
+
+/**
+ * Resolves the Transaction DETAIL surface behind the object route
+ * `/circles/:circleRef/transactions/:transactionRef` (TXN-4) — the read-only view ANY
+ * current Member may see, with its Audit Metadata (PRD stories 76, 80). The mirror of
+ * the Circle guard's `getCircle`: both ids arrive as raw strings (the `circleId` from
+ * the resolved Circle, the `transactionId` from the URL ref) and `normalizeId` to
+ * `null` when malformed — the uniform unavailable outcome (ADR 0016), never a throw.
+ *
+ * Unlike {@link getEditableTransaction} (which gates on the Recorded By Member and an
+ * active status because an edit link means "open an editable active Transaction"), this
+ * is a READ surface: it resolves for any Member of the Circle and for an ARCHIVED
+ * (frozen) Transaction too — a Member can view the detail + history of an Archived
+ * Transaction. It still returns the `canEdit`/`canArchive` capability flags so the
+ * detail UI can offer the lifecycle affordances the viewer is allowed (the server
+ * re-checks every mutation — ADR 0015).
+ *
+ * Anti-enumeration (ADR 0016): a malformed id, a missing Transaction, an inaccessible
+ * Circle, and a Transaction belonging to a DIFFERENT Circle than the URL's all collapse
+ * to the same `null`, so nothing about a Transaction's existence or another Member's
+ * activity leaks. The route adapter feeds that `null` into the shared unavailable-link
+ * fallback.
+ */
+export const getTransaction = query({
+  args: { circleId: v.string(), transactionId: v.string() },
+  handler: async (ctx, args) => {
+    const transactionId = ctx.db.normalizeId("transactions", args.transactionId);
+    const circleId = ctx.db.normalizeId("circles", args.circleId);
+    if (!transactionId || !circleId) {
+      return null;
+    }
+    const access = await resolveCircleAccess(ctx, circleId);
+    if (!access) {
+      return null;
+    }
+    const txn = await ctx.db.get(transactionId);
+    // Wrong Circle or missing collapse to the same `null` as an inaccessible Circle
+    // (ADR 0016). An archived Transaction is NOT excluded here — detail is a read
+    // surface, unlike the edit-target resolver.
+    if (!txn || txn.circleId !== circleId) {
+      return null;
+    }
+    return toTransactionDetailView(
+      ctx,
+      txn,
+      newViewCaches(),
+      access.membership._id,
+      access.isOwner,
+    );
+  },
+});
+
+/**
+ * One newest-first page of a Transaction's **Transaction History** for its detail
+ * surface (TXN-4; PRD stories 77, 80) — the immutable created / edited / archived /
+ * restored events with the acting Member, changed field names, and old/new values.
+ *
+ * Paginated at the source via {@link paginateEntityHistory} over the `by_entity` index
+ * (README §4: history is unbounded-growth, so it must never `.collect()` the whole
+ * audit). Behind the same Circle access check as {@link getTransaction}, and the same
+ * anti-enumeration parity as `listTransactions`: a malformed id, missing Transaction,
+ * inaccessible Circle, or wrong-Circle Transaction all return an empty, exhausted page —
+ * indistinguishable from a Transaction with no history beyond its creation, so nothing
+ * leaks (ADR 0016). (A paginated query returns an empty page rather than `null` so
+ * `usePaginatedQuery` stays on its normal lifecycle — the detail route's `getTransaction`
+ * guard already ejects an inaccessible Circle before this renders.)
+ *
+ * Values are frozen DISPLAY-safe values already written by TXN-1/2/3 (ADR 0018/0021):
+ * text `from`/`to` are plain strings, money fields carry typed `{minorUnits, currency}`
+ * for the client to render in the viewer locale. The view never re-resolves raw entity
+ * IDs — no raw IDs appear because the writers never stored them (PRD story 80). Only the
+ * actor's frozen Display Name + image are resolved per event, memoized to avoid an N+1.
+ */
+export const listTransactionHistory = query({
+  args: {
+    circleId: v.string(),
+    transactionId: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const emptyPage = { page: [], isDone: true, continueCursor: "" };
+    const transactionId = ctx.db.normalizeId("transactions", args.transactionId);
+    const circleId = ctx.db.normalizeId("circles", args.circleId);
+    if (!transactionId || !circleId) {
+      return emptyPage;
+    }
+    const access = await resolveCircleAccess(ctx, circleId);
+    if (!access) {
+      return emptyPage;
+    }
+    const txn = await ctx.db.get(transactionId);
+    if (!txn || txn.circleId !== circleId) {
+      return emptyPage;
+    }
+    const result = await paginateEntityHistory(
+      ctx,
+      transactionEntity(transactionId),
+      args.paginationOpts,
+    );
+    const caches = newViewCaches();
+    const page = await Promise.all(
+      result.page.map((event) => toHistoryEventView(ctx, event, caches)),
+    );
+    return { ...result, page };
+  },
+});
+
+/**
+ * One history event shaped for the client (TXN-4). The acting Member resolves to their
+ * frozen Display Name + image (memoized through `caches` so a page of events touching
+ * the same actor reads the row once — no N+1); a system event (no actor) surfaces
+ * `actor: null`. The `changes` array passes straight through: it already holds frozen
+ * display-safe values (text `from`/`to`, typed `fromMoney`/`toMoney`) and NEVER a raw
+ * id (ADR 0018/0021). The Member id is deliberately dropped from the event — the UI
+ * needs only the display identity, keeping raw IDs off the surface entirely (PRD 80).
+ */
+async function toHistoryEventView(ctx: QueryCtx, event: Doc<"histories">, caches: ViewCaches) {
+  const actor =
+    event.actorMemberId != null ? await memberRef(ctx, event.actorMemberId, caches) : null;
+  return {
+    id: event._id,
+    action: event.action,
+    createdAt: event.createdAt,
+    actor: actor ? { displayName: actor.displayName, image: actor.image } : null,
+    changes: event.changes,
+  };
+}
+
+export type TransactionHistoryEventView = Awaited<ReturnType<typeof toHistoryEventView>>;
 
 /**
  * Asserts a Member id names a CURRENT active Member of `circleId`, returning the

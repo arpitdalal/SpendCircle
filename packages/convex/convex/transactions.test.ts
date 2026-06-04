@@ -1870,3 +1870,420 @@ describe("getEditableTransaction — edit target resolution (TXN-5)", () => {
     expect(view?.id).toBe(id);
   });
 });
+
+describe("getTransaction — detail resolution (TXN-4)", () => {
+  it("returns the detail view with canonical ref + capability flags for the recorder", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { title: "Weekly shop" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const view = await t.query(api.transactions.getTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    expect(view?.id).toBe(id);
+    expect(view?.ref).toBe(buildRef("Weekly shop", id));
+    expect(view?.title).toBe("Weekly shop");
+    expect(view?.canEditFields).toBe(true); // the recorder
+    expect(view?.canArchive).toBe(true);
+    expect(view?.categories.map((c) => c.name)).toEqual(["Groceries"]);
+  });
+
+  it("resolves for ANY current Member, not just the recorder (read surface)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { memberId: alexMemberId } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "alex@example.com", "Alex"),
+    );
+    // Alex records it; the Owner (a non-recorder) opens the DETAIL — must resolve.
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { recordedByMemberId: alexMemberId }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const view = await t.query(api.transactions.getTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    expect(view?.id).toBe(id);
+    // The Owner cannot field-edit another Member's Transaction, but may archive it.
+    expect(view?.canEditFields).toBe(false);
+    expect(view?.canArchive).toBe(true);
+  });
+
+  it("resolves an ARCHIVED (frozen) Transaction — detail is a read surface", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f, { status: "archived" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const view = await t.query(api.transactions.getTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    expect(view?.id).toBe(id);
+    expect(view?.status).toBe("archived");
+  });
+
+  it("returns null for a non-member, a different-Circle Transaction, a missing/malformed id, and unauthenticated (anti-enumeration)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+
+    // Non-member.
+    const outsider = await t.run((ctx) => makeUser(ctx, "out@example.com", "Outsider"));
+    mockCurrentUser.mockResolvedValue(outsider);
+    expect(
+      await t.query(api.transactions.getTransaction, { circleId: f.circleId, transactionId: id }),
+    ).toBeNull();
+
+    // A Transaction in ANOTHER Circle than the URL's, even though the caller can see both.
+    const other = await t.run((ctx) => seedFixture(ctx));
+    const otherTxn = await t.run((ctx) => seedTransaction(ctx, other));
+    await t.run((ctx) =>
+      ctx.db.insert("members", {
+        circleId: other.circleId,
+        userId: f.owner._id,
+        role: "member",
+        status: "active",
+        displayName: f.owner.displayName,
+        joinedAt: Date.now(),
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+    expect(
+      await t.query(api.transactions.getTransaction, {
+        circleId: f.circleId,
+        transactionId: otherTxn,
+      }),
+    ).toBeNull();
+
+    // Missing (deleted) and malformed ids.
+    await t.run((ctx) => ctx.db.delete(id));
+    expect(
+      await t.query(api.transactions.getTransaction, { circleId: f.circleId, transactionId: id }),
+    ).toBeNull();
+    expect(
+      await t.query(api.transactions.getTransaction, {
+        circleId: f.circleId,
+        transactionId: "not-a-real-id",
+      }),
+    ).toBeNull();
+
+    // Unauthenticated.
+    mockCurrentUser.mockResolvedValue(null);
+    expect(
+      await t.query(api.transactions.getTransaction, {
+        circleId: f.circleId,
+        transactionId: otherTxn,
+      }),
+    ).toBeNull();
+  });
+
+  it("flips to null when the viewing Member is removed (live revocation)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { memberId, user } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "rex@example.com", "Rex"),
+    );
+    const id = await t.run((ctx) => seedTransaction(ctx, f));
+    mockCurrentUser.mockResolvedValue(user);
+    expect(
+      (await t.query(api.transactions.getTransaction, { circleId: f.circleId, transactionId: id }))
+        ?.id,
+    ).toBe(id);
+    await t.run((ctx) => ctx.db.patch(memberId, { status: "removed", removedAt: Date.now() }));
+    expect(
+      await t.query(api.transactions.getTransaction, { circleId: f.circleId, transactionId: id }),
+    ).toBeNull();
+  });
+});
+
+describe("getTransaction — Audit Metadata (TXN-4, PRD 76)", () => {
+  it("created-by is the recorder and created-at is the creation instant; both pairs are display-name only (no raw IDs)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+    });
+
+    const view = await t.query(api.transactions.getTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    const txn = await t.run((ctx) => ctx.db.get(id));
+    expect(view?.audit.createdBy.displayName).toBe("Olive Owner");
+    expect(view?.audit.createdAt).toBe(txn?.createdAt);
+    // No internal id leaks into the audit display (PRD 80): the Member id is its own
+    // field, the display name is a human string, never the raw owner Member id.
+    expect(view?.audit.createdBy.displayName).not.toBe(f.ownerMemberId);
+    // With only a create event, updated == created.
+    expect(view?.audit.updatedBy.displayName).toBe("Olive Owner");
+  });
+
+  it("updated-by/at reflect the LAST editor and the edit instant", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+    });
+    const created = await t.run((ctx) => ctx.db.get(id));
+    // A later field edit by the recorder.
+    await t.mutation(api.transactions.updateTransaction, {
+      transactionId: id,
+      title: "Weekly shop v2",
+    });
+
+    const view = await t.query(api.transactions.getTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    expect(view?.audit.createdBy.displayName).toBe("Olive Owner");
+    expect(view?.audit.updatedBy.displayName).toBe("Olive Owner");
+    expect(view?.audit.updatedAt).toBeGreaterThanOrEqual(created?.createdAt ?? 0);
+    // The newest event drives "updated" — its timestamp, not the stale creation one.
+    const latest = await t.run((ctx) => historyOf(ctx, id));
+    expect(view?.audit.updatedAt).toBe(latest[0]?.createdAt);
+  });
+
+  it("updated-by reflects a moderator who archived another Member's Transaction (distinct from created-by)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { memberId: alexMemberId, user: alex } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "alex@example.com", "Alex"),
+    );
+    // Alex records it.
+    mockCurrentUser.mockResolvedValue(alex);
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+      paidByMemberId: alexMemberId,
+    });
+    // The Owner archives it (moderation) — the last change to the record.
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+
+    const view = await t.query(api.transactions.getTransaction, {
+      circleId: f.circleId,
+      transactionId: id,
+    });
+    expect(view?.audit.createdBy.displayName).toBe("Alex");
+    expect(view?.audit.updatedBy.displayName).toBe("Olive Owner");
+  });
+});
+
+describe("listTransactionHistory — Transaction History content (TXN-4, PRD 77)", () => {
+  it("renders events newest-first with actor Display Name, field names, and old/new values", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+      title: "Weekly shop",
+    });
+    await t.mutation(api.transactions.updateTransaction, {
+      transactionId: id,
+      title: "Renamed shop",
+    });
+
+    const result = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: id,
+      ...firstPage(25),
+    });
+    expect(result.page.map((e) => e.action)).toEqual(["edited", "created"]);
+    expect(result.page[0]?.actor?.displayName).toBe("Olive Owner");
+    const titleChange = result.page[0]?.changes.find((c) => c.field === "title");
+    expect(titleChange?.from).toBe("Weekly shop");
+    expect(titleChange?.to).toBe("Renamed shop");
+  });
+
+  it("freezes money changes as typed minor units + Currency (not a formatted string)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+      amountMinorUnits: 1250,
+    });
+    await t.mutation(api.transactions.updateTransaction, {
+      transactionId: id,
+      amountMinorUnits: 9900,
+    });
+
+    const result = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: id,
+      ...firstPage(25),
+    });
+    const amountChange = result.page[0]?.changes.find((c) => c.field === "amount");
+    expect(amountChange?.fromMoney).toEqual({ minorUnits: 1250, currency: "USD" });
+    expect(amountChange?.toMoney).toEqual({ minorUnits: 9900, currency: "USD" });
+    // No preformatted string snuck onto the money field.
+    expect(amountChange?.from).toBeUndefined();
+    expect(amountChange?.to).toBeUndefined();
+  });
+
+  it("never exposes a raw internal Id in any change value (PRD 80)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { memberId: alexMemberId, user: alex } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "alex@example.com", "Alex"),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+    // Touch every field type that records a value: paidBy (a Member), categories
+    // (Categories), date, title, amount — none may surface as an id.
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+    });
+    await t.mutation(api.transactions.updateTransaction, {
+      transactionId: id,
+      paidByMemberId: alexMemberId,
+      categoryIds: [f.diningId],
+      date: "2026-06-01",
+    });
+
+    const result = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: id,
+      ...firstPage(25),
+    });
+    const ids = new Set<string>([
+      id,
+      f.circleId,
+      f.groceriesId,
+      f.diningId,
+      f.ownerMemberId,
+      alexMemberId,
+      alex._id,
+    ]);
+    for (const event of result.page) {
+      for (const change of event.changes) {
+        for (const value of [change.from, change.to]) {
+          if (value == null) continue;
+          expect(ids.has(value)).toBe(false);
+          // A defensive heuristic against any long opaque token leaking through.
+          expect(value).not.toMatch(/^[a-z0-9]{20,}$/);
+        }
+      }
+    }
+    // The values that DID get recorded are the human-readable ones.
+    const paidBy = result.page[0]?.changes.find((c) => c.field === "paidBy");
+    expect(paidBy?.to).toBe("Alex");
+    const categories = result.page[0]?.changes.find((c) => c.field === "categories");
+    expect(categories?.to).toBe("Dining");
+  });
+
+  it("includes archived / restored / type-change events after those actions", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+    });
+    await t.mutation(api.transactions.updateTransaction, {
+      transactionId: id,
+      type: "income",
+      categoryIds: [f.salaryId],
+    });
+    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    await t.mutation(api.transactions.restoreTransaction, { transactionId: id });
+
+    const result = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: id,
+      ...firstPage(25),
+    });
+    expect(result.page.map((e) => e.action)).toEqual([
+      "restored",
+      "archived",
+      "type changed",
+      "created",
+    ]);
+  });
+
+  it("returns an empty page for a non-member, a different-Circle Transaction, and a missing id (anti-enumeration parity with listTransactions)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+    });
+
+    // Non-member.
+    const outsider = await t.run((ctx) => makeUser(ctx, "out@example.com", "Outsider"));
+    mockCurrentUser.mockResolvedValue(outsider);
+    const nonMember = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: id,
+      ...firstPage(25),
+    });
+    expect(nonMember).toEqual({ page: [], isDone: true, continueCursor: "" });
+
+    // Different-Circle Transaction (caller is a member of `f` only).
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const other = await t.run((ctx) => seedFixture(ctx));
+    const otherTxn = await t.run((ctx) => seedTransaction(ctx, other));
+    const wrongCircle = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: otherTxn,
+      ...firstPage(25),
+    });
+    expect(wrongCircle.page).toEqual([]);
+    expect(wrongCircle.isDone).toBe(true);
+
+    // Malformed id.
+    const malformed = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: "not-a-real-id",
+      ...firstPage(25),
+    });
+    expect(malformed.page).toEqual([]);
+  });
+
+  it("paginates at the source — a bounded first page plus a cursor to the rest", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const id = await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      ...baseExpense([f.groceriesId]),
+      title: "Edit me",
+    });
+    // Five field edits → six events total (create + 5). A page of three must not be the
+    // whole set: the query pages off the index rather than collecting everything.
+    for (let i = 0; i < 5; i++) {
+      await t.mutation(api.transactions.updateTransaction, {
+        transactionId: id,
+        title: `Edit me ${i}`,
+      });
+    }
+
+    const first = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: id,
+      paginationOpts: { numItems: 3, cursor: null },
+    });
+    expect(first.page).toHaveLength(3);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.transactions.listTransactionHistory, {
+      circleId: f.circleId,
+      transactionId: id,
+      paginationOpts: { numItems: 3, cursor: first.continueCursor },
+    });
+    expect(second.page).toHaveLength(3);
+    expect(second.isDone).toBe(true);
+    // No id appears twice across the two pages — a real continuation, not a re-read.
+    const allIds = [...first.page, ...second.page].map((e) => e.id);
+    expect(new Set(allIds).size).toBe(6);
+  });
+});

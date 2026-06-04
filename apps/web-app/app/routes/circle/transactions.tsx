@@ -465,7 +465,19 @@ function TransactionList({
             className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
           >
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{txn.title}</p>
+              {/* The title is a canonical object LINK to the Transaction detail surface
+                  (TXN-4) — Audit Metadata + Transaction History. A real, shareable,
+                  reload-safe URL (ADR 0016), available for active and archived rows alike
+                  (detail is a read surface). */}
+              <p className="truncate text-sm font-medium">
+                <Link
+                  to={`/circles/${circle.ref}/transactions/${txn.ref}`}
+                  className="hover:underline"
+                  aria-label={`View ${txn.title}`}
+                >
+                  {txn.title}
+                </Link>
+              </p>
               <p className="truncate text-xs text-neutral-500">
                 {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
                 {txn.paidBy.displayName}

@@ -31,6 +31,12 @@ export default [
       route(":circleRef", "routes/layouts/circle-layout.tsx", [
         index("routes/circle/dashboard.tsx"),
         route("transactions", "routes/circle/transactions.tsx"),
+        // The Transaction DETAIL object route (ADR 0016/0017) — the REFERENCE object
+        // route: a canonical `slug-id` ref under the resolved Circle, resolving its own
+        // target by ID via `useResolvedTransactionDetail` and falling back to the Circle's
+        // Transactions route. The read surface for Audit Metadata + Transaction History
+        // (TXN-4). Lands WITH its feature — no caller-less placeholder.
+        route("transactions/:transactionRef", "routes/circle/transaction-detail.tsx"),
         // The Transaction edit object route (ADR 0016/0017): a canonical `slug-id`
         // ref under the resolved Circle, resolving its own target by ID via
         // `useResolvedTransaction` and falling back to the Circle's Transactions
