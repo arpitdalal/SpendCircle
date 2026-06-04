@@ -199,6 +199,10 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   const incomeCat = `E2E Inc ${stamp}`;
   const title = `E2E Edit ${stamp}`;
   const editedTitle = `${title} edited`;
+  // A private far-future month per project keeps the parallel runs from colliding
+  // on the shared Personal Circle's current-month Ledger — otherwise concurrent
+  // tests crowd the month and pagination can push the edited row off the page.
+  const month = testInfo.project.name === "mobile-chromium" ? "2995-06" : "2995-05";
 
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
@@ -214,8 +218,9 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: incomeCat })).toBeVisible();
 
-  // Record an expense to edit.
+  // Record an expense to edit, into the private month.
   await page.getByRole("link", { name: "Transactions" }).click();
+  await selectMonth(page, month);
   await page.getByRole("button", { name: "Add expense" }).click();
   const addForm = page.getByRole("form", { name: /add expense/i });
   await addForm.getByLabel("Title").fill(title);

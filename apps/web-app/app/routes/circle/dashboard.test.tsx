@@ -32,7 +32,9 @@ function makeDashboard(over: Partial<Dashboard> = {}): Dashboard {
 }
 
 afterEach(() => {
-  vi.clearAllMocks();
+  // restoreAllMocks (not just clear) so a per-test navigator.language spy does not
+  // leak its locale into later tests.
+  vi.restoreAllMocks();
 });
 
 describe("Dashboard totals", () => {
@@ -43,6 +45,18 @@ describe("Dashboard totals", () => {
     expect(screen.getByText("$5,000.00")).toBeInTheDocument(); // income
     expect(screen.getByText("$87.50")).toBeInTheDocument(); // expenses
     expect(screen.getByText("$4,912.50")).toBeInTheDocument(); // net
+  });
+
+  it("formats money in the viewer locale, disambiguating USD for a non-US viewer", () => {
+    // The viewer's locale (navigator.language) drives presentation, NOT the
+    // ambient runtime locale (ADR 0021). A Canadian-style viewer sees USD
+    // qualified as US$ so it is not confused with the local dollar.
+    vi.spyOn(window.navigator, "language", "get").mockReturnValue("en-CA");
+    configureConvex({ dashboard: makeDashboard() });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    expect(screen.getByText("US$5,000.00")).toBeInTheDocument(); // income
+    expect(screen.getByText("US$87.50")).toBeInTheDocument(); // expenses
   });
 
   it("shows placeholders while the dashboard loads", () => {

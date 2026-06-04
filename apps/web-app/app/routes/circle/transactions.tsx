@@ -1,8 +1,9 @@
 import {
   addMonths,
   currentMonth,
-  formatMinorUnits,
+  formatMoney,
   isValidPlainMonth,
+  money,
   type PlainMonth,
   type TransactionType,
   toCurrencyCode,
@@ -21,6 +22,7 @@ import {
   useMonthlyLedger,
   useRestoreTransaction,
 } from "~/lib/data.js";
+import { viewerLocale } from "~/lib/locale.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -391,7 +393,9 @@ function MonthlyTotals({
           <div key={stat.label} className="rounded-md border border-neutral-800 p-3">
             <dt className="text-xs text-neutral-500">{stat.label}</dt>
             <dd className={cn("text-sm font-semibold tabular-nums", stat.tone)}>
-              {stat.amount === undefined ? "…" : formatMinorUnits(stat.amount, currency)}
+              {stat.amount === undefined
+                ? "…"
+                : formatMoney(money(stat.amount, currency), viewerLocale())}
             </dd>
           </div>
         ))}
@@ -474,7 +478,10 @@ function TransactionList({
               )}
             >
               {txn.type === "income" ? "+" : "-"}
-              {formatMinorUnits(txn.amountMinorUnits, toCurrencyCode(circle.currency))}
+              {formatMoney(
+                money(txn.amountMinorUnits, toCurrencyCode(circle.currency)),
+                viewerLocale(),
+              )}
             </span>
             {/* Active rows can be edited (recorder only) + archived; archived rows are
                 frozen (no Edit) and can only be restored. */}

@@ -1,7 +1,6 @@
 import {
   addMonths,
   buildRef,
-  formatMinorUnits,
   isValidPlainMonth,
   monthOf,
   type TransactionType,
@@ -14,7 +13,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import { type MutationCtx, mutation, type QueryCtx, query } from "./_generated/server.js";
 import { requireCircleAccess, requireTransactionAccess, resolveCircleAccess } from "./guard.js";
-import { type HistoryChange, recordEvent, transactionEntity } from "./history.js";
+import { type HistoryChange, moneyChange, recordEvent, transactionEntity } from "./history.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
 const lifecycleStatus = v.union(v.literal("active"), v.literal("archived"));
@@ -450,16 +449,16 @@ export const createTransaction = mutation({
     }
 
     // Record the create now (ADR 0018) even though the Transaction History view is
-    // TXN-4 — its view needs this row to exist. Values are pre-formatted human
-    // strings: money via the Circle Currency, the plain date, the Paid By Display
-    // Name, and Category names — never raw IDs.
-    const changes = [
+    // TXN-4 — its view needs this row to exist. Textual values are frozen display
+    // strings (plain date, Paid By Display Name, Category names — never raw IDs);
+    // the amount freezes a typed money value, not a formatted string (ADR 0021).
+    const changes: HistoryChange[] = [
       { field: "type", to: input.type },
       { field: "title", to: input.title },
-      {
-        field: "amount",
-        to: formatMinorUnits(input.amountMinorUnits, toCurrencyCode(access.circle.currency)),
-      },
+      moneyChange("amount", {
+        minorUnits: input.amountMinorUnits,
+        currency: toCurrencyCode(access.circle.currency),
+      }),
       { field: "date", to: input.date },
       { field: "paidBy", to: paidByMember.displayName },
       { field: "categories", to: categories.map((category) => category.name).join(", ") },
@@ -603,11 +602,13 @@ export const updateTransaction = mutation({
 
     if (input.amountMinorUnits !== undefined && input.amountMinorUnits !== txn.amountMinorUnits) {
       patch.amountMinorUnits = input.amountMinorUnits;
-      changes.push({
-        field: "amount",
-        from: formatMinorUnits(txn.amountMinorUnits, currency),
-        to: formatMinorUnits(input.amountMinorUnits, currency),
-      });
+      changes.push(
+        moneyChange(
+          "amount",
+          { minorUnits: input.amountMinorUnits, currency },
+          { minorUnits: txn.amountMinorUnits, currency },
+        ),
+      );
     }
 
     if (input.date !== undefined && input.date !== txn.date) {

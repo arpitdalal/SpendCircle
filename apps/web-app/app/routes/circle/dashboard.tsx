@@ -1,4 +1,4 @@
-import { currentMonth, formatMinorUnits, toCurrencyCode } from "@spend-circle/domain";
+import { currentMonth, formatMoney, money, toCurrencyCode } from "@spend-circle/domain";
 import { useState } from "react";
 import {
   type Circle,
@@ -9,6 +9,7 @@ import {
   useDashboard,
   usePaidByFilterOptions,
 } from "~/lib/data.js";
+import { viewerLocale } from "~/lib/locale.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -133,7 +134,9 @@ function DashboardTotalsCards({
           <div key={stat.label} className="rounded-md border border-neutral-800 p-3">
             <dt className="text-xs text-neutral-500">{stat.label}</dt>
             <dd className={cn("text-sm font-semibold tabular-nums", stat.tone)}>
-              {stat.amount === undefined ? "…" : formatMinorUnits(stat.amount, currency)}
+              {stat.amount === undefined
+                ? "…"
+                : formatMoney(money(stat.amount, currency), viewerLocale())}
             </dd>
           </div>
         ))}
@@ -202,7 +205,7 @@ function RecentRow({
         )}
       >
         {txn.type === "income" ? "+" : "-"}
-        {formatMinorUnits(txn.amountMinorUnits, currency)}
+        {formatMoney(money(txn.amountMinorUnits, currency), viewerLocale())}
       </span>
     </li>
   );
