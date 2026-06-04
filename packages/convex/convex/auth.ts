@@ -76,14 +76,6 @@ const trustedOrigins = Array.from(
   new Set([siteUrl, "http://127.0.0.1:5173", "http://localhost:5173"]),
 );
 
-const requiredEnv = (name: string) => {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} is required`);
-  }
-  return value;
-};
-
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth({
     baseURL: process.env.CONVEX_SITE_URL,
@@ -96,8 +88,8 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
     // Google-only sign-in (ADR 0002).
     socialProviders: {
       google: {
-        clientId: requiredEnv("GOOGLE_CLIENT_ID"),
-        clientSecret: requiredEnv("GOOGLE_CLIENT_SECRET"),
+        clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
       },
     },
     plugins: [convex({ authConfig }), crossDomain({ siteUrl })],
