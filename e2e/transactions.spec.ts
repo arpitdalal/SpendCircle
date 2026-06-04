@@ -293,7 +293,7 @@ test("a member archives and restores a transaction", async ({ page }, testInfo) 
 
   // It surfaces in the Archived view, frozen (no Edit), with a Restore action.
   await page.getByRole("button", { name: "Archived" }).click();
-  await expect(page).toHaveURL(new RegExp(`view=archived`));
+  await expect(page).toHaveURL(/view=archived/);
   const archivedRow = page.getByRole("listitem").filter({ hasText: title });
   await expect(archivedRow).toBeVisible();
   await expect(archivedRow.getByRole("link", { name: `Edit ${title}` })).toHaveCount(0);
