@@ -1,10 +1,16 @@
-import { formatMoney, money, toCurrencyCode } from "@spend-circle/domain";
-import { Link } from "react-router";
+import { formatMoney, isValidPlainMonth, money, toCurrencyCode } from "@spend-circle/domain";
+import { Link, useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { Splash } from "~/components/splash.js";
 import { Button } from "~/components/ui/button.js";
-import { type Circle, type TransactionDetail, useTransactionHistory } from "~/lib/data.js";
+import {
+  type Circle,
+  type TransactionDetail,
+  type TransactionStatus,
+  useTransactionHistory,
+} from "~/lib/data.js";
 import { formatAuditTimestamp } from "~/lib/datetime.js";
+import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { useResolvedTransactionDetail } from "~/lib/use-resolved-transaction-detail.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -43,11 +49,29 @@ function TransactionDetailView({
   circle: Circle;
   transaction: TransactionDetail;
 }) {
+  const [searchParams] = useSearchParams();
   const currency = toCurrencyCode(circle.currency);
   const amount = formatMoney(money(transaction.amountMinorUnits, currency), viewerLocale());
   const writable = circle.status === "active";
-  const ledgerUrl = `/circles/${circle.ref}/transactions`;
   const isArchived = transaction.status === "archived";
+
+  // Preserve the ledger slice the user opened this from — the selected month and the
+  // active/archived view (ADR 0017) — so Back returns to THAT slice, not the default
+  // current-month active ledger. The ledger row passed these on the detail link; an
+  // invalid/absent month falls through to the bare ledger (which normalizes), and only
+  // an explicit `view=archived` is carried (active is the default).
+  const rawMonth = searchParams.get("month");
+  const month = isValidPlainMonth(rawMonth) ? rawMonth : undefined;
+  const status: TransactionStatus | undefined =
+    searchParams.get("view") === "archived" ? "archived" : undefined;
+  const ledgerBase = `/circles/${circle.ref}/transactions`;
+  const ledgerUrl = withQuery(ledgerBase, ledgerSearch({ month, status }));
+  // The edit route is month-aware only (editing happens in the active view), so its link
+  // carries just the month — mirroring the ledger's Edit link.
+  const editUrl = withQuery(
+    `${ledgerBase}/${transaction.ref}/edit`,
+    ledgerSearch({ month, status: "active" }),
+  );
 
   return (
     <div className="space-y-6">
@@ -57,10 +81,7 @@ function TransactionDetailView({
         </Link>
         {writable && transaction.canEditFields && !isArchived ? (
           <Button asChild variant="outline">
-            <Link
-              to={`${ledgerUrl}/${transaction.ref}/edit`}
-              aria-label={`Edit ${transaction.title}`}
-            >
+            <Link to={editUrl} aria-label={`Edit ${transaction.title}`}>
               Edit
             </Link>
           </Button>

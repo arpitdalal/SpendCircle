@@ -22,6 +22,7 @@ import {
   useMonthlyLedger,
   useRestoreTransaction,
 } from "~/lib/data.js";
+import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
@@ -468,10 +469,15 @@ function TransactionList({
               {/* The title is a canonical object LINK to the Transaction detail surface
                   (TXN-4) — Audit Metadata + Transaction History. A real, shareable,
                   reload-safe URL (ADR 0016), available for active and archived rows alike
-                  (detail is a read surface). */}
+                  (detail is a read surface). It carries the ledger slice (month + view) so
+                  the detail's Back link returns to THIS slice, matching the Edit link's
+                  month preservation. */}
               <p className="truncate text-sm font-medium">
                 <Link
-                  to={`/circles/${circle.ref}/transactions/${txn.ref}`}
+                  to={withQuery(
+                    `/circles/${circle.ref}/transactions/${txn.ref}`,
+                    ledgerSearch({ month, status: archivedView ? "archived" : "active" }),
+                  )}
                   className="hover:underline"
                   aria-label={`View ${txn.title}`}
                 >

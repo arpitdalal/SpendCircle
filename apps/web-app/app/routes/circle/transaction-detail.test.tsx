@@ -165,18 +165,43 @@ describe("TransactionDetail — Transaction History (PRD 77)", () => {
   });
 });
 
+describe("TransactionDetail — ledger slice preserved (Back / Edit links)", () => {
+  it("returns Back to the same ledger slice (month + view) the row was opened from", () => {
+    setup({
+      transactionDetail: makeTransactionDetailView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
+      url: `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05&view=archived`,
+    });
+    expect(screen.getByRole("link", { name: /Back to transactions/ })).toHaveAttribute(
+      "href",
+      `/circles/${REF}/transactions?month=2026-05&view=archived`,
+    );
+  });
+
+  it("falls back to the bare ledger when the URL carries no valid slice", () => {
+    setup({
+      transactionDetail: makeTransactionDetailView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
+      url: `/circles/${REF}/transactions/weekly-shop-t1`,
+    });
+    expect(screen.getByRole("link", { name: /Back to transactions/ })).toHaveAttribute(
+      "href",
+      `/circles/${REF}/transactions`,
+    );
+  });
+});
+
 describe("TransactionDetail — edit affordance (courtesy nav, server enforces)", () => {
-  it("offers an Edit link to the recorder on a writable circle", () => {
+  it("offers an Edit link to the recorder on a writable circle, preserving the month", () => {
     setup({
       transactionDetail: makeTransactionDetailView({
         ref: "weekly-shop-t1",
         title: "Weekly shop",
         canEditFields: true,
       }),
+      url: `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`,
     });
     expect(screen.getByRole("link", { name: "Edit Weekly shop" })).toHaveAttribute(
       "href",
-      `/circles/${REF}/transactions/weekly-shop-t1/edit`,
+      `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05`,
     );
   });
 

@@ -312,6 +312,34 @@ describe("CircleTransactions — Edit object link (TXN-5)", () => {
   });
 });
 
+describe("CircleTransactions — Detail object link (TXN-4)", () => {
+  it("links the row title to the detail route, preserving the selected month so Back returns to this slice", () => {
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05`],
+      transactions: [makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" })],
+    });
+    expect(screen.getByRole("link", { name: "View Weekly shop" })).toHaveAttribute(
+      "href",
+      `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`,
+    );
+  });
+
+  it("carries the archived view (and month) on the detail link from the Archived tab", () => {
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&view=archived`],
+      archivedTransactions: [
+        makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop", status: "archived" }),
+      ],
+    });
+    // An archived row is frozen (no Edit) but still opens its detail, returning to the
+    // Archived tab at the same month.
+    expect(screen.getByRole("link", { name: "View Weekly shop" })).toHaveAttribute(
+      "href",
+      `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05&view=archived`,
+    );
+  });
+});
+
 describe("CircleTransactions — Monthly Ledger totals (RPT-1)", () => {
   const summaryOf = (
     incomeMinor: number,
