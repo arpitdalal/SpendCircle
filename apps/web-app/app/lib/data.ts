@@ -6,6 +6,7 @@ import { MOCKS } from "./env.js";
 import {
   MOCK_CATEGORIES,
   MOCK_CIRCLES,
+  MOCK_DASHBOARD,
   MOCK_MEMBERS,
   MOCK_MONTHLY_SUMMARY,
   MOCK_TRANSACTIONS,
@@ -169,6 +170,53 @@ export function useMonthlyLedger(circleId: Circle["id"], month: PlainMonth) {
     summary: MOCKS ? MOCK_MONTHLY_SUMMARY : queried,
     transactions,
   };
+}
+
+/**
+ * The per-Circle Dashboard view contract, derived from `getDashboard` so it can't
+ * drift from the backend (ADR 0003): the selected month's Income / Expense / Net in
+ * minor units, the recent Transactions feed, the Circle Currency, and the resolved
+ * month. `null` ≡ inaccessible Circle (ADR 0016); `undefined` while loading.
+ */
+export type Dashboard = NonNullable<FunctionReturnType<typeof api.dashboard.getDashboard>>;
+export type DashboardTotals = Dashboard["totals"];
+
+/**
+ * The per-Circle Dashboard (RPT-3): current-month (or an explicit `month`) Income /
+ * Expense / Net totals plus a recent-Transactions feed, optionally narrowed to one
+ * Member via the Paid By filter (`paidByMemberId`). Totals and recent both reflect the
+ * SAME active set the filter narrows, so they never disagree. `undefined` while
+ * loading; `null` for an inaccessible Circle (the guard ejects before this renders).
+ * Mock mode returns fixtures and skips the backend (ADR 0006).
+ */
+export function useDashboard(
+  circleId: Circle["id"],
+  options?: { month?: PlainMonth; paidByMemberId?: Member["id"] },
+) {
+  const queried = useQuery(
+    api.dashboard.getDashboard,
+    MOCKS
+      ? "skip"
+      : {
+          circleId,
+          ...(options?.month ? { month: options.month } : {}),
+          ...(options?.paidByMemberId ? { paidByMemberId: options.paidByMemberId } : {}),
+        },
+  );
+  return MOCKS ? MOCK_DASHBOARD : queried;
+}
+
+/**
+ * The Members selectable in the Dashboard's Paid By filter: current Members plus
+ * Removed Members who are Paid By on a matching active Transaction (RPT-3). Same
+ * `Member` shape as `useMembers` (both derive from `toMemberView`), so the selector
+ * renders them identically and a Removed option's `status` lets the UI label it.
+ * `undefined` while loading; `null` for an inaccessible Circle. Mock mode returns
+ * fixtures and skips the backend (ADR 0006).
+ */
+export function usePaidByFilterOptions(circleId: Circle["id"]): Member[] | null | undefined {
+  const queried = useQuery(api.dashboard.getPaidByFilterOptions, MOCKS ? "skip" : { circleId });
+  return MOCKS ? MOCK_MEMBERS : queried;
 }
 
 /**

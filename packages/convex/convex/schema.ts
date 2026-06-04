@@ -112,7 +112,14 @@ export default defineSchema({
     // Orders a Circle's Transactions of one status by Transaction Date, so the
     // active Ledger paginates date-desc (then created-at desc via _creationTime)
     // straight off the index — no in-memory sort of an unbounded set.
-    .index("by_circle_status_date", ["circleId", "status", "date"]),
+    .index("by_circle_status_date", ["circleId", "status", "date"])
+    // Ranges one Member's Transactions of one status by Transaction Date. Backs the
+    // Dashboard's Paid By filter (RPT-3): the per-Member month totals/recent range
+    // this index at the source instead of scanning the whole month and filtering in
+    // memory, and the filter's removed-Member options test "is this removed Member
+    // Paid By on any active Transaction?" with a single `.first()` lookup. Also serves
+    // Search's Paid By facet (RPT-2).
+    .index("by_circle_paidby_status_date", ["circleId", "paidByMemberId", "status", "date"]),
 
   // Many-to-many between Transactions and Categories (PRD story 50).
   transactionCategories: defineTable({

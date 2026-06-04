@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as categories from "../categories.js";
 import type * as circles from "../circles.js";
+import type * as dashboard from "../dashboard.js";
 import type * as guard from "../guard.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   categories: typeof categories;
   circles: typeof circles;
+  dashboard: typeof dashboard;
   guard: typeof guard;
   history: typeof history;
   http: typeof http;

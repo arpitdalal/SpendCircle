@@ -1,4 +1,4 @@
-import type { Category, Circle, Member, MonthlySummary, Transaction } from "./data.js";
+import type { Category, Circle, Dashboard, Member, MonthlySummary, Transaction } from "./data.js";
 
 /**
  * Mock fixture data for E2E renders without a live backend (ADR 0006). These are
@@ -97,6 +97,52 @@ export const MOCK_TRANSACTIONS: Transaction[] = [];
 export const MOCK_MONTHLY_SUMMARY: MonthlySummary = {
   totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
   currency: "USD",
+};
+
+/**
+ * Mock per-Circle Dashboard, typed against the derived {@link Dashboard} contract so
+ * a shape change to `getDashboard` fails typecheck here (ADR 0003). A couple of recent
+ * rows and matching totals so the Dashboard renders a populated surface under MOCKS /
+ * offline UI dev; the Paid By filter options come from {@link MOCK_MEMBERS}.
+ */
+const MOCK_DASHBOARD_RECENT: Transaction[] = [
+  {
+    id: "mock-dash-income" as Transaction["id"],
+    ref: "paycheck-mock-dash-income",
+    type: "income",
+    title: "Paycheck",
+    note: undefined,
+    amountMinorUnits: 500_000,
+    date: "2026-06-01",
+    month: "2026-06",
+    status: "active",
+    recordedBy: { id: "mock-member-you" as Member["id"], displayName: "You", image: undefined },
+    paidBy: { id: "mock-member-you" as Member["id"], displayName: "You", image: undefined },
+    categories: [{ id: "mock-cat-salary" as Category["id"], name: "Salary", color: "teal" }],
+    canEditFields: true,
+  },
+  {
+    id: "mock-dash-expense" as Transaction["id"],
+    ref: "groceries-mock-dash-expense",
+    type: "expense",
+    title: "Groceries",
+    note: undefined,
+    amountMinorUnits: 7_350,
+    date: "2026-06-02",
+    month: "2026-06",
+    status: "active",
+    recordedBy: { id: "mock-member-you" as Member["id"], displayName: "You", image: undefined },
+    paidBy: { id: "mock-member-alex" as Member["id"], displayName: "Alex", image: undefined },
+    categories: [{ id: "mock-cat-groceries" as Category["id"], name: "Groceries", color: "green" }],
+    canEditFields: true,
+  },
+];
+
+export const MOCK_DASHBOARD: Dashboard = {
+  totals: { incomeMinor: 500_000, expenseMinor: 7_350, netMinor: 492_650 },
+  recent: MOCK_DASHBOARD_RECENT,
+  currency: "USD",
+  month: "2026-06",
 };
 
 export function mockCircle(id: string): Circle {

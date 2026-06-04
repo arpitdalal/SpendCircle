@@ -7,6 +7,7 @@ import { type Mock, vi } from "vitest";
 import type {
   Category,
   Circle,
+  Dashboard,
   Member,
   MonthlySummary,
   PaginationStatus,
@@ -48,6 +49,8 @@ const NAME = {
   listTransactions: getFunctionName(api.transactions.listTransactions),
   getEditableTransaction: getFunctionName(api.transactions.getEditableTransaction),
   getMonthlyLedger: getFunctionName(api.ledger.getMonthlyLedger),
+  getDashboard: getFunctionName(api.dashboard.getDashboard),
+  getPaidByFilterOptions: getFunctionName(api.dashboard.getPaidByFilterOptions),
   createTransaction: getFunctionName(api.transactions.createTransaction),
   updateTransaction: getFunctionName(api.transactions.updateTransaction),
   createCategory: getFunctionName(api.categories.createCategory),
@@ -57,6 +60,14 @@ const NAME = {
 const EMPTY_MONTHLY_SUMMARY: MonthlySummary = {
   totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
   currency: "USD",
+};
+
+/** A zero Dashboard — the default for tests that don't drive Dashboard state. */
+const EMPTY_DASHBOARD: Dashboard = {
+  totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
+  recent: [],
+  currency: "USD",
+  month: "2026-06",
 };
 
 /** Models the `listCategories` backend contract: filter by type, optionally include
@@ -82,6 +93,13 @@ interface ConvexState {
   /** `getMonthlyLedger` summary (totals + currency); `undefined` ≡ loading, `null` ≡
    * inaccessible Circle. Defaults to a zero summary so the totals header renders. */
   monthlySummary?: MonthlySummary | null;
+  /** `getDashboard` result; `undefined` ≡ loading, `null` ≡ inaccessible Circle.
+   * Defaults to a zero Dashboard so the totals cards render. A function resolves per
+   * query args (e.g. by `paidByMemberId`) so a test can model the Paid By filter
+   * flipping the result without a loading gap. */
+  dashboard?: Dashboard | null | ((args: Record<string, unknown>) => Dashboard | null | undefined);
+  /** `getPaidByFilterOptions` result; `undefined` ≡ loading, `null` ≡ inaccessible. */
+  paidByFilterOptions?: Member[] | null;
   /** `getEditableTransaction` edit target (TXN-5); `undefined` ≡ loading, `null` ≡
    * unavailable (missing / inaccessible / wrong-Circle / archived / not-editable —
    * all collapsed by the server). Drives the edit object route's resolution. A function
@@ -119,6 +137,8 @@ export function configureConvex(state: ConvexState = {}) {
     transactionsStatus = "Exhausted",
     loadMore = () => {},
     monthlySummary = EMPTY_MONTHLY_SUMMARY,
+    dashboard = EMPTY_DASHBOARD,
+    paidByFilterOptions,
     // No default: absent ≡ `undefined` ≡ loading (the codebase's reactive-query
     // convention); a test passes `null` to model an unavailable edit target.
     editableTransaction,
@@ -139,6 +159,10 @@ export function configureConvex(state: ConvexState = {}) {
           return members;
         case NAME.getMonthlyLedger:
           return monthlySummary;
+        case NAME.getDashboard:
+          return typeof dashboard === "function" ? dashboard(args) : dashboard;
+        case NAME.getPaidByFilterOptions:
+          return paidByFilterOptions;
         case NAME.getEditableTransaction:
           return typeof editableTransaction === "function"
             ? editableTransaction(args)
