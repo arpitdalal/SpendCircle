@@ -1,7 +1,7 @@
 import { categoryInputSchema, colorLabel } from "@spend-circle/domain";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel.js";
-import { type QueryCtx, mutation, query } from "./_generated/server.js";
+import { mutation, type QueryCtx, query } from "./_generated/server.js";
 import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import { categoryEntity, recordEvent } from "./history.js";
 

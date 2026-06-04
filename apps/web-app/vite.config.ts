@@ -1,7 +1,6 @@
 import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
-import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   // The shared .env.local lives at the monorepo root, so load env from there for
@@ -22,5 +21,8 @@ export default defineConfig({
     // shared packages are found automatically, with no per-dep include list.
     entries: ["app/**/*.{ts,tsx}", "!app/**/*.test.{ts,tsx}"],
   },
-  plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [tailwindcss(), reactRouter()],
 });

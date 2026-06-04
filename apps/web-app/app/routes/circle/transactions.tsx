@@ -1,10 +1,10 @@
 import {
-  type PlainMonth,
-  type TransactionType,
   addMonths,
   currentMonth,
   formatMinorUnits,
   isValidPlainMonth,
+  type PlainMonth,
+  type TransactionType,
   toCurrencyCode,
 } from "@spend-circle/domain";
 import { useEffect, useRef } from "react";
@@ -15,7 +15,6 @@ import {
   type Circle,
   type MonthlySummary,
   type PaginatedTransactions,
-  type Transaction,
   useMonthlyLedger,
 } from "~/lib/data.js";
 import { cn } from "~/lib/utils.js";

@@ -1,15 +1,10 @@
-import {
-  type AuthFunctions,
-  BetterAuth,
-  type PublicAuthFunctions,
-  convexAdapter,
-} from "@convex-dev/better-auth";
+import { type AuthFunctions, createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
 import { betterAuth } from "better-auth";
-import type { GenericActionCtx, GenericMutationCtx, GenericQueryCtx } from "convex/server";
-import { api, components, internal } from "./_generated/api.js";
-import type { DataModel, Doc, Id } from "./_generated/dataModel.js";
+import { components, internal } from "./_generated/api.js";
+import type { DataModel, Doc } from "./_generated/dataModel.js";
 import type { MutationCtx, QueryCtx } from "./_generated/server.js";
+import authConfig from "./auth.config.js";
 import { createUserWithPersonalCircle, propagateUserProfile } from "./model.js";
 
 /**
@@ -28,46 +23,45 @@ import { createUserWithPersonalCircle, propagateUserProfile } from "./model.js";
  * Google OAuth (which it cannot automate). Production stays Google-only (ADR 0002):
  * the flag is absent there, so this path does not exist on the prod deployment.
  */
-type AuthCtx =
-  | GenericQueryCtx<DataModel>
-  | GenericMutationCtx<DataModel>
-  | GenericActionCtx<DataModel>;
+const authFunctions: AuthFunctions = internal.auth;
 
-const authFunctions = internal.auth as unknown as AuthFunctions;
-const publicAuthFunctions = api.auth as unknown as PublicAuthFunctions;
-
-export const authComponent = new BetterAuth(components.betterAuth, {
+export const authComponent = createClient<DataModel>(components.betterAuth, {
   authFunctions,
-  publicAuthFunctions,
   verbose: true,
+  triggers: {
+    user: {
+      onCreate: async (ctx, authUser) => {
+        const userId = await createUserWithPersonalCircle(ctx, {
+          email: authUser.email,
+          displayName: authUser.name,
+          image: authUser.image ?? undefined,
+        });
+        await authComponent.setUserId(ctx, authUser._id, userId);
+      },
+      onUpdate: async (ctx, authUser) => {
+        if (!authUser.userId) {
+          return;
+        }
+        const userId = ctx.db.normalizeId("users", authUser.userId);
+        if (!userId) {
+          return;
+        }
+        await propagateUserProfile(ctx, userId, {
+          displayName: authUser.name,
+          image: authUser.image ?? undefined,
+        });
+      },
+    },
+  },
 });
 
-// Component trigger functions. `onCreateUser` runs in the OAuth callback and
-// creates the Spend Circle User + Personal Circle (PRD stories 1, 3), returning
-// the app user id the component stores as the auth-user mapping. `onUpdateUser`
-// is the single propagation path for the materialized member identity (ADR
-// 0018): when a User's Google profile (name/image) changes, `propagateUserProfile`
-// mirrors it onto the User row and that User's ACTIVE member rows, leaving removed
-// rows frozen. This is the one place that maintains member.displayName/image.
-export const { createUser, updateUser, deleteUser, createSession, isAuthenticated } =
-  authComponent.createAuthFunctions<DataModel>({
-    onCreateUser: async (ctx, authUser) => {
-      return await createUserWithPersonalCircle(ctx, {
-        email: authUser.email,
-        displayName: authUser.name,
-        image: authUser.image ?? undefined,
-      });
-    },
-    onUpdateUser: async (ctx, authUser) => {
-      if (!authUser.userId) {
-        return;
-      }
-      await propagateUserProfile(ctx, authUser.userId as Id<"users">, {
-        displayName: authUser.name,
-        image: authUser.image ?? undefined,
-      });
-    },
-  });
+// Component trigger functions. `onCreate` runs in the OAuth callback and creates
+// the Spend Circle User + Personal Circle (PRD stories 1, 3), then stores the app
+// user id on the auth-user mapping. `onUpdate` is the single propagation path for
+// materialized member identity (ADR 0018).
+export const { onCreate, onUpdate, onDelete } = authComponent.triggersApi();
+
+export const { getAuthUser } = authComponent.clientApi();
 
 const siteUrl = process.env.SITE_URL ?? "http://127.0.0.1:5173";
 
@@ -82,11 +76,11 @@ const trustedOrigins = Array.from(
   new Set([siteUrl, "http://127.0.0.1:5173", "http://localhost:5173"]),
 );
 
-export const createAuth = (ctx: AuthCtx) =>
+export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth({
     baseURL: process.env.CONVEX_SITE_URL,
     trustedOrigins,
-    database: convexAdapter(ctx, authComponent),
+    database: authComponent.adapter(ctx),
     account: { accountLinking: { enabled: true } },
     // E2E-only (ADR 0019): a flag-gated credentials path so Playwright can mint a
     // session without Google. Eliminated in production (E2E_TEST_AUTH is unset there).
@@ -94,11 +88,11 @@ export const createAuth = (ctx: AuthCtx) =>
     // Google-only sign-in (ADR 0002).
     socialProviders: {
       google: {
-        clientId: process.env.GOOGLE_CLIENT_ID as string,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+        clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
       },
     },
-    plugins: [convex(), crossDomain({ siteUrl })],
+    plugins: [convex({ authConfig }), crossDomain({ siteUrl })],
   });
 
 /** The Spend Circle User for the current auth identity, or null. */
@@ -109,7 +103,8 @@ export async function getCurrentUserOrNull(
   if (!authUser?.userId) {
     return null;
   }
-  return await ctx.db.get(authUser.userId as Id<"users">);
+  const userId = ctx.db.normalizeId("users", authUser.userId);
+  return userId ? await ctx.db.get(userId) : null;
 }
 
 /** Throws unless the request is from a bootstrapped Spend Circle User. */

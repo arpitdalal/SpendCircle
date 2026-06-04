@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { COLOR_PALETTE, colorLabel } from "./color.js";
 import { MAX_AMOUNT_MINOR } from "./money.js";
 import {
-  LIMITS,
   categoryInputSchema,
+  LIMITS,
   toMutationArgs,
   transactionCreateSchema,
   transactionFormSchema,

@@ -1,4 +1,4 @@
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 
 /**
  * First-party MSW handlers for the *outbound third-party vendor APIs* Spend

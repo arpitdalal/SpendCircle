@@ -1,4 +1,4 @@
-import { type RouteConfig, index, layout, prefix, route } from "@react-router/dev/routes";
+import { index, layout, prefix, type RouteConfig, route } from "@react-router/dev/routes";
 
 /**
  * Config-based routes (ADR 0017) — chosen over file-based routing because

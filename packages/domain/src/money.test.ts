@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_AMOUNT_MINOR,
   formatMinorUnits,
   isValidMinorUnits,
+  MAX_AMOUNT_MINOR,
   minorUnitsToMajorString,
   parseAmountToMinorUnits,
 } from "./money.js";

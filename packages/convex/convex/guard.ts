@@ -74,7 +74,7 @@ export async function getActiveMembership(
     .query("members")
     .withIndex("by_circle_and_user", (q) => q.eq("circleId", circleId).eq("userId", userId))
     .unique();
-  if (!membership || membership.status !== "active") {
+  if (membership?.status !== "active") {
     return null;
   }
   return membership;

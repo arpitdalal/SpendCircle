@@ -1,10 +1,10 @@
 import {
-  type TransactionType,
   addMonths,
   buildRef,
   formatMinorUnits,
   isValidPlainMonth,
   monthOf,
+  type TransactionType,
   toCurrencyCode,
   transactionCreateSchema,
   transactionUpdateSchema,
@@ -12,7 +12,7 @@ import {
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
-import { type MutationCtx, type QueryCtx, mutation, query } from "./_generated/server.js";
+import { type MutationCtx, mutation, type QueryCtx, query } from "./_generated/server.js";
 import { requireCircleAccess, requireTransactionAccess, resolveCircleAccess } from "./guard.js";
 import { type HistoryChange, recordEvent, transactionEntity } from "./history.js";
 
