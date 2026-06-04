@@ -12,7 +12,7 @@ import { resolveCircleAccess } from "./guard.js";
  * Member id. `isSelf` flags the caller's own Member so a selector can default to
  * them and label them distinctly without leaking ids.
  */
-function toMemberView(member: Doc<"members">, currentMemberId: Doc<"members">["_id"]) {
+export function toMemberView(member: Doc<"members">, currentMemberId: Doc<"members">["_id"]) {
   return {
     id: member._id,
     displayName: member.displayName,

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done · [PR #70](https://github.com/arpitdalal/SpendCircle/pull/70) |
 | **Labels** | `area:reporting`, `backend`, `ui` |
 | **Depends on** | TXN-1 |
 | **Unlocks** | RPT-4, RPT-5, RPT-6 |
