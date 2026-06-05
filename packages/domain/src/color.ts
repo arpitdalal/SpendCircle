@@ -47,12 +47,14 @@ export function colorLabel(id: string): string {
 export const DEFAULT_COLOR_ID: ColorId = "blue";
 
 /**
- * A deterministic palette color for a stable seed (e.g. a Member id) — the
+ * A deterministic palette color for a stable seed (e.g. a Display Name) — the
  * background tint of a generated initials avatar when no Profile Picture is
  * available. The same seed always maps to the same color across renders and
- * sessions (never random, which would flicker), and the seed is an opaque id, so
- * the color is independent of the Display Name and stays put when a name changes.
- * Colors are a visual cue, not identity: collisions between seeds are fine
+ * sessions (never random, which would flicker). Seeding the avatar on the Display
+ * Name — which the materialized identity mirrors onto all of a User's active
+ * memberships (ADR 0018) — keeps the generated chip consistent for the same
+ * person across every Circle without the client needing the raw userId. Colors
+ * are a visual cue, not identity: collisions between seeds are fine
  * (PRD stories 11, 60).
  */
 export function paletteColorForSeed(seed: string): PaletteColor {

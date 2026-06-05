@@ -10,10 +10,12 @@ import { cn } from "~/lib/utils.js";
  * URLs can expire/403 over time, so an image prop being set is not a guarantee it
  * renders; without this a dead URL would show a broken image instead of initials.
  *
- * When `seed` is given (a stable, opaque id — e.g. the Member id, never the name)
- * the initials chip is tinted with a deterministic palette color so a list of
- * members is scannable; the tint is name-independent, so it stays put if the
- * Display Name changes. Without a seed it falls back to a neutral chip.
+ * The generated chip — both the initials and its tint — is a pure function of the
+ * Display Name, so it stays consistent for the same person across every Circle:
+ * the materialized identity mirrors one Google profile onto all of a User's active
+ * memberships (ADR 0018), and the client never needs the raw userId, which the
+ * Member view deliberately withholds (ADR 0016). Colors are a cue, not identity,
+ * so two people sharing a name (and thus a color) is fine.
  *
  * Purely decorative — `aria-hidden`, empty `alt` — because every surface that
  * renders it shows the Display Name in adjacent text; announcing the avatar too
@@ -22,12 +24,10 @@ import { cn } from "~/lib/utils.js";
 export function Avatar({
   name,
   image,
-  seed,
   className,
 }: {
   name: string;
   image?: string;
-  seed?: string;
   className?: string;
 }) {
   // Track the URL that failed rather than a bare boolean, so a new `image` URL is
@@ -47,22 +47,15 @@ export function Avatar({
     );
   }
 
-  const color = seed ? paletteColorForSeed(seed) : undefined;
+  const color = paletteColorForSeed(name.trim().toLowerCase());
   // Soft-badge treatment: a faint wash of the color (15% alpha) behind the color
   // itself as the glyph. The palette is curated to be legible on dark, so color-
   // on-dark stays readable — light text on a saturated fill would not.
-  const style = color ? { backgroundColor: `${color.hex}26`, color: color.hex } : undefined;
-
   return (
     <span
       aria-hidden
-      style={style}
-      className={cn(
-        base,
-        "flex items-center justify-center text-xs font-semibold",
-        color ? undefined : "bg-neutral-800 text-neutral-200",
-        className,
-      )}
+      style={{ backgroundColor: `${color.hex}26`, color: color.hex }}
+      className={cn(base, "flex items-center justify-center text-xs font-semibold", className)}
     >
       {initials(name)}
     </span>

@@ -38,14 +38,21 @@ describe("Avatar", () => {
     expect(container.textContent).toBe("OO");
   });
 
-  it("tints the initials chip with the seed's deterministic palette color", () => {
-    const { container } = render(<Avatar name="Maya Member" seed="mem-maya" />);
-    const chip = container.firstChild;
-    expect(chip).toHaveStyle({ color: paletteColorForSeed("mem-maya").hex });
+  it("tints the initials chip with a palette color derived from the name", () => {
+    const { container } = render(<Avatar name="Maya Member" />);
+    // Seeded on the normalized Display Name, so it is the same person's color in
+    // every Circle (the materialized identity mirrors one profile onto all active
+    // memberships) without the client ever needing the raw userId.
+    expect(container.firstChild).toHaveStyle({
+      color: paletteColorForSeed("maya member").hex,
+    });
   });
 
-  it("uses a neutral chip when no seed is given", () => {
-    const { container } = render(<Avatar name="Alex" />);
-    expect(container.firstChild).toHaveClass("bg-neutral-800");
+  it("gives the same name the same color regardless of casing or surrounding space", () => {
+    const { container: a } = render(<Avatar name="Maya Member" />);
+    const { container: b } = render(<Avatar name="  maya member  " />);
+    const colorOf = (root: HTMLElement) =>
+      (root.firstChild instanceof HTMLElement ? root.firstChild : null)?.style.color;
+    expect(colorOf(a)).toBe(colorOf(b));
   });
 });
