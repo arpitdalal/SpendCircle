@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Circle, Member, TransactionDetail } from "~/lib/data.js";
+import type { Circle, Member, TransactionDetail, TransactionHistoryEvent } from "~/lib/data.js";
 import {
   configureConvex,
   makeCircleView,
@@ -136,13 +136,13 @@ describe("TransactionDetail — Transaction History (PRD 77)", () => {
       transactionDetail: makeTransactionDetailView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
       transactionHistory: [
         makeHistoryEventView({
-          id: "h2" as ReturnType<typeof makeHistoryEventView>["id"],
+          id: testId<TransactionHistoryEvent["id"]>("h2"),
           action: "edited",
           actor: { displayName: "Olive Owner", image: undefined },
           changes: [{ field: "title", from: "Weekly shop", to: "Renamed shop" }],
         }),
         makeHistoryEventView({
-          id: "h1" as ReturnType<typeof makeHistoryEventView>["id"],
+          id: testId<TransactionHistoryEvent["id"]>("h1"),
           action: "created",
           actor: { displayName: "Olive Owner", image: undefined },
           changes: [{ field: "title", to: "Weekly shop" }],
