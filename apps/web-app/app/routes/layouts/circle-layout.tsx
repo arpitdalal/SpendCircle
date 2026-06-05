@@ -36,6 +36,11 @@ export default function CircleLayout() {
       label: "Categories",
       end: false,
     },
+    {
+      to: href("/circles/:circleRef/members", { circleRef: circle.ref }),
+      label: "Members",
+      end: false,
+    },
   ];
 
   return (

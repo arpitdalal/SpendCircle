@@ -43,6 +43,7 @@ export default [
         // route. Lands WITH its feature (TXN-5) — no caller-less placeholder.
         route("transactions/:transactionRef/edit", "routes/circle/transaction-edit.tsx"),
         route("categories", "routes/circle/categories.tsx"),
+        route("members", "routes/circle/members.tsx"),
       ]),
     ]),
   ]),
