@@ -10,7 +10,7 @@ import {
   useTransactionHistory,
 } from "~/lib/data.js";
 import { formatAuditTimestamp } from "~/lib/datetime.js";
-import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
+import { editSearch, ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { useResolvedTransactionDetail } from "~/lib/use-resolved-transaction-detail.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -66,11 +66,12 @@ function TransactionDetailView({
     searchParams.get("view") === "archived" ? "archived" : undefined;
   const ledgerBase = `/circles/${circle.ref}/transactions`;
   const ledgerUrl = withQuery(ledgerBase, ledgerSearch({ month, status }));
-  // The edit route is month-aware only (editing happens in the active view), so its link
-  // carries just the month — mirroring the ledger's Edit link.
+  // The edit link carries THIS detail's slice (month + view) plus `from=detail`, so the
+  // editor returns here on close (not the ledger) and this page's own Back link still
+  // points at the same ledger slice it was opened from.
   const editUrl = withQuery(
     `${ledgerBase}/${transaction.ref}/edit`,
-    ledgerSearch({ month, status: "active" }),
+    editSearch({ month, status, from: "detail" }),
   );
 
   return (

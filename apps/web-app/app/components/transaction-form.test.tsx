@@ -27,8 +27,15 @@ import { TransactionForm, type TransactionFormMode } from "./transaction-form.js
 const createTransaction = vi.fn();
 const updateTransaction = vi.fn();
 
+/** What the helper accepts for a create: the real create mode minus `selectedMonth`, which
+ * `renderForm` injects (defaulting to the current month) so a test needn't repeat it; the
+ * edit variant is passed through unchanged. */
+type FormModeInput =
+  | Omit<Extract<TransactionFormMode, { kind: "create" }>, "selectedMonth">
+  | Extract<TransactionFormMode, { kind: "edit" }>;
+
 function renderForm(
-  mode: TransactionFormMode,
+  mode: FormModeInput,
   opts: {
     circle?: Partial<Circle>;
     categories?: Category[] | null;
@@ -51,14 +58,14 @@ function renderForm(
   // Default the selected month to the current one so a create's date defaults to today
   // (the common record-as-you-go case); tests that care about back-dating pass a month.
   const month = opts.selectedMonth ?? currentMonth(new Date());
-  const ui = () => (
-    <TransactionForm circle={circle} mode={mode} selectedMonth={month} onClose={onClose} />
-  );
+  const realMode: TransactionFormMode =
+    mode.kind === "create" ? { ...mode, selectedMonth: month } : mode;
+  const ui = () => <TransactionForm circle={circle} mode={realMode} onClose={onClose} />;
   const result = render(ui());
   return { onClose, circle, ...result, rerenderForm: () => result.rerender(ui()) };
 }
 
-const createExpense: TransactionFormMode = { kind: "create", type: "expense" };
+const createExpense: FormModeInput = { kind: "create", type: "expense" };
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -258,7 +265,7 @@ describe("TransactionForm — create", () => {
 });
 
 describe("TransactionForm — edit (TXN-2)", () => {
-  const editMode = (over: Partial<Transaction> = {}): TransactionFormMode => ({
+  const editMode = (over: Partial<Transaction> = {}): FormModeInput => ({
     kind: "edit",
     transaction: makeTransactionView(over),
   });

@@ -28,3 +28,38 @@ export function ledgerSearch(
 export function withQuery(path: string, query: string): string {
   return query ? `${path}?${query}` : path;
 }
+
+/**
+ * Where an edit object route returns on close — Cancel OR a successful save (ADR 0017).
+ * The default `"ledger"` lands on the Monthly Ledger (the edit's `month` context);
+ * `"detail"` returns to the Transaction detail page the edit was opened from, so a
+ * Ledger → Detail → Edit → close trip lands back on Detail, not the Ledger. The detail
+ * page's Edit link sets `from=detail`; the ledger row's Edit link omits it (ledger
+ * default). Decoded by {@link parseEditReturn} so the edit route honors the same marker.
+ */
+export type EditReturn = "ledger" | "detail";
+
+/** The edit object link's `from` param: who opened the editor and thus where close returns. */
+export const EDIT_RETURN_PARAM = "from";
+
+/** Decodes the edit route's `from` param to a known {@link EditReturn}; anything else
+ * (absent, stale, hand-typed) falls back to the ledger default. */
+export function parseEditReturn(value: string | null): EditReturn {
+  return value === "detail" ? "detail" : "ledger";
+}
+
+/**
+ * Builds an edit object link's query: the {@link ledgerSearch} slice to carry forward
+ * (so a return to the detail keeps ITS Back target, and a return to the ledger keeps the
+ * month) plus, when opened from the detail page, the `from=detail` return marker. Reuses
+ * `ledgerSearch` for the slice so the slice encoding has a single home and can't drift.
+ */
+export function editSearch(
+  opts: { month?: PlainMonth; status?: TransactionStatus; from?: EditReturn } = {},
+): string {
+  const params = new URLSearchParams(ledgerSearch(opts));
+  if (opts.from === "detail") {
+    params.set(EDIT_RETURN_PARAM, "detail");
+  }
+  return params.toString();
+}

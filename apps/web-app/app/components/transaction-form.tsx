@@ -98,9 +98,14 @@ interface TransactionFormValues {
  * Monthly Ledger (driven by the `new` query param — TXN-5); an edit is its own
  * object route (`/transactions/:transactionRef/edit`), but both render this one
  * form so the field rules, validation, and submit wiring never fork.
+ *
+ * `selectedMonth` is a CREATE-only input: a new row's date defaults into the month the
+ * Ledger is showing. An edit has no use for it — its date comes from the saved
+ * Transaction — so it lives on the create variant, not as a shared prop the edit route
+ * would have to fabricate a month to satisfy.
  */
 export type TransactionFormMode =
-  | { kind: "create"; type: TransactionType }
+  | { kind: "create"; type: TransactionType; selectedMonth: PlainMonth }
   | { kind: "edit"; transaction: Transaction };
 
 /**
@@ -122,18 +127,17 @@ export type TransactionFormMode =
  * attempted), and the whole-form `transactionFormSchema` is the submit gate.
  *
  * `onClose` is what "done" means to the caller — the create path removes the `new`
- * query param (staying on the ledger), the edit route navigates back to the ledger
- * with the selected month preserved (TXN-5). The form never owns navigation.
+ * query param (staying on the ledger), the edit route navigates back to where it was
+ * opened from (the detail page or the ledger), the URL slice preserved (TXN-5). The form
+ * never owns navigation.
  */
 export function TransactionForm({
   circle,
   mode,
-  selectedMonth,
   onClose,
 }: {
   circle: Circle;
   mode: TransactionFormMode;
-  selectedMonth: PlainMonth;
   onClose: () => void;
 }) {
   const createTransaction = useCreateTransaction();
@@ -211,7 +215,7 @@ export function TransactionForm({
           // Default into the month the Ledger is showing, so a create from a
           // non-current month lands in the visible ledger (the row + totals confirm
           // it) instead of silently in today's month.
-          date: defaultDateInMonth(selectedMonth, new Date()),
+          date: defaultDateInMonth(mode.selectedMonth, new Date()),
           categoryIds: [],
           paidByMemberId: "",
         }

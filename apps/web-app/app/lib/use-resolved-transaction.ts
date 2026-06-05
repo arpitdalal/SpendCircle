@@ -43,9 +43,11 @@ export function useResolvedTransaction({ enabled = true } = {}): Resolution<Tran
   const [searchParams] = useSearchParams();
 
   // Preserve the selected ledger month across the fallback so an unavailable edit link
-  // returns to the ledger the User was on; an absent/invalid month resolves to the
-  // current month (the same rule the ledger and the edit route's return URL apply), so
-  // the fallback always carries a valid month rather than a bare route.
+  // returns to the ledger the User was on; an absent/invalid month resolves to the current
+  // month (the same normalization the ledger applies), so this anti-enumeration redirect
+  // always lands on a concrete ledger month rather than a bare route. This is the bad-link
+  // fallback, distinct from a normal close (see `transaction-edit.tsx`), which trims the URL
+  // and carries its slice back verbatim without inventing a month.
   const rawMonth = searchParams.get("month");
   const month: PlainMonth = isValidPlainMonth(rawMonth) ? rawMonth : currentMonth(new Date());
   const fallback = `/circles/${circle.ref}/transactions?month=${month}`;

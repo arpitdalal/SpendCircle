@@ -441,3 +441,57 @@ test("the transaction detail shows audit metadata and history reflecting an edit
   // The money change rendered as a formatted amount, not a raw id or minor-unit integer.
   await expect(history).toContainText("$25.00");
 });
+
+/**
+ * TXN-4 UX: opening the editor FROM the detail page returns to that detail page on close
+ * (Cancel or a successful save), not the Ledger — so a Ledger → Detail → Edit → close trip
+ * lands back on Detail. Covers the full real nav round-trip end to end; a private far-future
+ * month per project keeps parallel runs off the shared Personal Circle.
+ */
+test("editing from the transaction detail returns to the detail on cancel and on save", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${Date.now()}-${testInfo.project.name}`;
+  const categoryName = `E2E R ${stamp}`; // ≤ 40 chars (categoryNameMax)
+  const title = `E2E Return ${stamp}`;
+  const month = testInfo.project.name === "mobile-chromium" ? "2995-06" : "2995-05";
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Personal/ }).click();
+
+  await page.getByRole("link", { name: "Categories" }).click();
+  await page.getByLabel(/New expense category/).fill(categoryName);
+  await page.getByRole("button", { name: "Add category" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
+
+  // Record an expense into the private month, then open its detail page.
+  await page.getByRole("link", { name: "Transactions" }).click();
+  await selectMonth(page, month);
+  await page.getByRole("button", { name: "Add expense" }).click();
+  const form = page.getByRole("form", { name: /add expense/i });
+  await form.getByLabel("Title").fill(title);
+  await form.getByLabel(/Amount/).fill("10.00");
+  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("button", { name: "Add expense" }).click();
+
+  const row = page.getByRole("listitem").filter({ hasText: title });
+  await row.getByRole("link", { name: `View ${title}` }).click();
+  const detailUrl = new RegExp(`/transactions/[^/]+\\?month=${month}$`);
+  await expect(page).toHaveURL(detailUrl);
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+
+  // Edit → Cancel returns HERE (the detail), not the Ledger.
+  await page.getByRole("link", { name: `Edit ${title}` }).click();
+  await expect(page.getByRole("form", { name: /edit transaction/i })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page).toHaveURL(detailUrl);
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+
+  // Edit → Save also returns to the detail, now reflecting the new amount.
+  await page.getByRole("link", { name: `Edit ${title}` }).click();
+  const editForm = page.getByRole("form", { name: /edit transaction/i });
+  await editForm.getByLabel(/Amount/).fill("25.00");
+  await editForm.getByRole("button", { name: "Save changes" }).click();
+  await expect(page).toHaveURL(detailUrl);
+  await expect(page.getByText("-$25.00")).toBeVisible();
+});

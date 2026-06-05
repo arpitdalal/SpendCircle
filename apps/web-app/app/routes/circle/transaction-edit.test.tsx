@@ -32,8 +32,10 @@ const updateTransaction = vi.fn();
 
 const ROUTES = (
   <>
-    {/* The fallback / return target; a placeholder is enough to assert the URL landed. */}
+    {/* The fallback / return targets; placeholders are enough to assert the URL landed.
+        The detail route is the `from=detail` return target (TXN-4). */}
     <Route path="circles/:circleRef/transactions" element={<div>ledger</div>} />
+    <Route path="circles/:circleRef/transactions/:transactionRef" element={<div>detail</div>} />
     <Route
       path="circles/:circleRef/transactions/:transactionRef/edit"
       element={<TransactionEdit />}
@@ -153,6 +155,71 @@ describe("TransactionEdit — return navigation", () => {
 
     await waitFor(() => expect(updateTransaction).toHaveBeenCalled());
     await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+  });
+});
+
+describe("TransactionEdit — return to the detail page (from=detail)", () => {
+  it("returns to the transaction detail on cancel when opened from there, keeping the slice", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
+      // The detail's Edit link carries the detail's own ledger slice + the from marker.
+      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&view=archived&from=detail`,
+    });
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    // Back to the detail object route (not the ledger), carrying the slice so detail's own
+    // Back link still resolves to the same ledger view.
+    expect(location()).toBe(
+      `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05&view=archived`,
+    );
+    expect(screen.getByText("detail")).toBeInTheDocument();
+  });
+
+  it("returns to the transaction detail after a successful save when opened from there", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
+      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&from=detail`,
+    });
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+    await user.clear(within(form).getByLabelText("Title"));
+    await user.type(within(form).getByLabelText("Title"), "Edited");
+    await user.click(within(form).getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updateTransaction).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`),
+    );
+  });
+
+  it("returns to the BARE detail (no injected month) when opened from a sliceless detail", async () => {
+    // A detail opened with no ledger slice has a bare-ledger Back link; its Edit link is
+    // `?from=detail` with no month. Close must return to the bare detail — the form's
+    // current-month default is ledger CONTEXT and must not leak into the return slice, or
+    // it would rewrite the detail's Back link to a specific month the user never picked.
+    const user = userEvent.setup();
+    const { location } = setup({
+      editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
+      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?from=detail`,
+    });
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1`);
+    expect(screen.getByText("detail")).toBeInTheDocument();
+  });
+
+  it("returns to the detail read surface on an archived Circle when opened from there", async () => {
+    // Archived ≠ inaccessible: the detail is a read surface that still opens, so a
+    // from=detail edit link on a read-only Circle lands back on detail, not the ledger.
+    const { location } = setup({
+      circle: { status: "archived" },
+      editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
+      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&from=detail`,
+    });
+    await waitFor(() =>
+      expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`),
+    );
+    expect(screen.queryByRole("form", { name: /edit transaction/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
   });
 });
 

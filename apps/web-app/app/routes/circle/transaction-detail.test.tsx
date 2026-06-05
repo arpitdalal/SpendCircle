@@ -190,7 +190,7 @@ describe("TransactionDetail — ledger slice preserved (Back / Edit links)", () 
 });
 
 describe("TransactionDetail — edit affordance (courtesy nav, server enforces)", () => {
-  it("offers an Edit link to the recorder on a writable circle, preserving the month", () => {
+  it("offers an Edit link to the recorder, carrying the slice and from=detail so close returns here", () => {
     setup({
       transactionDetail: makeTransactionDetailView({
         ref: "weekly-shop-t1",
@@ -201,7 +201,22 @@ describe("TransactionDetail — edit affordance (courtesy nav, server enforces)"
     });
     expect(screen.getByRole("link", { name: "Edit Weekly shop" })).toHaveAttribute(
       "href",
-      `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05`,
+      `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&from=detail`,
+    );
+  });
+
+  it("carries only from=detail (no month) when the detail itself was opened with no slice", () => {
+    setup({
+      transactionDetail: makeTransactionDetailView({
+        ref: "weekly-shop-t1",
+        title: "Weekly shop",
+        canEditFields: true,
+      }),
+      url: `/circles/${REF}/transactions/weekly-shop-t1`,
+    });
+    expect(screen.getByRole("link", { name: "Edit Weekly shop" })).toHaveAttribute(
+      "href",
+      `/circles/${REF}/transactions/weekly-shop-t1/edit?from=detail`,
     );
   });
 

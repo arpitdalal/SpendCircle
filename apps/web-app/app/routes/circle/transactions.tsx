@@ -194,8 +194,7 @@ export default function CircleTransactions() {
         <TransactionForm
           key={`create-${createType}`}
           circle={circle}
-          mode={{ kind: "create", type: createType }}
-          selectedMonth={month}
+          mode={{ kind: "create", type: createType, selectedMonth: month }}
           onClose={closeCreate}
         />
       ) : null}
