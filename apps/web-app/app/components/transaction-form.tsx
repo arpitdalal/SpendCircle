@@ -344,13 +344,6 @@ export function TransactionForm({
         <h3 className="text-sm font-semibold">
           {isEdit ? "Edit transaction" : `Add ${TYPE_LABEL[activeType].toLowerCase()}`}
         </h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs text-neutral-400 hover:text-neutral-100"
-        >
-          Cancel
-        </button>
       </div>
 
       {/* Type is fixed for a create (the CTA chose it); an edit can switch it, which is
@@ -618,15 +611,22 @@ export function TransactionForm({
 
       {submitError ? <FieldError>{submitError}</FieldError> : null}
 
+      {/* Primary save and a ghost Cancel sit together as the form's action row, so Cancel
+          reads as a button colocated with Save rather than a link floating in the header. */}
       <form.Subscribe selector={(state) => state.isSubmitting}>
         {(isSubmitting) => (
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting
-              ? "Saving…"
-              : isEdit
-                ? "Save changes"
-                : `Add ${TYPE_LABEL[activeType].toLowerCase()}`}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting
+                ? "Saving…"
+                : isEdit
+                  ? "Save changes"
+                  : `Add ${TYPE_LABEL[activeType].toLowerCase()}`}
+            </Button>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>
+              Cancel
+            </Button>
+          </div>
         )}
       </form.Subscribe>
     </form>
