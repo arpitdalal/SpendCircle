@@ -12,6 +12,8 @@ import type {
   MonthlySummary,
   PaginationStatus,
   Transaction,
+  TransactionDetail,
+  TransactionHistoryEvent,
 } from "~/lib/data.js";
 import { SnackbarProvider } from "~/lib/snackbar.js";
 import type { CircleOutletContext } from "~/routes/layouts/circle-layout.js";
@@ -48,6 +50,8 @@ const NAME = {
   listMembers: getFunctionName(api.members.listMembers),
   listTransactions: getFunctionName(api.transactions.listTransactions),
   getEditableTransaction: getFunctionName(api.transactions.getEditableTransaction),
+  getTransaction: getFunctionName(api.transactions.getTransaction),
+  listTransactionHistory: getFunctionName(api.transactions.listTransactionHistory),
   getMonthlyLedger: getFunctionName(api.ledger.getMonthlyLedger),
   getDashboard: getFunctionName(api.dashboard.getDashboard),
   getPaidByFilterOptions: getFunctionName(api.dashboard.getPaidByFilterOptions),
@@ -115,6 +119,20 @@ interface ConvexState {
     | Transaction
     | null
     | ((args: Record<string, unknown>) => Transaction | null | undefined);
+  /** `getTransaction` detail target (TXN-4); `undefined` ≡ loading, `null` ≡ unavailable
+   * (missing / inaccessible / wrong-Circle — collapsed by the server). Drives the detail
+   * object route's resolution. A function resolves per query args (e.g. by `transactionId`)
+   * so a test can model distinct cached targets without a loading gap. */
+  transactionDetail?:
+    | TransactionDetail
+    | null
+    | ((args: Record<string, unknown>) => TransactionDetail | null | undefined);
+  /** `listTransactionHistory` page (paginated, TXN-4) — the detail surface's history;
+   * defaults to empty. */
+  transactionHistory?: TransactionHistoryEvent[];
+  historyStatus?: PaginationStatus;
+  /** The paginated history `loadMore`; assert against it for the history "Load more". */
+  historyLoadMore?: () => void;
   /** The `createTransaction` / `createCategory` mutation spies the test owns.
    *
    * These are plain spies the caller configures. To assert the backend-guard
@@ -151,6 +169,10 @@ export function configureConvex(state: ConvexState = {}) {
     // No default: absent ≡ `undefined` ≡ loading (the codebase's reactive-query
     // convention); a test passes `null` to model an unavailable edit target.
     editableTransaction,
+    transactionDetail,
+    transactionHistory = [],
+    historyStatus = "Exhausted",
+    historyLoadMore = () => {},
     createTransaction,
     updateTransaction,
     archiveTransaction,
@@ -178,6 +200,10 @@ export function configureConvex(state: ConvexState = {}) {
           return typeof editableTransaction === "function"
             ? editableTransaction(args)
             : editableTransaction;
+        case NAME.getTransaction:
+          return typeof transactionDetail === "function"
+            ? transactionDetail(args)
+            : transactionDetail;
         default:
           return undefined;
       }
@@ -186,7 +212,12 @@ export function configureConvex(state: ConvexState = {}) {
 
   convexReactMock.usePaginatedQuery.mockImplementation(
     (fn: FunctionReference<"query">, args: Record<string, unknown> | "skip") => {
-      if (getFunctionName(fn) !== NAME.listTransactions) {
+      const name = getFunctionName(fn);
+      // The Transaction History list (TXN-4) is its own paginated query.
+      if (name === NAME.listTransactionHistory) {
+        return { results: transactionHistory, status: historyStatus, loadMore: historyLoadMore };
+      }
+      if (name !== NAME.listTransactions) {
         return { results: [], status: "Exhausted", loadMore: () => {} };
       }
       // The active/archived toggle (TXN-3) reads two distinct pages by the query's
@@ -316,6 +347,43 @@ export function makeTransactionView(over: Partial<Transaction> = {}): Transactio
     ],
     canEditFields: true,
     canArchive: true,
+    ...over,
+  };
+}
+
+/** A Transaction DETAIL view (TXN-4): the {@link makeTransactionView} shape plus an Audit
+ * Metadata block. Defaults to a fixed-instant audit (UTC-rendered by the surface) so a
+ * timestamp test reads deterministic values regardless of the runner's timezone. */
+export function makeTransactionDetailView(
+  over: Partial<TransactionDetail> = {},
+): TransactionDetail {
+  const me = { id: testId<Member["id"]>("mem-you"), displayName: "You", image: undefined };
+  return {
+    ...makeTransactionView(),
+    audit: {
+      createdBy: me,
+      createdAt: Date.UTC(2026, 4, 15, 9, 30),
+      updatedBy: me,
+      updatedAt: Date.UTC(2026, 4, 16, 14, 5),
+    },
+    ...over,
+  };
+}
+
+/** One Transaction History event (TXN-4). Defaults to a `created` event with a frozen,
+ * ID-free set of changes; pass overrides for the action, actor, instant, or changes. */
+export function makeHistoryEventView(
+  over: Partial<TransactionHistoryEvent> = {},
+): TransactionHistoryEvent {
+  return {
+    id: testId<TransactionHistoryEvent["id"]>("h1"),
+    action: "created",
+    createdAt: Date.UTC(2026, 4, 15, 9, 30),
+    actor: { displayName: "You", image: undefined },
+    changes: [
+      { field: "title", to: "Weekly shop" },
+      { field: "amount", toMoney: { minorUnits: 1250, currency: "USD" } },
+    ],
     ...over,
   };
 }

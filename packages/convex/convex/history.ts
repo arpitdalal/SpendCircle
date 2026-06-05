@@ -1,3 +1,4 @@
+import type { PaginationOptions, PaginationResult } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { MutationCtx, QueryCtx } from "./_generated/server.js";
 
@@ -108,4 +109,38 @@ export async function listEntityHistory(
     .withIndex("by_entity", (q) => q.eq("entityId", entity.entityId))
     .order("desc")
     .collect();
+}
+
+/**
+ * One newest-first page of an entity's history, paginated at the source (README
+ * §4: history is an unbounded-growth set, so the detail view must never `.collect()`
+ * the whole audit and slice in memory). Ranges the SAME `by_entity` index
+ * {@link listEntityHistory} uses, so the page is index-backed and bounded. The
+ * canonical read for a paginated detail surface (Transaction History — PRD story 80;
+ * Category/Circle History reuse it).
+ */
+export async function paginateEntityHistory(
+  ctx: QueryCtx | MutationCtx,
+  entity: HistoryEntity,
+  paginationOpts: PaginationOptions,
+): Promise<PaginationResult<Doc<"histories">>> {
+  return await ctx.db
+    .query("histories")
+    .withIndex("by_entity", (q) => q.eq("entityId", entity.entityId))
+    .order("desc")
+    .paginate(paginationOpts);
+}
+
+/** The newest event recorded for an entity, or null when none exist yet. Backs the
+ * Audit Metadata "updated-by / updated-at" (the last Member to change the record),
+ * a single bounded `by_entity` lookup rather than collecting the whole history. */
+export async function latestEntityEvent(
+  ctx: QueryCtx | MutationCtx,
+  entity: HistoryEntity,
+): Promise<Doc<"histories"> | null> {
+  return await ctx.db
+    .query("histories")
+    .withIndex("by_entity", (q) => q.eq("entityId", entity.entityId))
+    .order("desc")
+    .first();
 }

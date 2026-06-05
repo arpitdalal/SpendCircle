@@ -22,6 +22,7 @@ import {
   useMonthlyLedger,
   useRestoreTransaction,
 } from "~/lib/data.js";
+import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
@@ -193,8 +194,7 @@ export default function CircleTransactions() {
         <TransactionForm
           key={`create-${createType}`}
           circle={circle}
-          mode={{ kind: "create", type: createType }}
-          selectedMonth={month}
+          mode={{ kind: "create", type: createType, selectedMonth: month }}
           onClose={closeCreate}
         />
       ) : null}
@@ -465,7 +465,24 @@ function TransactionList({
             className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
           >
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{txn.title}</p>
+              {/* The title is a canonical object LINK to the Transaction detail surface
+                  (TXN-4) — Audit Metadata + Transaction History. A real, shareable,
+                  reload-safe URL (ADR 0016), available for active and archived rows alike
+                  (detail is a read surface). It carries the ledger slice (month + view) so
+                  the detail's Back link returns to THIS slice, matching the Edit link's
+                  month preservation. */}
+              <p className="truncate text-sm font-medium">
+                <Link
+                  to={withQuery(
+                    `/circles/${circle.ref}/transactions/${txn.ref}`,
+                    ledgerSearch({ month, status: archivedView ? "archived" : "active" }),
+                  )}
+                  className="hover:underline"
+                  aria-label={`View ${txn.title}`}
+                >
+                  {txn.title}
+                </Link>
+              </p>
               <p className="truncate text-xs text-neutral-500">
                 {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
                 {txn.paidBy.displayName}

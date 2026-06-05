@@ -9,6 +9,7 @@ import {
   MOCK_DASHBOARD,
   MOCK_MEMBERS,
   MOCK_MONTHLY_SUMMARY,
+  MOCK_TRANSACTION_HISTORY,
   MOCK_TRANSACTIONS,
 } from "./fixtures.js";
 
@@ -105,6 +106,31 @@ export function useMembers(circleId: Circle["id"]): Member[] | null | undefined 
 export type Transaction = FunctionReturnType<
   typeof api.transactions.listTransactions
 >["page"][number];
+
+/**
+ * The single Transaction DETAIL view contract (TXN-4), derived from `getTransaction`
+ * so it cannot drift from `toTransactionDetailView` in
+ * `packages/convex/convex/transactions.ts` (ADR 0003). It is the full {@link Transaction}
+ * view plus its Audit Metadata block. The query returns `TransactionDetailView | null`
+ * (null ≡ inaccessible / missing / wrong-Circle — ADR 0016); this is the non-null shape.
+ */
+export type TransactionDetail = NonNullable<
+  FunctionReturnType<typeof api.transactions.getTransaction>
+>;
+
+/**
+ * One Transaction History event (TXN-4), derived from `listTransactionHistory` so it
+ * cannot drift from `toHistoryEventView` (ADR 0003): the action, the acting Member's
+ * display identity (or `null` for a system event), the event instant, and the frozen
+ * display-safe `changes` (text `from`/`to`, typed `fromMoney`/`toMoney` — never a raw
+ * id). It is one element of the query's paginated `page`.
+ */
+export type TransactionHistoryEvent = FunctionReturnType<
+  typeof api.transactions.listTransactionHistory
+>["page"][number];
+
+/** One change line within a {@link TransactionHistoryEvent}. */
+export type TransactionHistoryChange = TransactionHistoryEvent["changes"][number];
 
 /** How many Transactions to fetch per page (initial load and each "load more"). */
 export const TRANSACTIONS_PAGE_SIZE = 25;
@@ -273,4 +299,43 @@ export function useArchiveTransaction() {
 /** The Restore-Transaction mutation (TXN-3): the mirror of {@link useArchiveTransaction}. */
 export function useRestoreTransaction() {
   return useMutation(api.transactions.restoreTransaction);
+}
+
+/** How many Transaction History events to fetch per page (initial load and each
+ * "load more"). History is unbounded-growth, so the detail surface pages it (README §4). */
+export const HISTORY_PAGE_SIZE = 20;
+
+export interface PaginatedHistory {
+  events: TransactionHistoryEvent[];
+  status: PaginationStatus;
+  /** Loads the next page; a no-op unless `status` is "CanLoadMore". */
+  loadMore: () => void;
+}
+
+/**
+ * A Transaction's History, newest first, paginated at the source so the detail surface
+ * never holds an unbounded audit — it loads one page and grows on demand (TXN-4; ADR
+ * 0006 for the mock fork). The detail route already resolved the Transaction through
+ * `getTransaction` before this renders, so an inaccessible Circle never reaches here; the
+ * backend still returns an empty page for one (anti-enumeration parity with the ledger).
+ * Mock mode returns fixtures and skips the backend so E2E/offline render without a live
+ * deployment (ADR 0006).
+ */
+export function useTransactionHistory(
+  circleId: Circle["id"],
+  transactionId: TransactionDetail["id"],
+): PaginatedHistory {
+  const paginated = usePaginatedQuery(
+    api.transactions.listTransactionHistory,
+    MOCKS ? "skip" : { circleId, transactionId },
+    { initialNumItems: HISTORY_PAGE_SIZE },
+  );
+  if (MOCKS) {
+    return { events: MOCK_TRANSACTION_HISTORY, status: "Exhausted", loadMore: () => {} };
+  }
+  return {
+    events: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(HISTORY_PAGE_SIZE),
+  };
 }
