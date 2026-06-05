@@ -2,7 +2,7 @@ import { isValidPlainMonth } from "@spend-circle/domain";
 import { v } from "convex/values";
 import { query } from "./_generated/server.js";
 import { resolveCircleAccess } from "./guard.js";
-import { monthDateRange } from "./transactions.js";
+import { collectMonthActiveTransactions, sumMonthTotals } from "./monthActivity.js";
 
 /**
  * The Monthly Ledger's financial summary for one Circle-month (RPT-1; PRD stories
@@ -41,30 +41,10 @@ export const getMonthlyLedger = query({
       throw new Error("Invalid month");
     }
 
-    const range = monthDateRange(args.month);
-    const transactions = await ctx.db
-      .query("transactions")
-      .withIndex("by_circle_status_date", (q) =>
-        q
-          .eq("circleId", args.circleId)
-          .eq("status", "active")
-          .gte("date", range.start)
-          .lt("date", range.endExclusive),
-      )
-      .collect();
-
-    let incomeMinor = 0;
-    let expenseMinor = 0;
-    for (const txn of transactions) {
-      if (txn.type === "income") {
-        incomeMinor += txn.amountMinorUnits;
-      } else {
-        expenseMinor += txn.amountMinorUnits;
-      }
-    }
+    const transactions = await collectMonthActiveTransactions(ctx, args.circleId, args.month);
 
     return {
-      totals: { incomeMinor, expenseMinor, netMinor: incomeMinor - expenseMinor },
+      totals: sumMonthTotals(transactions),
       currency: access.circle.currency,
     };
   },

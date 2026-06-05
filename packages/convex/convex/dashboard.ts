@@ -1,10 +1,11 @@
 import { currentMonth, isValidPlainMonth } from "@spend-circle/domain";
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel.js";
-import { type QueryCtx, query } from "./_generated/server.js";
+import type { Doc } from "./_generated/dataModel.js";
+import { query } from "./_generated/server.js";
 import { resolveCircleAccess } from "./guard.js";
 import { toMemberView } from "./members.js";
-import { monthDateRange, newViewCaches, toTransactionView } from "./transactions.js";
+import { collectMonthActiveTransactions, sumMonthTotals } from "./monthActivity.js";
+import { newViewCaches, toTransactionView } from "./transactions.js";
 
 /**
  * How many recent Transactions the Dashboard surfaces (PRD story 75). A small,
@@ -12,52 +13,6 @@ import { monthDateRange, newViewCaches, toTransactionView } from "./transactions
  * recent slice stays bounded regardless of how busy the month is.
  */
 export const RECENT_TRANSACTIONS_LIMIT = 5;
-
-/**
- * Collects ONE Circle-month's active Transactions, the single active set the
- * Dashboard derives BOTH its totals and its recent feed from (RPT-3) — so a Paid By
- * filter narrows them together and they can never disagree about what counts.
- *
- * The set is bounded to one month at the source: the unfiltered read ranges
- * `by_circle_status_date` to `[month, next-month)` active-only (the same bounded
- * aggregate the Monthly Ledger totals use — RPT-1), and a Paid By filter ranges
- * `by_circle_paidby_status_date` so ONE Member's month is read at the source rather
- * than scanning the whole month and filtering in memory (README §4). Either way the
- * range is a single month, the sanctioned bounded-aggregate read; a maintained
- * running aggregate (@convex-dev/aggregate) is the next-level optimization if a
- * single month's volume ever warrants it, deferred for v1.
- */
-async function collectMonthActiveTransactions(
-  ctx: QueryCtx,
-  circleId: Id<"circles">,
-  month: string,
-  paidByMemberId: Id<"members"> | undefined,
-): Promise<Doc<"transactions">[]> {
-  const range = monthDateRange(month);
-  if (paidByMemberId) {
-    return await ctx.db
-      .query("transactions")
-      .withIndex("by_circle_paidby_status_date", (q) =>
-        q
-          .eq("circleId", circleId)
-          .eq("paidByMemberId", paidByMemberId)
-          .eq("status", "active")
-          .gte("date", range.start)
-          .lt("date", range.endExclusive),
-      )
-      .collect();
-  }
-  return await ctx.db
-    .query("transactions")
-    .withIndex("by_circle_status_date", (q) =>
-      q
-        .eq("circleId", circleId)
-        .eq("status", "active")
-        .gte("date", range.start)
-        .lt("date", range.endExclusive),
-    )
-    .collect();
-}
 
 /**
  * The per-Circle Dashboard surface for one month (RPT-3; PRD stories 68, 69, 75).
@@ -114,16 +69,6 @@ export const getDashboard = query({
       args.paidByMemberId,
     );
 
-    let incomeMinor = 0;
-    let expenseMinor = 0;
-    for (const txn of monthTxns) {
-      if (txn.type === "income") {
-        incomeMinor += txn.amountMinorUnits;
-      } else {
-        expenseMinor += txn.amountMinorUnits;
-      }
-    }
-
     // Recent = the same bounded set, ordered by record time and capped. Sorting a
     // single bounded month in memory is fine (README §4 forbids sorting UNBOUNDED
     // sets); only the capped slice is resolved to full views, so the per-row Paid
@@ -139,7 +84,7 @@ export const getDashboard = query({
     );
 
     return {
-      totals: { incomeMinor, expenseMinor, netMinor: incomeMinor - expenseMinor },
+      totals: sumMonthTotals(monthTxns),
       recent,
       currency: access.circle.currency,
       month,
