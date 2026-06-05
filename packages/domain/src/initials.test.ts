@@ -43,6 +43,15 @@ describe("initials", () => {
     expect(initials(`${family} Family`)).toBe("F");
   });
 
+  it("ignores non-glyph tokens anywhere, not just first/last, when picking words", () => {
+    // A non-glyph leading token must not steal an initial from a 3+ word name:
+    // the first/last pick runs over the glyph-bearing words only.
+    expect(initials("\u{1F98A} Alex Smith")).toBe("AS");
+    expect(initials("!!! Alex Smith")).toBe("AS");
+    expect(initials("Alex Smith \u{1F98A}")).toBe("AS"); // trailing token
+    expect(initials("Mary \u{1F98A} Jane Watson")).toBe("MW"); // interior token
+  });
+
   it("uses a number when a word starts with one", () => {
     expect(initials("3M Crew")).toBe("3C");
   });

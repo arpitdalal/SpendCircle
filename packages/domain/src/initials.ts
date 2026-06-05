@@ -4,10 +4,13 @@
  * "generated visual mark … based on its initials"). Pure and presentation-free:
  * the caller decides color and shape.
  *
- * Takes the first LETTER-OR-NUMBER grapheme of the first and last
- * whitespace-delimited word (single word ⇒ one glyph), uppercased, so "Olive
- * Owner" ⇒ "OO" and "Alex" ⇒ "A". Falls back to "?" when a name yields no
- * alphanumeric glyph (empty, whitespace-only, or symbol/emoji-only).
+ * Takes the first LETTER-OR-NUMBER grapheme of each whitespace-delimited word,
+ * then uses the first and last of those (single ⇒ one glyph), uppercased, so
+ * "Olive Owner" ⇒ "OO" and "Alex" ⇒ "A". Words that contribute no alphanumeric
+ * glyph are skipped wherever they sit, so a leading/trailing/interior emoji or
+ * symbol token never steals an initial: "🦊 Alex Smith" ⇒ "AS", not "S". Falls
+ * back to "?" when a name yields no alphanumeric glyph at all (empty,
+ * whitespace-only, or symbol/emoji-only).
  *
  * Segments by grapheme CLUSTER (via `Intl.Segmenter`), not code point, so a base
  * letter plus a combining accent stays whole: NFD-decomposed "Élodie" reads "É",
@@ -20,7 +23,6 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const alphanumeric = /\p{L}|\p{N}/u;
 
 export function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
   const firstGlyphOf = (word: string) => {
     for (const { segment } of graphemes.segment(word)) {
       if (alphanumeric.test(segment)) {
@@ -29,11 +31,14 @@ export function initials(name: string): string {
     }
     return "";
   };
-  const picked =
-    words.length === 0
-      ? ""
-      : words.length === 1
-        ? firstGlyphOf(words[0] ?? "")
-        : firstGlyphOf(words[0] ?? "") + firstGlyphOf(words[words.length - 1] ?? "");
-  return picked.toUpperCase() || "?";
+  // Reduce each word to its first alphanumeric glyph and drop the empties FIRST,
+  // so non-glyph tokens anywhere (not just first/last) are ignored before the
+  // first/last pick.
+  const glyphs = name.trim().split(/\s+/).map(firstGlyphOf).filter(Boolean);
+  if (glyphs.length === 0) {
+    return "?";
+  }
+  const first = glyphs[0] ?? "";
+  const last = glyphs[glyphs.length - 1] ?? "";
+  return (glyphs.length === 1 ? first : first + last).toUpperCase();
 }
