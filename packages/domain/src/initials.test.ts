@@ -23,10 +23,28 @@ describe("initials", () => {
     expect(initials("jean-luc picard")).toBe("JP");
   });
 
-  it("reads a full grapheme, not a half surrogate pair, for emoji/extended names", () => {
-    // 🦊 is a surrogate pair; naive name[0] would slice it in half.
-    expect(initials("🦊 Fox")).toBe("🦊F");
-    expect(initials("🦊")).toBe("🦊");
+  it("reads a full grapheme, not a half surrogate pair, for astral emoji", () => {
+    // U+1F98A (fox) is one code point but a surrogate pair in UTF-16; naive
+    // string indexing (name[0]) would slice it in half.
+    expect(initials("\u{1F98A} Fox")).toBe("\u{1F98A}F");
+    expect(initials("\u{1F98A}")).toBe("\u{1F98A}");
+  });
+
+  it("keeps multi-code-point grapheme clusters whole", () => {
+    // Regional-indicator flag: TWO code points (U+1F1EE U+1F1F3) form one
+    // perceived character. Code-point slicing would emit a lone half-flag.
+    const flag = "\u{1F1EE}\u{1F1F3}";
+    expect(initials(`${flag} India`)).toBe(`${flag}I`);
+
+    // ZWJ emoji sequence (man + ZWJ + woman + ZWJ + girl). Code-point slicing
+    // would emit just the first person.
+    const family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    expect(initials(`${family} Family`)).toBe(`${family}F`);
+
+    // Decomposed accent (NFD): base letter + combining mark. Code-point slicing
+    // would drop the accent, leaving a bare "e". The whole cluster uppercases to
+    // "E" + combining acute (U+0301), which renders as "É".
+    expect(initials("élodie")).toBe("É");
   });
 
   it("falls back to a placeholder for empty or whitespace-only input", () => {

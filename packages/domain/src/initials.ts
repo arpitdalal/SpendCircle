@@ -6,15 +6,27 @@
  *
  * Takes the first grapheme of the first and last whitespace-delimited word
  * (single word ⇒ one letter), uppercased, so "Olive Owner" ⇒ "OO" and "Alex" ⇒
- * "A". Reads a full code point (not a half surrogate pair) so emoji and extended
- * names survive; falls back to "?" for empty/whitespace-only input.
+ * "A". Falls back to "?" for empty/whitespace-only input.
+ *
+ * Segments by grapheme CLUSTER (via `Intl.Segmenter`), not code point: a single
+ * user-perceived character can span several code points — a regional-indicator
+ * flag (`🇮🇳`), a ZWJ emoji sequence (`👨‍👩‍👧`), or a base letter plus a combining
+ * accent (`e`+◌́). Slicing by code point would emit half a flag or a bare accent,
+ * so the avatar must read whole clusters to honor names that start with them.
  */
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) {
     return "?";
   }
-  const firstOf = (word: string) => Array.from(word)[0] ?? "";
+  const firstOf = (word: string) => {
+    for (const { segment } of graphemes.segment(word)) {
+      return segment;
+    }
+    return "";
+  };
   const picked =
     words.length === 1
       ? firstOf(words[0] ?? "")
