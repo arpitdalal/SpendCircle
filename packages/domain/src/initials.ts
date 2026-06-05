@@ -4,32 +4,36 @@
  * "generated visual mark … based on its initials"). Pure and presentation-free:
  * the caller decides color and shape.
  *
- * Takes the first grapheme of the first and last whitespace-delimited word
- * (single word ⇒ one letter), uppercased, so "Olive Owner" ⇒ "OO" and "Alex" ⇒
- * "A". Falls back to "?" for empty/whitespace-only input.
+ * Takes the first LETTER-OR-NUMBER grapheme of the first and last
+ * whitespace-delimited word (single word ⇒ one glyph), uppercased, so "Olive
+ * Owner" ⇒ "OO" and "Alex" ⇒ "A". Falls back to "?" when a name yields no
+ * alphanumeric glyph (empty, whitespace-only, or symbol/emoji-only).
  *
- * Segments by grapheme CLUSTER (via `Intl.Segmenter`), not code point: a single
- * user-perceived character can span several code points — a regional-indicator
- * flag (`🇮🇳`), a ZWJ emoji sequence (`👨‍👩‍👧`), or a base letter plus a combining
- * accent (`e`+◌́). Slicing by code point would emit half a flag or a bare accent,
- * so the avatar must read whole clusters to honor names that start with them.
+ * Segments by grapheme CLUSTER (via `Intl.Segmenter`), not code point, so a base
+ * letter plus a combining accent stays whole: NFD-decomposed "Élodie" reads "É",
+ * not a bare "e" with the accent dropped (the common case for European names on
+ * an English app). Emoji and flags are skipped rather than rendered — a name
+ * starting with "🦊 Fox" reads "F", and "🦊" alone reads "?" — so the chip stays
+ * a clean monochrome glyph instead of an off-palette color emoji.
  */
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const alphanumeric = /\p{L}|\p{N}/u;
 
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) {
-    return "?";
-  }
-  const firstOf = (word: string) => {
+  const firstGlyphOf = (word: string) => {
     for (const { segment } of graphemes.segment(word)) {
-      return segment;
+      if (alphanumeric.test(segment)) {
+        return segment;
+      }
     }
     return "";
   };
   const picked =
-    words.length === 1
-      ? firstOf(words[0] ?? "")
-      : firstOf(words[0] ?? "") + firstOf(words[words.length - 1] ?? "");
-  return picked.toUpperCase();
+    words.length === 0
+      ? ""
+      : words.length === 1
+        ? firstGlyphOf(words[0] ?? "")
+        : firstGlyphOf(words[0] ?? "") + firstGlyphOf(words[words.length - 1] ?? "");
+  return picked.toUpperCase() || "?";
 }

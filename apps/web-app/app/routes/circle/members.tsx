@@ -40,7 +40,7 @@ function MemberList({ members }: { members: Member[] | null | undefined }) {
           key={member.id}
           className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
         >
-          <Avatar name={member.displayName} image={member.image} />
+          <Avatar name={member.displayName} image={member.image} seed={member.id} />
           <span className="text-sm font-medium">{member.displayName}</span>
           {member.isSelf ? <span className="text-xs text-neutral-500">(You)</span> : null}
           {member.role === "owner" ? (

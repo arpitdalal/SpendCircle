@@ -45,3 +45,21 @@ export function colorLabel(id: string): string {
 }
 
 export const DEFAULT_COLOR_ID: ColorId = "blue";
+
+/**
+ * A deterministic palette color for a stable seed (e.g. a Member id) — the
+ * background tint of a generated initials avatar when no Profile Picture is
+ * available. The same seed always maps to the same color across renders and
+ * sessions (never random, which would flicker), and the seed is an opaque id, so
+ * the color is independent of the Display Name and stays put when a name changes.
+ * Colors are a visual cue, not identity: collisions between seeds are fine
+ * (PRD stories 11, 60).
+ */
+export function paletteColorForSeed(seed: string): PaletteColor {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (Math.imul(hash, 31) + seed.charCodeAt(i)) | 0;
+  }
+  const index = Math.abs(hash) % COLOR_PALETTE.length;
+  return COLOR_PALETTE[index] ?? COLOR_PALETTE[0];
+}
