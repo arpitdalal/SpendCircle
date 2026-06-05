@@ -1,5 +1,4 @@
 import {
-  addMonths,
   buildRef,
   isValidPlainMonth,
   monthOf,
@@ -21,6 +20,7 @@ import {
   recordEvent,
   transactionEntity,
 } from "./history.js";
+import { monthDateRange } from "./monthActivity.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
 const lifecycleStatus = v.union(v.literal("active"), v.literal("archived"));
@@ -49,19 +49,6 @@ export interface ViewCaches {
 
 export function newViewCaches(): ViewCaches {
   return { members: new Map(), categories: new Map() };
-}
-
-/**
- * The half-open plain-date range `[month-start, next-month-start)` that captures
- * exactly one "YYYY-MM" month. Plain dates are zero-padded "YYYY-MM-DD" strings,
- * so every date in `month` sorts at or after the bare `month` prefix and strictly
- * before the next month's prefix — letting a date-ordered index (`by_circle_status_date`)
- * range a month at the source instead of bucketing in memory (ADR 0009 dates;
- * README §4 index-backed reads). Shared by the Ledger list and its totals so the
- * two never disagree on what a month contains.
- */
-export function monthDateRange(month: string): { start: string; endExclusive: string } {
-  return { start: month, endExclusive: addMonths(month, 1) };
 }
 
 /**
