@@ -73,6 +73,24 @@ describe("Create Circle", () => {
     expect(screen.getByLabelText<HTMLSelectElement>("Currency").value).toBe("GBP");
   });
 
+  it("defaults the Currency to a Eurozone locale's EUR", () => {
+    vi.spyOn(window.navigator, "language", "get").mockReturnValue("de-DE");
+    configureConvex({ createCircle: vi.fn() });
+    renderCreate();
+
+    expect(screen.getByLabelText<HTMLSelectElement>("Currency").value).toBe("EUR");
+  });
+
+  it("falls back to USD when the viewer's locale region is unsupported", () => {
+    // The real viewerLocale → defaultCurrencyForLocale wiring must fall back, not
+    // throw or blank the select, for a region we don't map (jp).
+    vi.spyOn(window.navigator, "language", "get").mockReturnValue("ja-JP");
+    configureConvex({ createCircle: vi.fn() });
+    renderCreate();
+
+    expect(screen.getByLabelText<HTMLSelectElement>("Currency").value).toBe("USD");
+  });
+
   it("derives the Mark live from the name's initials", async () => {
     const user = userEvent.setup();
     configureConvex({ createCircle: vi.fn() });

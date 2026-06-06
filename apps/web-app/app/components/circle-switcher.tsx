@@ -1,3 +1,4 @@
+import { colorLabel } from "@spend-circle/domain";
 import { useEffect, useId, useRef, useState } from "react";
 import { href, Link } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
@@ -139,8 +140,14 @@ function CircleItems({
           <CircleMark mark={circle.mark} color={circle.color} />
           <span className="min-w-0">
             <span className="block truncate font-medium">{circle.name}</span>
-            <span className="block text-xs text-neutral-500">
-              {circle.kind === "personal" ? "Personal" : "Circle"} · {circle.currency}
+            {/* The Color label is real text (not just the aria-hidden chip): names
+                duplicate by design (PRD 10) and the only visual disambiguator is the
+                Circle Color, so color-as-text is what lets screen-reader AND
+                color-blind users tell two same-named rows apart — Circle Color must
+                never be the sole identifier (CONTEXT: Circle Color). */}
+            <span className="block truncate text-xs text-neutral-500">
+              {circle.kind === "personal" ? "Personal" : "Circle"} · {circle.currency} ·{" "}
+              {colorLabel(circle.color)}
             </span>
           </span>
         </Link>

@@ -7,6 +7,12 @@ export default defineConfig({
   // both dev and the SPA prerender build (which instantiates the Convex client).
   envDir: "../..",
   server: {
+    // Bind IPv4 127.0.0.1 explicitly. Vite's default host is `localhost`, which on
+    // this machine resolves to IPv6 `::1` only — so the server never listened on
+    // 127.0.0.1, and the Better Auth OAuth callback (SITE_URL=http://127.0.0.1:5173)
+    // round-tripped back to a 127.0.0.1 address nothing was listening on
+    // (ERR_CONNECTION_REFUSED). Pinning the host to 127.0.0.1 matches SITE_URL.
+    host: "127.0.0.1",
     port: 5173,
   },
   optimizeDeps: {

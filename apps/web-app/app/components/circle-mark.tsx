@@ -12,9 +12,11 @@ import { cn } from "~/lib/utils.js";
  * alpha) behind the color itself as the glyph. The palette is curated to be
  * legible on dark, so color-on-dark stays readable. Purely decorative
  * (`aria-hidden`) — every surface that renders it shows the Circle name in
- * adjacent text, so announcing the mark too would double-read the name. UI must
- * not identify a Circle by color alone (CONTEXT: Circle Color), which holds
- * because the name is always present beside it.
+ * adjacent text, so announcing the chip too would double-read the name. UI must
+ * not identify a Circle by color alone (CONTEXT: Circle Color): because names
+ * duplicate by design (PRD 10), the list surfaces (switcher, home) render the
+ * Circle Color *label as text* beside the name, so the color is conveyed
+ * non-visually too and the decorative chip is never the sole disambiguator.
  *
  * `mark` is the stored, already-derived glyph (the backend derives it from the
  * name's initials at creation); this component never re-derives it, it only

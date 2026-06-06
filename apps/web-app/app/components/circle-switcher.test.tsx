@@ -68,6 +68,50 @@ describe("CircleSwitcher", () => {
     expect(circleLinks[1]).toHaveAttribute("href", "/circles/trip-c1");
   });
 
+  it("disambiguates same-named circles by Circle Color label (not the aria-hidden chip)", async () => {
+    const user = userEvent.setup();
+    // Two Circles share name + kind + currency; only the Color differs (allowed —
+    // PRD 10). The color chip is aria-hidden, so without a text Color label these
+    // rows would be announced identically and a screen-reader/color-blind user
+    // couldn't tell which "Home" they're choosing.
+    const blueHome = makeCircleView({
+      id: testId<Circle["id"]>("c0"),
+      ref: "home-c0",
+      name: "Home",
+      mark: "H",
+      color: "blue",
+    });
+    const tealHome = makeCircleView({
+      id: testId<Circle["id"]>("c1"),
+      ref: "home-c1",
+      name: "Home",
+      mark: "H",
+      color: "teal",
+    });
+    configureConvex({ circles: [blueHome, tealHome] });
+    renderSwitcher();
+
+    await user.click(screen.getByRole("button", { name: /circles/i }));
+    const menu = screen.getByRole("menu", { name: "Your circles" });
+    const rows = within(menu)
+      .getAllByRole("menuitem")
+      .filter((item) => item.getAttribute("href") !== "/circles/new");
+
+    // Each row's accessible text carries its distinct Color label, so the two are
+    // distinguishable by name + color text alone.
+    expect(rows[0]).toHaveTextContent("Blue");
+    expect(rows[1]).toHaveTextContent("Teal");
+    // Targetable by the disambiguated accessible name.
+    expect(within(menu).getByRole("menuitem", { name: /Home.*Blue/s })).toHaveAttribute(
+      "href",
+      "/circles/home-c0",
+    );
+    expect(within(menu).getByRole("menuitem", { name: /Home.*Teal/s })).toHaveAttribute(
+      "href",
+      "/circles/home-c1",
+    );
+  });
+
   it("navigates to a circle's canonical ref when selected", async () => {
     const user = userEvent.setup();
     configureConvex({ circles: [PERSONAL, TRIP] });

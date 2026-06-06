@@ -1,3 +1,4 @@
+import { colorLabel } from "@spend-circle/domain";
 import { href, Link } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Splash } from "~/components/splash.js";
@@ -28,10 +29,15 @@ export default function Home() {
               className="flex items-center gap-3 rounded-lg border border-neutral-800 p-4 hover:border-neutral-600"
             >
               <CircleMark mark={circle.mark} color={circle.color} />
-              <span>
-                <span className="block font-medium">{circle.name}</span>
-                <span className="block text-xs text-neutral-500">
-                  {circle.kind === "personal" ? "Personal" : "Circle"} · {circle.currency}
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{circle.name}</span>
+                {/* Color label as real text disambiguates same-named Circles (PRD 10)
+                    for screen-reader and color-blind users, since the color chip is
+                    aria-hidden and Circle Color must not be the sole identifier
+                    (CONTEXT: Circle Color). */}
+                <span className="block truncate text-xs text-neutral-500">
+                  {circle.kind === "personal" ? "Personal" : "Circle"} · {circle.currency} ·{" "}
+                  {colorLabel(circle.color)}
                 </span>
               </span>
             </Link>
