@@ -55,6 +55,7 @@ const NAME = {
   getMonthlyLedger: getFunctionName(api.ledger.getMonthlyLedger),
   getDashboard: getFunctionName(api.dashboard.getDashboard),
   getPaidByFilterOptions: getFunctionName(api.dashboard.getPaidByFilterOptions),
+  createCircle: getFunctionName(api.circles.createCircle),
   createTransaction: getFunctionName(api.transactions.createTransaction),
   updateTransaction: getFunctionName(api.transactions.updateTransaction),
   archiveTransaction: getFunctionName(api.transactions.archiveTransaction),
@@ -145,6 +146,10 @@ interface ConvexState {
    * exposes the full mock surface. Add a typed helper only when the first edit
    * test lands and a shared rejection contract actually emerges — don't invent a
    * second config shape speculatively. */
+  /** The `createCircle` mutation spy the test owns (CS-0). Returns the new Circle's id,
+   * so a test configures `vi.fn().mockResolvedValue(testId("c-new"))` to drive the
+   * create flow's navigation to the canonical ref. */
+  createCircle?: Mock;
   createTransaction?: Mock;
   updateTransaction?: Mock;
   archiveTransaction?: Mock;
@@ -173,6 +178,7 @@ export function configureConvex(state: ConvexState = {}) {
     transactionHistory = [],
     historyStatus = "Exhausted",
     historyLoadMore = () => {},
+    createCircle,
     createTransaction,
     updateTransaction,
     archiveTransaction,
@@ -234,6 +240,8 @@ export function configureConvex(state: ConvexState = {}) {
   const noop = vi.fn();
   convexReactMock.useMutation.mockImplementation((fn: FunctionReference<"mutation">) => {
     switch (getFunctionName(fn)) {
+      case NAME.createCircle:
+        return createCircle ?? noop;
       case NAME.createTransaction:
         return createTransaction ?? noop;
       case NAME.updateTransaction:
@@ -392,6 +400,34 @@ export function makeHistoryEventView(
 function LocationProbe() {
   const location = useLocation();
   return <output data-testid="location">{location.pathname + location.search}</output>;
+}
+
+/**
+ * Renders arbitrary (non-Circle-scoped) ROUTES under a real `MemoryRouter` so route
+ * navigation is exercised end to end: the test seeds the address bar via `initialEntries`,
+ * reads it back through {@link LocationProbe} (`location()`), and real route logic,
+ * `useNavigate`, and `useSnackbar` all run. Used by the shell surfaces that live ABOVE
+ * the Circle guard (the Circle switcher, the Create Circle flow — CS-0), which resolve no
+ * Circle from context. `SnackbarProvider` wraps so a route's snackbar has its real context.
+ *
+ * `routes` is the caller's `<Route>` subtree, kept generic so this helper never imports
+ * route modules — the test wires only the routes it needs (typically the surface under
+ * test plus a probe route the flow navigates to).
+ */
+export function renderRoutes(routes: ReactNode, opts: { initialEntries?: string[] } = {}) {
+  const result = render(
+    <SnackbarProvider>
+      <MemoryRouter initialEntries={opts.initialEntries ?? ["/"]}>
+        <LocationProbe />
+        <Routes>{routes}</Routes>
+      </MemoryRouter>
+    </SnackbarProvider>,
+  );
+  return {
+    ...result,
+    /** The current URL (pathname + search), e.g. `/circles/my-home-c1`. */
+    location: () => result.getByTestId("location").textContent ?? "",
+  };
 }
 
 /**

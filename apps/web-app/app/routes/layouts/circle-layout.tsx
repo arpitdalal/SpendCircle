@@ -1,4 +1,5 @@
 import { href, NavLink, Outlet, useOutletContext } from "react-router";
+import { CircleMark } from "~/components/circle-mark.js";
 import { Splash } from "~/components/splash.js";
 import { type Circle, useResolvedCircle } from "~/lib/use-resolved-circle.js";
 import { cn } from "~/lib/utils.js";
@@ -46,12 +47,7 @@ export default function CircleLayout() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex items-center gap-3">
-        <span
-          aria-hidden
-          className="flex size-9 items-center justify-center rounded-md bg-neutral-800 text-sm font-semibold"
-        >
-          {circle.mark}
-        </span>
+        <CircleMark mark={circle.mark} color={circle.color} />
         <div>
           <h1 className="text-lg font-semibold">{circle.name}</h1>
           <p className="text-xs text-neutral-500">

@@ -1,4 +1,5 @@
 import { Link, Navigate, Outlet, useLocation } from "react-router";
+import { CircleSwitcher } from "~/components/circle-switcher.js";
 import { Splash } from "~/components/splash.js";
 import { Button } from "~/components/ui/button.js";
 import { signOut } from "~/lib/auth-client.js";
@@ -32,9 +33,12 @@ export default function ProtectedLayout() {
   return (
     <div className="flex min-h-dvh flex-col bg-neutral-950">
       <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-        <Link to="/" className="font-semibold">
-          Spend Circle
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to="/" className="font-semibold">
+            Spend Circle
+          </Link>
+          <CircleSwitcher />
+        </div>
         <div className="flex items-center gap-3 text-sm text-neutral-400">
           <span className="hidden sm:inline">{session.user.displayName}</span>
           <Link to="/settings" className="hover:text-neutral-100">
