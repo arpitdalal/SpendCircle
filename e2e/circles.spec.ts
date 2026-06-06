@@ -45,6 +45,9 @@ test("the new circle appears in the switcher and is reachable again", async ({ p
 
   // The reactive `listMyCircles` now includes it: open the switcher and select it.
   await page.getByRole("button", { name: "Circles" }).click();
-  await page.getByRole("menu").getByRole("menuitem", { name: new RegExp(name) }).click();
+  await page
+    .getByRole("menu")
+    .getByRole("menuitem", { name: new RegExp(name) })
+    .click();
   await expect(page.getByRole("heading", { name })).toBeVisible();
 });

@@ -141,6 +141,24 @@ describe("Create Circle", () => {
     resolve?.("c-trip");
   });
 
+  it("does not let Cancel navigate while a create is in flight", async () => {
+    const user = userEvent.setup();
+    // A create that never resolves, so the form stays in its submitting state.
+    const createCircle = vi.fn().mockReturnValue(new Promise<string>(() => {}));
+    configureConvex({ createCircle });
+    const view = renderCreate();
+
+    await user.type(screen.getByLabelText("Name"), "Trip");
+    await user.click(screen.getByRole("button", { name: "Create circle" }));
+
+    // Cancel is a real disabled button mid-submit (not a `disabled` anchor that
+    // would still navigate), so clicking it stays on the form.
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toBeDisabled();
+    await user.click(cancel);
+    expect(view.location()).toBe("/circles/new");
+  });
+
   it("surfaces a failed create and stays on the form", async () => {
     const user = userEvent.setup();
     const createCircle = vi.fn().mockRejectedValue(new Error("network"));

@@ -186,9 +186,19 @@ export default function CreateCircle() {
           <Button type="submit" disabled={submitting || name.trim() === ""}>
             {submitting ? "Creating…" : "Create circle"}
           </Button>
-          <Button asChild variant="ghost" disabled={submitting}>
-            <Link to={href("/")}>Cancel</Link>
-          </Button>
+          {/* While a create is in flight, render a REAL disabled button, not a
+              `disabled` Link — a `disabled` attribute on an anchor doesn't block
+              clicks, so a Cancel mid-submit would navigate home while the pending
+              handler then redirects to the new Circle. A button can't be clicked. */}
+          {submitting ? (
+            <Button type="button" variant="ghost" disabled>
+              Cancel
+            </Button>
+          ) : (
+            <Button asChild variant="ghost">
+              <Link to={href("/")}>Cancel</Link>
+            </Button>
+          )}
         </div>
       </form>
     </div>
