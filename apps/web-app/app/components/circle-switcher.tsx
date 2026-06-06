@@ -34,7 +34,14 @@ export function CircleSwitcher() {
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      // `instanceof Node` narrows the `EventTarget | null` target type-safely (an
+      // event target isn't always a Node), so no cast is needed for `contains`.
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        containerRef.current &&
+        !containerRef.current.contains(target)
+      ) {
         setOpen(false);
       }
     };
