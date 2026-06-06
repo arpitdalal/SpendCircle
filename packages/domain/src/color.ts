@@ -30,6 +30,8 @@ const COLOR_IDS = new Set<string>(COLOR_PALETTE.map((color) => color.id));
 
 const COLOR_NAMES = new Map<string, string>(COLOR_PALETTE.map((color) => [color.id, color.name]));
 
+const COLOR_HEXES = new Map<string, string>(COLOR_PALETTE.map((color) => [color.id, color.hex]));
+
 export function isValidColorId(id: string): id is ColorId {
   return COLOR_IDS.has(id);
 }
@@ -45,6 +47,17 @@ export function colorLabel(id: string): string {
 }
 
 export const DEFAULT_COLOR_ID: ColorId = "blue";
+
+/**
+ * The hex for a palette color id ("blue" → "#3b82f6"). The presentational
+ * counterpart to {@link colorLabel}: it backs the Circle Mark / Category swatch
+ * tint from the stored color id without a UI re-deriving the palette lookup.
+ * Falls back to the default color's hex for an unknown id so a caller never gets
+ * an empty string or a broken style.
+ */
+export function colorHex(id: string): string {
+  return COLOR_HEXES.get(id) ?? COLOR_HEXES.get(DEFAULT_COLOR_ID) ?? COLOR_PALETTE[0].hex;
+}
 
 /**
  * A deterministic palette color for a stable seed (e.g. a Display Name) — the

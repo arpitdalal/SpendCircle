@@ -1,5 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { COLOR_PALETTE, paletteColorForSeed } from "./color.js";
+import {
+  COLOR_PALETTE,
+  colorHex,
+  colorLabel,
+  DEFAULT_COLOR_ID,
+  paletteColorForSeed,
+} from "./color.js";
+
+describe("colorHex", () => {
+  it("returns the palette hex for a known color id", () => {
+    for (const color of COLOR_PALETTE) {
+      expect(colorHex(color.id)).toBe(color.hex);
+    }
+  });
+
+  it("falls back to the default color's hex for an unknown id", () => {
+    const fallback = COLOR_PALETTE.find((color) => color.id === DEFAULT_COLOR_ID)?.hex;
+    expect(colorHex("not-a-color")).toBe(fallback);
+    expect(colorHex("")).toBe(fallback);
+  });
+});
+
+describe("colorLabel", () => {
+  it("returns the palette name for a known id and echoes an unknown id", () => {
+    expect(colorLabel("blue")).toBe("Blue");
+    expect(colorLabel("not-a-color")).toBe("not-a-color");
+  });
+});
 
 describe("paletteColorForSeed", () => {
   it("returns the same palette color for the same seed", () => {

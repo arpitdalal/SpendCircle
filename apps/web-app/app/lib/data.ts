@@ -35,6 +35,16 @@ export function useMyCircles(): Circle[] | undefined {
 }
 
 /**
+ * The Create-Circle mutation (CS-0), exposed as the function the create form awaits.
+ * Kept behind this seam (rather than `useMutation` in the route) so the route imports
+ * no Convex internals — mirroring {@link useCreateCategory}. Returns the new Circle's
+ * `Id<"circles">`, which the form turns into a canonical ref to navigate to (ADR 0016).
+ */
+export function useCreateCircle() {
+  return useMutation(api.circles.createCircle);
+}
+
+/**
  * The single Category view contract, derived from `listCategories` so it cannot
  * drift from `toCategoryView` in `packages/convex/convex/categories.ts` (ADR
  * 0003). The query returns `CategoryView[] | null` (null ≡ inaccessible Circle —

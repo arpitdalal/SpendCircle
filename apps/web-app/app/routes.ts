@@ -28,6 +28,11 @@ export default [
     // Circle and provides it to children via Outlet context; object routes
     // resolve their own ref within the resolved Circle (ADR 0016/0017).
     ...prefix("circles", [
+      // Create Circle (CS-0). A STATIC segment that takes priority over the dynamic
+      // `:circleRef` below, so it never collides with a Circle ref (Circle ids are
+      // never the literal "new"). Lives above the Circle guard — it resolves no
+      // Circle from context yet.
+      route("new", "routes/circle-new.tsx"),
       route(":circleRef", "routes/layouts/circle-layout.tsx", [
         index("routes/circle/dashboard.tsx"),
         route("transactions", "routes/circle/transactions.tsx"),
