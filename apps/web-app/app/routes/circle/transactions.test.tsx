@@ -1,6 +1,8 @@
+import { api } from "@spend-circle/convex";
 import { addMonths, currentMonth } from "@spend-circle/domain";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { getFunctionName } from "convex/server";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -15,6 +17,7 @@ import {
 } from "~/lib/data.js";
 import {
   configureConvex,
+  convexReactMock,
   makeCategoryView,
   makeCircleView,
   makeMemberView,
@@ -38,6 +41,8 @@ import CircleTransactions from "./transactions.js";
 /** The fixture Circle's canonical ref (`makeCircleView` default), used to build URLs. */
 const REF = "trip-c1";
 const NOW_MONTH = currentMonth(new Date());
+const SEARCH_TRANSACTIONS = getFunctionName(api.search.searchTransactions);
+const SEARCH_META = getFunctionName(api.search.getTransactionSearchMeta);
 
 const createTransaction = vi.fn();
 const updateTransaction = vi.fn();
@@ -100,6 +105,7 @@ function setup(
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -385,6 +391,19 @@ describe("CircleTransactions — Search (RPT-2)", () => {
       ...over,
     }) satisfies TransactionSearchMeta;
 
+  const paginatedArgsFor = (name: string) =>
+    convexReactMock.usePaginatedQuery.mock.calls.find(([fn]) => getFunctionName(fn) === name)?.[1];
+
+  const queryArgsFor = (name: string) =>
+    convexReactMock.useQuery.mock.calls.find(([fn]) => getFunctionName(fn) === name)?.[1];
+
+  it("skips search subscriptions while filters are inactive", () => {
+    setup();
+
+    expect(paginatedArgsFor(SEARCH_TRANSACTIONS)).toBe("skip");
+    expect(queryArgsFor(SEARCH_META)).toBe("skip");
+  });
+
   it("uses search results and search totals when filters are present", () => {
     setup({
       initialEntries: [`/circles/${REF}/transactions?month=2026-05&q=pay`],
@@ -402,18 +421,60 @@ describe("CircleTransactions — Search (RPT-2)", () => {
     expect(screen.getByText("$5,000.00")).toBeInTheDocument();
   });
 
+  it("does not render partial search totals as money", () => {
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&q=pay`],
+      searchMeta: searchMeta({ exact: false }),
+    });
+
+    expect(screen.getByText(/Search totals unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText("$5,000.00")).not.toBeInTheDocument();
+  });
+
   it("updates URL-owned filters from controls and resets them", async () => {
     const user = userEvent.setup();
     const { location } = setup({ searchMeta: searchMeta() });
 
-    await user.type(screen.getByRole("searchbox", { name: "Search" }), "rent");
-    expect(location()).toContain("q=rent");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search" }), {
+      target: { value: "rent" },
+    });
+    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`);
+    await waitFor(() => expect(location()).toContain("q=rent"));
 
     await user.click(screen.getByRole("button", { name: "Expense" }));
     expect(location()).toContain("type=expense");
 
     await user.click(screen.getByRole("button", { name: "Reset" }));
     expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`);
+  });
+
+  it("reset cancels an uncommitted text draft", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({ searchMeta: searchMeta() });
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search" }), {
+      target: { value: "rent" },
+    });
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+
+    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`);
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveValue("");
+  });
+
+  it("drops stale range dates when returning to month scope", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [
+        `/circles/${REF}/transactions?month=2026-05&scope=range&from=2026-05-01&to=2026-05-31`,
+      ],
+      searchMeta: searchMeta(),
+    });
+
+    await user.click(screen.getByRole("button", { name: "Month" }));
+
+    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`);
+    expect(screen.getByRole("button", { name: "Active" })).toBeInTheDocument();
   });
 });
 

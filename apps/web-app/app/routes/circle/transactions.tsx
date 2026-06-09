@@ -115,8 +115,13 @@ export default function CircleTransactions() {
   const { summary, transactions } = useMonthlyLedger(circle.id, month, { status });
   const searchFilters = readSearchFilters(searchParams, month);
   const searchActive = isSearchActive(searchFilters);
-  const searchResults = useTransactionSearch(circle.id, searchFilters);
-  const searchMeta = useTransactionSearchMeta(circle.id, searchFilters);
+  const searchResults = useTransactionSearch(circle.id, searchFilters, { enabled: searchActive });
+  const searchMeta = useTransactionSearchMeta(circle.id, searchFilters, { enabled: searchActive });
+  const totalsSummary = searchActive
+    ? searchMeta?.exact === true
+      ? searchMeta
+      : undefined
+    : summary;
 
   // Month changes PUSH a normal history entry (Back returns to the prior month).
   const goToMonth = (next: PlainMonth) => {
@@ -193,10 +198,15 @@ export default function CircleTransactions() {
         setSearchParams={setSearchParams}
       />
       <MonthlyTotals
-        summary={searchActive ? searchMeta : summary}
+        summary={totalsSummary}
         fallbackCurrency={circle.currency}
         label={searchActive ? "Search totals" : "Monthly totals"}
       />
+      {searchActive && searchMeta?.exact === false ? (
+        <p className="text-sm text-neutral-500">
+          Search totals unavailable for this large result set. Narrow the filters for exact totals.
+        </p>
+      ) : null}
 
       {searchActive ? null : <ViewToggle archivedView={archivedView} onChange={goToView} />}
 
@@ -258,8 +268,8 @@ function readSearchFilters(searchParams: URLSearchParams, month: PlainMonth) {
     ...(searchParams.get("paidBy")
       ? { paidByMemberId: searchParams.get("paidBy") ?? undefined }
       : {}),
-    ...(isValidPlainDate(dateFrom) ? { dateFrom } : {}),
-    ...(isValidPlainDate(dateTo) ? { dateTo } : {}),
+    ...(scope === "range" && isValidPlainDate(dateFrom) ? { dateFrom } : {}),
+    ...(scope === "range" && isValidPlainDate(dateTo) ? { dateTo } : {}),
     ...(amountMin !== undefined ? { amountMin } : {}),
     ...(amountMax !== undefined ? { amountMax } : {}),
     ...(searchParams.get("archived") === "only" ? { archivedOnly: true } : {}),
@@ -285,8 +295,6 @@ function isSearchActive(filters: TransactionSearchFilters) {
     Boolean(filters.recordedByMemberId) ||
     Boolean(filters.paidByMemberId) ||
     filters.scope !== "month" ||
-    Boolean(filters.dateFrom) ||
-    Boolean(filters.dateTo) ||
     filters.amountMin !== undefined ||
     filters.amountMax !== undefined ||
     filters.archivedOnly === true
@@ -304,7 +312,11 @@ function TransactionSearchPanel({
   searchParams: URLSearchParams;
   setSearchParams: ReturnType<typeof useSearchParams>[1];
 }) {
-  const updateParam = (key: string, value: string | null) => {
+  const queryDraft = useDebouncedSearchParam("q", searchParams, setSearchParams);
+  const amountMinDraft = useDebouncedSearchParam("min", searchParams, setSearchParams);
+  const amountMaxDraft = useDebouncedSearchParam("max", searchParams, setSearchParams);
+
+  const updateParam = (key: string, value: string | null, options?: { replace?: boolean }) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -312,6 +324,24 @@ function TransactionSearchPanel({
           next.set(key, value);
         } else {
           next.delete(key);
+        }
+        return next;
+      },
+      { replace: options?.replace ?? false },
+    );
+  };
+  const updateScope = (value: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value === "month") {
+          next.delete("scope");
+        } else {
+          next.set("scope", value);
+        }
+        if (value !== "range") {
+          next.delete("from");
+          next.delete("to");
         }
         return next;
       },
@@ -328,6 +358,9 @@ function TransactionSearchPanel({
     updateParam("categories", [...current].join(","));
   };
   const reset = () => {
+    queryDraft.setValue("");
+    amountMinDraft.setValue("");
+    amountMaxDraft.setValue("");
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -367,8 +400,8 @@ function TransactionSearchPanel({
           <input
             id="transaction-search"
             type="search"
-            value={searchParams.get("q") ?? ""}
-            onChange={(event) => updateParam("q", event.currentTarget.value)}
+            value={queryDraft.value}
+            onChange={(event) => queryDraft.setValue(event.currentTarget.value)}
             className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400"
           />
         </div>
@@ -473,7 +506,7 @@ function TransactionSearchPanel({
               key={option.value}
               type="button"
               aria-pressed={filters.scope === option.value}
-              onClick={() => updateParam("scope", option.value === "month" ? null : option.value)}
+              onClick={() => updateScope(option.value)}
               className={cn(
                 "rounded-md border px-3 py-1 text-sm transition-colors",
                 filters.scope === option.value
@@ -511,8 +544,8 @@ function TransactionSearchPanel({
             type="number"
             min="0"
             step="0.01"
-            value={searchParams.get("min") ?? ""}
-            onChange={(event) => updateParam("min", event.currentTarget.value)}
+            value={amountMinDraft.value}
+            onChange={(event) => amountMinDraft.setValue(event.currentTarget.value)}
             className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
           />
         </label>
@@ -533,13 +566,54 @@ function TransactionSearchPanel({
           type="number"
           min="0"
           step="0.01"
-          value={searchParams.get("max") ?? ""}
-          onChange={(event) => updateParam("max", event.currentTarget.value)}
+          value={amountMaxDraft.value}
+          onChange={(event) => amountMaxDraft.setValue(event.currentTarget.value)}
           className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
         />
       </label>
     </section>
   );
+}
+
+function useDebouncedSearchParam(
+  key: string,
+  searchParams: URLSearchParams,
+  setSearchParams: ReturnType<typeof useSearchParams>[1],
+) {
+  const committedValue = searchParams.get(key) ?? "";
+  const [value, setValue] = useState(committedValue);
+  const latestCommitted = useRef(committedValue);
+
+  useEffect(() => {
+    if (committedValue !== latestCommitted.current) {
+      latestCommitted.current = committedValue;
+      setValue(committedValue);
+    }
+  }, [committedValue]);
+
+  useEffect(() => {
+    if (value === latestCommitted.current) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      latestCommitted.current = value;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value.trim().length > 0) {
+            next.set(key, value);
+          } else {
+            next.delete(key);
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [key, setSearchParams, value]);
+
+  return { value, setValue };
 }
 
 /**

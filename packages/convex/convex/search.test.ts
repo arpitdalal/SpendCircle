@@ -231,6 +231,27 @@ describe("searchTransactions — filters", () => {
     expect(page2.page.map((txn) => txn.title)).toEqual(["Txn 2026-05-01"]);
     expect(page2.isDone).toBe(true);
   });
+
+  it("fills a result page past newer source rows that filters drop", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { title: "Newest miss", date: "2026-05-03" });
+      await seedTransaction(ctx, f, { title: "Middle miss", date: "2026-05-02" });
+      await seedTransaction(ctx, f, { title: "Needle match", date: "2026-05-01" });
+    });
+
+    const page = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      scope: "all",
+      query: "needle",
+      ...firstPage(1),
+    });
+
+    expect(page.page.map((txn) => txn.title)).toEqual(["Needle match"]);
+    expect(page.isDone).toBe(true);
+  });
 });
 
 describe("getTransactionSearchMeta", () => {
@@ -274,7 +295,12 @@ describe("getTransactionSearchMeta", () => {
     expect(meta?.totals).toEqual({ incomeMinor: 10_000, expenseMinor: 4_000, netMinor: 6_000 });
     expect(meta?.totalCount).toBe(2);
     expect(meta?.exact).toBe(true);
-    expect(meta?.categories.map((category) => category.name)).toEqual(["Old Utilities", "Salary"]);
+    expect(meta?.categories.map((category) => category.name)).toEqual([
+      "Dining",
+      "Groceries",
+      "Old Utilities",
+      "Salary",
+    ]);
     expect(meta?.recordedBy.map((member) => [member.displayName, member.status])).toContainEqual([
       "Remy Removed",
       "removed",
@@ -283,6 +309,37 @@ describe("getTransactionSearchMeta", () => {
       "Remy Removed",
       "removed",
     ]);
+  });
+
+  it("keeps category options stable while a category filter is selected", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, {
+        title: "Groceries row",
+        type: "expense",
+        date: "2026-06-10",
+        categoryIds: [f.groceriesId],
+      });
+      await seedTransaction(ctx, f, {
+        title: "Dining row",
+        type: "expense",
+        date: "2026-06-11",
+        categoryIds: [f.diningId],
+      });
+    });
+
+    const meta = await t.query(api.search.getTransactionSearchMeta, {
+      circleId: f.circleId,
+      scope: "month",
+      month: "2026-06",
+      type: "expense",
+      categoryIds: [f.groceriesId],
+    });
+
+    expect(meta?.totalCount).toBe(1);
+    expect(meta?.categories.map((category) => category.name)).toEqual(["Dining", "Groceries"]);
   });
 
   it("returns null for inaccessible circles and is readable for archived circles", async () => {

@@ -252,15 +252,28 @@ export interface TransactionSearchFilters {
   archivedOnly?: boolean;
 }
 
-export function useTransactionSearch(circleId: Circle["id"], filters: TransactionSearchFilters) {
+export function useTransactionSearch(
+  circleId: Circle["id"],
+  filters: TransactionSearchFilters,
+  options?: { enabled?: boolean },
+) {
+  const enabled = options?.enabled ?? true;
   const paginated = usePaginatedQuery(
     api.search.searchTransactions,
-    MOCKS ? "skip" : { circleId, ...filters },
+    MOCKS || !enabled ? "skip" : { circleId, ...filters },
     { initialNumItems: TRANSACTIONS_PAGE_SIZE },
   );
   if (MOCKS) {
     const status: PaginationStatus = "Exhausted";
-    return { transactions: MOCK_TRANSACTIONS, status, loadMore: () => {} };
+    return {
+      transactions: enabled ? MOCK_TRANSACTIONS : [],
+      status,
+      loadMore: () => {},
+    };
+  }
+  if (!enabled) {
+    const status: PaginationStatus = "Exhausted";
+    return { transactions: [], status, loadMore: () => {} };
   }
   return {
     transactions: paginated.results,
@@ -272,11 +285,16 @@ export function useTransactionSearch(circleId: Circle["id"], filters: Transactio
 export function useTransactionSearchMeta(
   circleId: Circle["id"],
   filters: TransactionSearchFilters,
+  options?: { enabled?: boolean },
 ) {
+  const enabled = options?.enabled ?? true;
   const queried = useQuery(
     api.search.getTransactionSearchMeta,
-    MOCKS ? "skip" : { circleId, ...filters },
+    MOCKS || !enabled ? "skip" : { circleId, ...filters },
   );
+  if (!enabled) {
+    return undefined;
+  }
   return MOCKS ? MOCK_SEARCH_META : queried;
 }
 

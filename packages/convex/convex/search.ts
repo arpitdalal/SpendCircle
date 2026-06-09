@@ -4,14 +4,14 @@ import {
   isValidPlainMonth,
   MAX_AMOUNT_MINOR,
 } from "@spend-circle/domain";
-import { paginationOptsValidator } from "convex/server";
+import { type IndexRange, paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { QueryCtx } from "./_generated/server.js";
 import { query } from "./_generated/server.js";
 import { resolveCircleAccess } from "./guard.js";
 import { toMemberView } from "./members.js";
-import { monthDateRange, sumMonthTotals } from "./monthActivity.js";
+import { monthDateRange } from "./monthActivity.js";
 import { newViewCaches, type TransactionView, toTransactionView } from "./transactions.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
@@ -29,12 +29,21 @@ const searchArgs = {
   dateTo: v.optional(v.string()),
   month: v.optional(v.string()),
   amountMin: v.optional(v.number()),
-  amountMinFrom: v.optional(v.number()),
   amountMax: v.optional(v.number()),
   scope: searchScope,
   includeArchived: v.optional(v.boolean()),
   archivedOnly: v.optional(v.boolean()),
 };
+
+interface SearchCaches {
+  members: Map<Id<"members">, Doc<"members"> | null>;
+  categories: Map<Id<"categories">, Doc<"categories"> | null>;
+  linksByTransaction: Map<Id<"transactions">, Doc<"transactionCategories">[]>;
+}
+
+function newSearchCaches(): SearchCaches {
+  return { members: new Map(), categories: new Map(), linksByTransaction: new Map() };
+}
 
 function emptyPage() {
   return { page: [], isDone: true, continueCursor: "" };
@@ -89,7 +98,7 @@ function resolveDateWindow(args: {
     return { ok: false };
   }
   if (args.dateFrom && args.dateTo && args.dateFrom > args.dateTo) {
-    return { ok: true, start: "9999-12-31", endExclusive: "0000-01-01" };
+    return { ok: true, empty: true };
   }
   return {
     ok: true,
@@ -139,28 +148,121 @@ function matchesDoc(
   return true;
 }
 
-function matchesView(
-  view: TransactionView,
-  filters: { queryText: string; categoryIds: Set<Id<"categories">> },
+async function memberDoc(ctx: QueryCtx, memberId: Id<"members">, caches: SearchCaches) {
+  if (caches.members.has(memberId)) {
+    return caches.members.get(memberId) ?? null;
+  }
+  const member = await ctx.db.get(memberId);
+  caches.members.set(memberId, member);
+  return member;
+}
+
+async function categoryDoc(ctx: QueryCtx, categoryId: Id<"categories">, caches: SearchCaches) {
+  if (caches.categories.has(categoryId)) {
+    return caches.categories.get(categoryId) ?? null;
+  }
+  const category = await ctx.db.get(categoryId);
+  caches.categories.set(categoryId, category);
+  return category;
+}
+
+async function categoryLinksForTransaction(
+  ctx: QueryCtx,
+  transactionId: Id<"transactions">,
+  caches: SearchCaches,
 ) {
+  const cached = caches.linksByTransaction.get(transactionId);
+  if (cached) {
+    return cached;
+  }
+  const links = await ctx.db
+    .query("transactionCategories")
+    .withIndex("by_transaction", (q) => q.eq("transactionId", transactionId))
+    .collect();
+  caches.linksByTransaction.set(transactionId, links);
+  return links;
+}
+
+function textIncludes(value: string | undefined, queryText: string) {
+  return (value ?? "").toLowerCase().includes(queryText);
+}
+
+async function matchesSearchFields(
+  ctx: QueryCtx,
+  txn: Doc<"transactions">,
+  filters: { queryText: string; categoryIds: Set<Id<"categories">> },
+  caches: SearchCaches,
+) {
+  let links: Doc<"transactionCategories">[] | null = null;
   if (filters.categoryIds.size > 0) {
-    const hasCategory = view.categories.some((category) => filters.categoryIds.has(category.id));
-    if (!hasCategory) return false;
+    links = await categoryLinksForTransaction(ctx, txn._id, caches);
+    if (!links.some((link) => filters.categoryIds.has(link.categoryId))) {
+      return false;
+    }
   }
   if (!filters.queryText) {
     return true;
   }
-  const haystack = [
-    view.title,
-    view.note ?? "",
-    view.type,
-    view.recordedBy.displayName,
-    view.paidBy.displayName,
-    ...view.categories.map((category) => category.name),
-  ]
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(filters.queryText);
+
+  if (
+    textIncludes(txn.title, filters.queryText) ||
+    textIncludes(txn.note, filters.queryText) ||
+    textIncludes(txn.type, filters.queryText)
+  ) {
+    return true;
+  }
+
+  const recordedBy = await memberDoc(ctx, txn.recordedByMemberId, caches);
+  if (textIncludes(recordedBy?.displayName, filters.queryText)) {
+    return true;
+  }
+  const paidBy = await memberDoc(ctx, txn.paidByMemberId, caches);
+  if (textIncludes(paidBy?.displayName, filters.queryText)) {
+    return true;
+  }
+
+  links = links ?? (await categoryLinksForTransaction(ctx, txn._id, caches));
+  for (const link of links) {
+    const category = await categoryDoc(ctx, link.categoryId, caches);
+    if (textIncludes(category?.name, filters.queryText)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sumTransactionTotals(txns: Doc<"transactions">[]) {
+  let incomeMinor = 0;
+  let expenseMinor = 0;
+  for (const txn of txns) {
+    if (txn.type === "income") {
+      incomeMinor += txn.amountMinorUnits;
+    } else {
+      expenseMinor += txn.amountMinorUnits;
+    }
+  }
+  return { incomeMinor, expenseMinor, netMinor: incomeMinor - expenseMinor };
+}
+
+function categoryView(category: Doc<"categories">) {
+  return { id: category._id, name: category.name, color: category.color };
+}
+
+function applyDateRange<
+  Scoped extends IndexRange & {
+    gte(
+      field: "date",
+      value: string,
+    ): IndexRange & { lt(field: "date", value: string): IndexRange };
+    lt(field: "date", value: string): IndexRange;
+  },
+>(scoped: Scoped, range: { start?: string; endExclusive?: string }) {
+  if (range.start && range.endExclusive) {
+    return scoped.gte("date", range.start).lt("date", range.endExclusive);
+  }
+  if (range.start) return scoped.gte("date", range.start);
+  if (range.endExclusive) return scoped.lt("date", range.endExclusive);
+  return scoped;
 }
 
 function pageByWindow(
@@ -185,12 +287,7 @@ function pageByWindow(
           .eq("circleId", args.circleId)
           .eq("paidByMemberId", paidByMemberId)
           .eq("status", status);
-        if (args.start && args.endExclusive) {
-          return scoped.gte("date", args.start).lt("date", args.endExclusive);
-        }
-        if (args.start) return scoped.gte("date", args.start);
-        if (args.endExclusive) return scoped.lt("date", args.endExclusive);
-        return scoped;
+        return applyDateRange(scoped, args);
       })
       .order("desc")
       .paginate(args.paginationOpts);
@@ -205,12 +302,7 @@ function pageByWindow(
           .eq("circleId", args.circleId)
           .eq("recordedByMemberId", recordedByMemberId)
           .eq("status", status);
-        if (args.start && args.endExclusive) {
-          return scoped.gte("date", args.start).lt("date", args.endExclusive);
-        }
-        if (args.start) return scoped.gte("date", args.start);
-        if (args.endExclusive) return scoped.lt("date", args.endExclusive);
-        return scoped;
+        return applyDateRange(scoped, args);
       })
       .order("desc")
       .paginate(args.paginationOpts);
@@ -221,12 +313,7 @@ function pageByWindow(
       .query("transactions")
       .withIndex("by_circle_status_date", (q) => {
         const scoped = q.eq("circleId", args.circleId).eq("status", status);
-        if (args.start && args.endExclusive) {
-          return scoped.gte("date", args.start).lt("date", args.endExclusive);
-        }
-        if (args.start) return scoped.gte("date", args.start);
-        if (args.endExclusive) return scoped.lt("date", args.endExclusive);
-        return scoped;
+        return applyDateRange(scoped, args);
       })
       .order("desc")
       .paginate(args.paginationOpts);
@@ -235,15 +322,89 @@ function pageByWindow(
     .query("transactions")
     .withIndex("by_circle_and_date", (q) => {
       const scoped = q.eq("circleId", args.circleId);
-      if (args.start && args.endExclusive) {
-        return scoped.gte("date", args.start).lt("date", args.endExclusive);
-      }
-      if (args.start) return scoped.gte("date", args.start);
-      if (args.endExclusive) return scoped.lt("date", args.endExclusive);
-      return scoped;
+      return applyDateRange(scoped, args);
     })
     .order("desc")
     .paginate(args.paginationOpts);
+}
+
+async function collectTransactionViews(
+  ctx: QueryCtx,
+  args: {
+    circleId: Id<"circles">;
+    viewerMemberId: Id<"members">;
+    viewerIsOwner: boolean;
+    status?: "active" | "archived";
+    paidByMemberId: Id<"members"> | null;
+    recordedByMemberId: Id<"members"> | null;
+    start?: string;
+    endExclusive?: string;
+    paginationOpts: { numItems: number; cursor: string | null };
+    filters: {
+      type?: "expense" | "income";
+      amountMin?: number;
+      amountMax?: number;
+      archived: "exclude" | "include" | "only";
+      queryText: string;
+      categoryIds: Set<Id<"categories">>;
+    };
+  },
+) {
+  const page: TransactionView[] = [];
+  let cursor = args.paginationOpts.cursor;
+  let continueCursor = "";
+  let isDone = false;
+  const viewCaches = newViewCaches();
+  const searchCaches = newSearchCaches();
+
+  while (page.length < args.paginationOpts.numItems && !isDone) {
+    const remaining = args.paginationOpts.numItems - page.length;
+    const source = await pageByWindow(ctx, {
+      circleId: args.circleId,
+      status: args.status,
+      paidByMemberId: args.paidByMemberId ?? undefined,
+      recordedByMemberId: args.recordedByMemberId ?? undefined,
+      start: args.start,
+      endExclusive: args.endExclusive,
+      paginationOpts: { numItems: remaining, cursor },
+    });
+
+    continueCursor = source.continueCursor;
+    isDone = source.isDone;
+    cursor = source.continueCursor;
+    if (source.page.length === 0) {
+      break;
+    }
+
+    for (const txn of source.page) {
+      if (
+        !matchesDoc(txn, {
+          type: args.filters.type,
+          recordedByMemberId: args.recordedByMemberId,
+          paidByMemberId: args.paidByMemberId,
+          amountMin: args.filters.amountMin,
+          amountMax: args.filters.amountMax,
+          archived: args.filters.archived,
+        })
+      ) {
+        continue;
+      }
+      if (
+        await matchesSearchFields(
+          ctx,
+          txn,
+          { queryText: args.filters.queryText, categoryIds: args.filters.categoryIds },
+          searchCaches,
+        )
+      ) {
+        page.push(
+          await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
+        );
+      }
+    }
+  }
+
+  return { page, isDone, continueCursor };
 }
 
 export const searchTransactions = query({
@@ -254,9 +415,12 @@ export const searchTransactions = query({
       return emptyPage();
     }
     const window = resolveDateWindow(args);
-    const amountMin = args.amountMin ?? args.amountMinFrom;
+    const amountMin = args.amountMin;
     if (!window.ok || !validAmountBoundary(amountMin) || !validAmountBoundary(args.amountMax)) {
       throw new Error("Invalid search filters");
+    }
+    if ("empty" in window && window.empty) {
+      return emptyPage();
     }
     if (amountMin !== undefined && args.amountMax !== undefined && amountMin > args.amountMax) {
       return emptyPage();
@@ -269,37 +433,25 @@ export const searchTransactions = query({
     const categoryIds = normalizeCategoryIds(ctx, args.categoryIds);
     const queryText = (args.query ?? "").trim().toLowerCase();
 
-    const result = await pageByWindow(ctx, {
+    return await collectTransactionViews(ctx, {
       circleId: args.circleId,
+      viewerMemberId: access.membership._id,
+      viewerIsOwner: access.isOwner,
       status: singleStatus,
-      paidByMemberId: paidByMemberId ?? undefined,
-      recordedByMemberId: recordedByMemberId ?? undefined,
+      paidByMemberId,
+      recordedByMemberId,
       start: window.start,
       endExclusive: window.endExclusive,
       paginationOpts: args.paginationOpts,
+      filters: {
+        type: args.type,
+        amountMin,
+        amountMax: args.amountMax,
+        archived: mode,
+        queryText,
+        categoryIds,
+      },
     });
-
-    const caches = newViewCaches();
-    const page: TransactionView[] = [];
-    for (const txn of result.page) {
-      if (
-        !matchesDoc(txn, {
-          type: args.type,
-          recordedByMemberId,
-          paidByMemberId,
-          amountMin,
-          amountMax: args.amountMax,
-          archived: mode,
-        })
-      ) {
-        continue;
-      }
-      const view = await toTransactionView(ctx, txn, caches, access.membership._id, access.isOwner);
-      if (matchesView(view, { queryText, categoryIds })) {
-        page.push(view);
-      }
-    }
-    return { ...result, page };
   },
 });
 
@@ -311,9 +463,20 @@ export const getTransactionSearchMeta = query({
       return null;
     }
     const window = resolveDateWindow(args);
-    const amountMin = args.amountMin ?? args.amountMinFrom;
+    const amountMin = args.amountMin;
     if (!window.ok || !validAmountBoundary(amountMin) || !validAmountBoundary(args.amountMax)) {
       throw new Error("Invalid search filters");
+    }
+    if ("empty" in window && window.empty) {
+      return {
+        totals: zeroTotals(),
+        totalCount: 0,
+        exact: true,
+        currency: access.circle.currency,
+        categories: [],
+        recordedBy: [],
+        paidBy: [],
+      };
     }
     if (amountMin !== undefined && args.amountMax !== undefined && amountMin > args.amountMax) {
       return {
@@ -343,11 +506,12 @@ export const getTransactionSearchMeta = query({
       paginationOpts: { numItems: SEARCH_META_LIMIT, cursor: null },
     });
 
-    const caches = newViewCaches();
-    const matches: TransactionView[] = [];
+    const caches = newSearchCaches();
+    const matches: Doc<"transactions">[] = [];
+    const categoryFacetMatches: Doc<"transactions">[] = [];
     for (const txn of candidatePage.page) {
       if (
-        matchesDoc(txn, {
+        !matchesDoc(txn, {
           type: args.type,
           recordedByMemberId,
           paidByMemberId,
@@ -356,27 +520,46 @@ export const getTransactionSearchMeta = query({
           archived: mode,
         })
       ) {
-        const view = await toTransactionView(
-          ctx,
-          txn,
-          caches,
-          access.membership._id,
-          access.isOwner,
-        );
-        if (matchesView(view, { queryText, categoryIds })) {
-          matches.push(view);
-        }
+        continue;
+      }
+
+      if (await matchesSearchFields(ctx, txn, { queryText, categoryIds: new Set() }, caches)) {
+        categoryFacetMatches.push(txn);
+      }
+
+      if (await matchesSearchFields(ctx, txn, { queryText, categoryIds }, caches)) {
+        matches.push(txn);
       }
     }
 
-    const categoryMap = new Map<Id<"categories">, TransactionView["categories"][number]>();
     const recordedByIds = new Set<Id<"members">>();
     const paidByIds = new Set<Id<"members">>();
     for (const txn of matches) {
-      recordedByIds.add(txn.recordedBy.id);
-      paidByIds.add(txn.paidBy.id);
-      for (const category of txn.categories) {
-        categoryMap.set(category.id, category);
+      recordedByIds.add(txn.recordedByMemberId);
+      paidByIds.add(txn.paidByMemberId);
+    }
+
+    const categoryRows = await ctx.db
+      .query("categories")
+      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+      .collect();
+    const categoryMap = new Map<Id<"categories">, ReturnType<typeof categoryView>>();
+    for (const category of categoryRows) {
+      if (args.type && category.type !== args.type) {
+        continue;
+      }
+      if (category.status === "active") {
+        categoryMap.set(category._id, categoryView(category));
+      }
+    }
+    for (const txn of categoryFacetMatches) {
+      const links = await categoryLinksForTransaction(ctx, txn._id, caches);
+      for (const link of links) {
+        const category = await categoryDoc(ctx, link.categoryId, caches);
+        if (!category || (args.type && category.type !== args.type)) {
+          continue;
+        }
+        categoryMap.set(category._id, categoryView(category));
       }
     }
 
@@ -399,7 +582,7 @@ export const getTransactionSearchMeta = query({
       .map((member) => toMemberView(member, access.membership._id));
 
     return {
-      totals: sumMonthTotals(matches),
+      totals: sumTransactionTotals(matches),
       totalCount: matches.length,
       exact: candidatePage.isDone,
       currency: access.circle.currency,

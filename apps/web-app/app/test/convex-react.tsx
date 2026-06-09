@@ -230,6 +230,9 @@ export function configureConvex(state: ConvexState = {}) {
   convexReactMock.usePaginatedQuery.mockImplementation(
     (fn: FunctionReference<"query">, args: Record<string, unknown> | "skip") => {
       const name = getFunctionName(fn);
+      if (args === "skip") {
+        return { results: [], status: "Exhausted", loadMore: () => {} };
+      }
       // The Transaction History list (TXN-4) is its own paginated query.
       if (name === NAME.listTransactionHistory) {
         return { results: transactionHistory, status: historyStatus, loadMore: historyLoadMore };
@@ -242,7 +245,7 @@ export function configureConvex(state: ConvexState = {}) {
       }
       // The active/archived toggle (TXN-3) reads two distinct pages by the query's
       // `status` arg, so the doubles dispatch on it just as the backend does.
-      const archived = args !== "skip" && args.status === "archived";
+      const archived = args.status === "archived";
       return {
         results: archived ? archivedTransactions : transactions,
         status: transactionsStatus,
