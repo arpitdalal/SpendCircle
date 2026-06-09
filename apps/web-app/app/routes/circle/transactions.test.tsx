@@ -11,6 +11,7 @@ import {
   type PaginationStatus,
   TRANSACTIONS_PAGE_SIZE,
   type Transaction,
+  type TransactionSearchMeta,
 } from "~/lib/data.js";
 import {
   configureConvex,
@@ -65,6 +66,8 @@ function setup(
     categories?: Category[] | null;
     members?: Member[] | null;
     monthlySummary?: MonthlySummary | null;
+    searchTransactions?: Transaction[];
+    searchMeta?: TransactionSearchMeta | null;
     initialEntries?: string[];
   } = {},
 ) {
@@ -82,6 +85,8 @@ function setup(
     members: opts.members === undefined ? [makeMemberView()] : opts.members,
     transactions: opts.transactions,
     archivedTransactions: opts.archivedTransactions,
+    searchTransactions: opts.searchTransactions,
+    searchMeta: opts.searchMeta,
     transactionsStatus: opts.status,
     ...(opts.monthlySummary === undefined ? {} : { monthlySummary: opts.monthlySummary }),
     loadMore: paginatedLoadMore,
@@ -362,6 +367,53 @@ describe("CircleTransactions — Monthly Ledger totals (RPT-1)", () => {
     setup({ monthlySummary: summaryOf(2_000, 9_000, -7_000) });
     const totals = screen.getByRole("group", { name: "Monthly totals" });
     expect(within(totals).getByText("-$70.00")).toBeInTheDocument();
+  });
+});
+
+describe("CircleTransactions — Search (RPT-2)", () => {
+  const searchMeta = (over: Partial<TransactionSearchMeta> = {}) =>
+    ({
+      totals: { incomeMinor: 500_000, expenseMinor: 1_250, netMinor: 498_750 },
+      totalCount: 2,
+      exact: true,
+      currency: "USD",
+      categories: [
+        { id: testId<Category["id"]>("cat-groceries"), name: "Groceries", color: "green" },
+      ],
+      recordedBy: [makeMemberView()],
+      paidBy: [makeMemberView()],
+      ...over,
+    }) satisfies TransactionSearchMeta;
+
+  it("uses search results and search totals when filters are present", () => {
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&q=pay`],
+      transactions: [makeTransactionView({ title: "Monthly row" })],
+      searchTransactions: [
+        makeTransactionView({ title: "Paycheck", type: "income", amountMinorUnits: 500_000 }),
+      ],
+      searchMeta: searchMeta(),
+    });
+
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveValue("pay");
+    expect(screen.getByText("Paycheck")).toBeInTheDocument();
+    expect(screen.queryByText("Monthly row")).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Search totals" })).toBeInTheDocument();
+    expect(screen.getByText("$5,000.00")).toBeInTheDocument();
+  });
+
+  it("updates URL-owned filters from controls and resets them", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({ searchMeta: searchMeta() });
+
+    await user.type(screen.getByRole("searchbox", { name: "Search" }), "rent");
+    expect(location()).toContain("q=rent");
+
+    await user.click(screen.getByRole("button", { name: "Expense" }));
+    expect(location()).toContain("type=expense");
+
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`);
   });
 });
 

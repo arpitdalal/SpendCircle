@@ -2,9 +2,11 @@ import {
   addMonths,
   currentMonth,
   formatMoney,
+  isValidPlainDate,
   isValidPlainMonth,
   money,
   type PlainMonth,
+  parseAmountToMinorUnits,
   type TransactionType,
   toCurrencyCode,
 } from "@spend-circle/domain";
@@ -17,10 +19,14 @@ import {
   type MonthlySummary,
   type PaginatedTransactions,
   type Transaction,
+  type TransactionSearchFilters,
+  type TransactionSearchMeta,
   type TransactionStatus,
   useArchiveTransaction,
   useMonthlyLedger,
   useRestoreTransaction,
+  useTransactionSearch,
+  useTransactionSearchMeta,
 } from "~/lib/data.js";
 import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
@@ -107,6 +113,10 @@ export default function CircleTransactions() {
   }, [searchParams, monthValid, month, rawNew, rawView, archivedView, writable, setSearchParams]);
 
   const { summary, transactions } = useMonthlyLedger(circle.id, month, { status });
+  const searchFilters = readSearchFilters(searchParams, month);
+  const searchActive = isSearchActive(searchFilters);
+  const searchResults = useTransactionSearch(circle.id, searchFilters);
+  const searchMeta = useTransactionSearchMeta(circle.id, searchFilters);
 
   // Month changes PUSH a normal history entry (Back returns to the prior month).
   const goToMonth = (next: PlainMonth) => {
@@ -176,9 +186,19 @@ export default function CircleTransactions() {
       </div>
 
       <MonthNavigator month={month} onChange={goToMonth} />
-      <MonthlyTotals summary={summary} fallbackCurrency={circle.currency} />
+      <TransactionSearchPanel
+        filters={searchFilters}
+        meta={searchMeta}
+        searchParams={searchParams}
+        setSearchParams={setSearchParams}
+      />
+      <MonthlyTotals
+        summary={searchActive ? searchMeta : summary}
+        fallbackCurrency={circle.currency}
+        label={searchActive ? "Search totals" : "Monthly totals"}
+      />
 
-      <ViewToggle archivedView={archivedView} onChange={goToView} />
+      {searchActive ? null : <ViewToggle archivedView={archivedView} onChange={goToView} />}
 
       {!writable ? (
         <p className="rounded-md border border-neutral-800 p-3 text-sm text-neutral-500">
@@ -200,14 +220,325 @@ export default function CircleTransactions() {
       ) : null}
 
       <TransactionList
-        paginated={transactions}
+        paginated={searchActive ? searchResults : transactions}
         circle={circle}
         month={month}
         monthLabel={formatMonthLabel(month)}
         canEdit={writable}
-        archivedView={archivedView}
+        archivedView={searchActive ? searchFilters.archivedOnly === true : archivedView}
+        searchActive={searchActive}
       />
     </div>
+  );
+}
+
+function readSearchFilters(searchParams: URLSearchParams, month: PlainMonth) {
+  const rawScope = searchParams.get("scope");
+  const scope = rawScope === "range" || rawScope === "all" ? rawScope : "month";
+  const rawType = searchParams.get("type");
+  const type = rawType === "expense" || rawType === "income" ? rawType : undefined;
+  const categoryIds = (searchParams.get("categories") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const dateFrom = searchParams.get("from");
+  const dateTo = searchParams.get("to");
+  const amountMin = parseAmountParam(searchParams.get("min"));
+  const amountMax = parseAmountParam(searchParams.get("max"));
+  const query = searchParams.get("q")?.trim();
+  return {
+    scope,
+    month,
+    ...(query ? { query } : {}),
+    ...(type ? { type } : {}),
+    ...(categoryIds.length > 0 ? { categoryIds } : {}),
+    ...(searchParams.get("recordedBy")
+      ? { recordedByMemberId: searchParams.get("recordedBy") ?? undefined }
+      : {}),
+    ...(searchParams.get("paidBy")
+      ? { paidByMemberId: searchParams.get("paidBy") ?? undefined }
+      : {}),
+    ...(isValidPlainDate(dateFrom) ? { dateFrom } : {}),
+    ...(isValidPlainDate(dateTo) ? { dateTo } : {}),
+    ...(amountMin !== undefined ? { amountMin } : {}),
+    ...(amountMax !== undefined ? { amountMax } : {}),
+    ...(searchParams.get("archived") === "only" ? { archivedOnly: true } : {}),
+  } satisfies TransactionSearchFilters;
+}
+
+function parseAmountParam(value: string | null) {
+  if (!value) {
+    return undefined;
+  }
+  if (value.trim() === "0") {
+    return 0;
+  }
+  const parsed = parseAmountToMinorUnits(value);
+  return parsed.ok ? parsed.minorUnits : undefined;
+}
+
+function isSearchActive(filters: TransactionSearchFilters) {
+  return (
+    Boolean(filters.query) ||
+    Boolean(filters.type) ||
+    Boolean(filters.categoryIds?.length) ||
+    Boolean(filters.recordedByMemberId) ||
+    Boolean(filters.paidByMemberId) ||
+    filters.scope !== "month" ||
+    Boolean(filters.dateFrom) ||
+    Boolean(filters.dateTo) ||
+    filters.amountMin !== undefined ||
+    filters.amountMax !== undefined ||
+    filters.archivedOnly === true
+  );
+}
+
+function TransactionSearchPanel({
+  filters,
+  meta,
+  searchParams,
+  setSearchParams,
+}: {
+  filters: TransactionSearchFilters;
+  meta: TransactionSearchMeta | null | undefined;
+  searchParams: URLSearchParams;
+  setSearchParams: ReturnType<typeof useSearchParams>[1];
+}) {
+  const updateParam = (key: string, value: string | null) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value && value.length > 0) {
+          next.set(key, value);
+        } else {
+          next.delete(key);
+        }
+        return next;
+      },
+      { replace: false },
+    );
+  };
+  const toggleCategory = (id: string) => {
+    const current = new Set(filters.categoryIds ?? []);
+    if (current.has(id)) {
+      current.delete(id);
+    } else {
+      current.add(id);
+    }
+    updateParam("categories", [...current].join(","));
+  };
+  const reset = () => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const key of [
+          "q",
+          "type",
+          "categories",
+          "recordedBy",
+          "paidBy",
+          "scope",
+          "from",
+          "to",
+          "min",
+          "max",
+          "archived",
+        ]) {
+          next.delete(key);
+        }
+        return next;
+      },
+      { replace: false },
+    );
+  };
+
+  const categoryOptions = meta?.categories ?? [];
+  const recordedByOptions = meta?.recordedBy ?? [];
+  const paidByOptions = meta?.paidBy ?? [];
+  const scopedToRange = filters.scope === "range";
+
+  return (
+    <section className="space-y-3 border-y border-neutral-800 py-4" aria-label="Search">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div>
+          <label htmlFor="transaction-search" className="text-xs text-neutral-500">
+            Search
+          </label>
+          <input
+            id="transaction-search"
+            type="search"
+            value={searchParams.get("q") ?? ""}
+            onChange={(event) => updateParam("q", event.currentTarget.value)}
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400"
+          />
+        </div>
+        <Button type="button" variant="outline" onClick={reset}>
+          Reset
+        </Button>
+      </div>
+
+      <fieldset className="flex flex-wrap gap-2">
+        <legend className="sr-only">Transaction type</legend>
+        {[
+          { label: "All", value: "" },
+          { label: "Expense", value: "expense" },
+          { label: "Income", value: "income" },
+        ].map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            aria-pressed={(filters.type ?? "") === option.value}
+            onClick={() => updateParam("type", option.value)}
+            className={cn(
+              "rounded-md border px-3 py-1 text-sm transition-colors",
+              (filters.type ?? "") === option.value
+                ? "border-neutral-100 bg-neutral-100 text-neutral-900"
+                : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </fieldset>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-xs text-neutral-500">
+          Recorded by
+          <select
+            value={filters.recordedByMemberId ?? ""}
+            onChange={(event) => updateParam("recordedBy", event.currentTarget.value)}
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+          >
+            <option value="">Any</option>
+            {recordedByOptions.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.displayName}
+                {member.status === "removed" ? " (removed)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-neutral-500">
+          Paid by
+          <select
+            value={filters.paidByMemberId ?? ""}
+            onChange={(event) => updateParam("paidBy", event.currentTarget.value)}
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+          >
+            <option value="">Any</option>
+            {paidByOptions.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.displayName}
+                {member.status === "removed" ? " (removed)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {categoryOptions.length > 0 ? (
+        <fieldset className="flex flex-wrap gap-2">
+          <legend className="sr-only">Categories</legend>
+          {categoryOptions.map((category) => {
+            const selected = filters.categoryIds?.includes(category.id) ?? false;
+            return (
+              <button
+                key={category.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleCategory(category.id)}
+                className={cn(
+                  "rounded-md border px-3 py-1 text-sm transition-colors",
+                  selected
+                    ? "border-neutral-100 bg-neutral-100 text-neutral-900"
+                    : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+                )}
+              >
+                {category.name}
+              </button>
+            );
+          })}
+        </fieldset>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <fieldset className="flex gap-2">
+          <legend className="sr-only">Date scope</legend>
+          {[
+            { label: "Month", value: "month" },
+            { label: "Range", value: "range" },
+            { label: "All time", value: "all" },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={filters.scope === option.value}
+              onClick={() => updateParam("scope", option.value === "month" ? null : option.value)}
+              className={cn(
+                "rounded-md border px-3 py-1 text-sm transition-colors",
+                filters.scope === option.value
+                  ? "border-neutral-100 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </fieldset>
+        <label className="text-xs text-neutral-500">
+          From
+          <input
+            type="date"
+            value={searchParams.get("from") ?? ""}
+            disabled={!scopedToRange}
+            onChange={(event) => updateParam("from", event.currentTarget.value)}
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400 disabled:opacity-50"
+          />
+        </label>
+        <label className="text-xs text-neutral-500">
+          To
+          <input
+            type="date"
+            value={searchParams.get("to") ?? ""}
+            disabled={!scopedToRange}
+            onChange={(event) => updateParam("to", event.currentTarget.value)}
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400 disabled:opacity-50"
+          />
+        </label>
+        <label className="text-xs text-neutral-500">
+          Amount min
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={searchParams.get("min") ?? ""}
+            onChange={(event) => updateParam("min", event.currentTarget.value)}
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+          />
+        </label>
+        <label className="flex items-end gap-2 pb-2 text-sm text-neutral-300">
+          <input
+            type="checkbox"
+            checked={filters.archivedOnly === true}
+            onChange={(event) =>
+              updateParam("archived", event.currentTarget.checked ? "only" : null)
+            }
+          />
+          Archived only
+        </label>
+      </div>
+      <label className="block max-w-xs text-xs text-neutral-500">
+        Amount max
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={searchParams.get("max") ?? ""}
+          onChange={(event) => updateParam("max", event.currentTarget.value)}
+          className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+        />
+      </label>
+    </section>
   );
 }
 
@@ -369,9 +700,11 @@ function MonthNavigator({
 function MonthlyTotals({
   summary,
   fallbackCurrency,
+  label,
 }: {
-  summary: MonthlySummary | null | undefined;
+  summary: MonthlySummary | TransactionSearchMeta | null | undefined;
   fallbackCurrency: string;
+  label: string;
 }) {
   const currency = toCurrencyCode(summary?.currency ?? fallbackCurrency);
   const totals = summary?.totals;
@@ -387,7 +720,7 @@ function MonthlyTotals({
 
   return (
     <fieldset>
-      <legend className="sr-only">Monthly totals</legend>
+      <legend className="sr-only">{label}</legend>
       <dl className="grid grid-cols-3 gap-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-md border border-neutral-800 p-3">
@@ -429,6 +762,7 @@ function TransactionList({
   monthLabel,
   canEdit,
   archivedView,
+  searchActive,
 }: {
   paginated: PaginatedTransactions;
   circle: Circle;
@@ -436,6 +770,7 @@ function TransactionList({
   monthLabel: string;
   canEdit: boolean;
   archivedView: boolean;
+  searchActive: boolean;
 }) {
   const { transactions, status, loadMore } = paginated;
 
@@ -451,7 +786,9 @@ function TransactionList({
       <p className="text-sm text-neutral-500">
         {archivedView
           ? `No archived transactions in ${monthLabel}.`
-          : `No transactions in ${monthLabel}.`}
+          : searchActive
+            ? "No matching transactions."
+            : `No transactions in ${monthLabel}.`}
       </p>
     );
   }

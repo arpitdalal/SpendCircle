@@ -7,6 +7,7 @@ import type {
   Transaction,
   TransactionDetail,
   TransactionHistoryEvent,
+  TransactionSearchMeta,
 } from "./data.js";
 
 /**
@@ -106,6 +107,16 @@ export const MOCK_TRANSACTIONS: Transaction[] = [];
 export const MOCK_MONTHLY_SUMMARY: MonthlySummary = {
   totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
   currency: "USD",
+};
+
+export const MOCK_SEARCH_META: TransactionSearchMeta = {
+  totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
+  totalCount: 0,
+  exact: true,
+  currency: "USD",
+  categories: [],
+  recordedBy: MOCK_MEMBERS,
+  paidBy: MOCK_MEMBERS,
 };
 
 /**

@@ -9,6 +9,7 @@ import {
   MOCK_DASHBOARD,
   MOCK_MEMBERS,
   MOCK_MONTHLY_SUMMARY,
+  MOCK_SEARCH_META,
   MOCK_TRANSACTION_HISTORY,
   MOCK_TRANSACTIONS,
 } from "./fixtures.js";
@@ -228,6 +229,55 @@ export function useMonthlyLedger(
     summary: MOCKS ? MOCK_MONTHLY_SUMMARY : queried,
     transactions,
   };
+}
+
+export type SearchScope = "month" | "range" | "all";
+
+export type TransactionSearchMeta = NonNullable<
+  FunctionReturnType<typeof api.search.getTransactionSearchMeta>
+>;
+
+export interface TransactionSearchFilters {
+  scope: SearchScope;
+  query?: string;
+  type?: TransactionType;
+  categoryIds?: string[];
+  recordedByMemberId?: string;
+  paidByMemberId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  month?: PlainMonth;
+  amountMin?: number;
+  amountMax?: number;
+  archivedOnly?: boolean;
+}
+
+export function useTransactionSearch(circleId: Circle["id"], filters: TransactionSearchFilters) {
+  const paginated = usePaginatedQuery(
+    api.search.searchTransactions,
+    MOCKS ? "skip" : { circleId, ...filters },
+    { initialNumItems: TRANSACTIONS_PAGE_SIZE },
+  );
+  if (MOCKS) {
+    const status: PaginationStatus = "Exhausted";
+    return { transactions: MOCK_TRANSACTIONS, status, loadMore: () => {} };
+  }
+  return {
+    transactions: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(TRANSACTIONS_PAGE_SIZE),
+  };
+}
+
+export function useTransactionSearchMeta(
+  circleId: Circle["id"],
+  filters: TransactionSearchFilters,
+) {
+  const queried = useQuery(
+    api.search.getTransactionSearchMeta,
+    MOCKS ? "skip" : { circleId, ...filters },
+  );
+  return MOCKS ? MOCK_SEARCH_META : queried;
 }
 
 /**

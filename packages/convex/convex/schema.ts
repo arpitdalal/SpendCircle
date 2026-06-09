@@ -119,7 +119,15 @@ export default defineSchema({
     // memory, and the filter's removed-Member options test "is this removed Member
     // Paid By on any active Transaction?" with a single `.first()` lookup. Also serves
     // Search's Paid By facet (RPT-2).
-    .index("by_circle_paidby_status_date", ["circleId", "paidByMemberId", "status", "date"]),
+    .index("by_circle_paidby_status_date", ["circleId", "paidByMemberId", "status", "date"])
+    // Search's Recorded By facet needs the same bounded date/status access pattern
+    // as Paid By, but keyed by creator membership instead.
+    .index("by_circle_recordedby_status_date", [
+      "circleId",
+      "recordedByMemberId",
+      "status",
+      "date",
+    ]),
 
   // Many-to-many between Transactions and Categories (PRD story 50).
   transactionCategories: defineTable({
