@@ -29,233 +29,203 @@ beforeEach(() => {
   mockCurrentUser.mockReset();
 });
 
-describe("searchTransactions — filters", () => {
-  it("defaults to the selected month and matches title, note, category name, and member names", async () => {
+describe("filterLedgerTransactions", () => {
+  it("filters the selected month by title/note only", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
-    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex Paid"));
     mockCurrentUser.mockResolvedValue(f.owner);
     await t.run(async (ctx) => {
       await seedTransaction(ctx, f, {
-        title: "Hardware run",
-        note: "paint and screws",
+        title: "Whole Foods",
+        note: "Weekly groceries",
         date: "2026-06-10",
-        paidByMemberId: alex.memberId,
       });
       await seedTransaction(ctx, f, {
-        title: "May hardware",
-        note: "paint",
-        date: "2026-05-10",
-      });
-      await seedTransaction(ctx, f, {
-        title: "Dinner",
-        note: "with Alex",
+        title: "Category name only",
+        note: "no match",
         date: "2026-06-11",
         categoryIds: [f.diningId],
       });
+      await seedTransaction(ctx, f, {
+        title: "Whole Foods old",
+        note: "Weekly groceries",
+        date: "2026-05-10",
+      });
     });
 
-    const title = await t.query(api.search.searchTransactions, {
+    const title = await t.query(api.search.filterLedgerTransactions, {
       circleId: f.circleId,
-      scope: "month",
       month: "2026-06",
-      query: "hardware",
+      type: "all",
+      status: "active",
+      query: "whole   foods",
       ...firstPage(25),
     });
-    expect(title.page.map((txn) => txn.title)).toEqual(["Hardware run"]);
+    expect(title.page.map((txn) => txn.title)).toEqual(["Whole Foods"]);
 
-    const note = await t.query(api.search.searchTransactions, {
+    const categoryName = await t.query(api.search.filterLedgerTransactions, {
       circleId: f.circleId,
-      scope: "month",
       month: "2026-06",
-      query: "paint",
-      ...firstPage(25),
-    });
-    expect(note.page.map((txn) => txn.title)).toEqual(["Hardware run"]);
-
-    const category = await t.query(api.search.searchTransactions, {
-      circleId: f.circleId,
-      scope: "month",
-      month: "2026-06",
+      type: "all",
+      status: "active",
       query: "dining",
       ...firstPage(25),
     });
-    expect(category.page.map((txn) => txn.title)).toEqual(["Dinner"]);
-
-    const paidBy = await t.query(api.search.searchTransactions, {
-      circleId: f.circleId,
-      scope: "month",
-      month: "2026-06",
-      query: "alex",
-      ...firstPage(25),
-    });
-    expect(paidBy.page.map((txn) => txn.title)).toEqual(["Dinner", "Hardware run"]);
+    expect(categoryName.page).toEqual([]);
   });
 
-  it("AND-combines type, category, recorded by, paid by, range, and amount filters", async () => {
+  it("ORs values within category/member fields and ANDs fields together", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
-    const recorder = await t.run((ctx) =>
-      addMember(ctx, f.circleId, "recorder@example.com", "Rae Recorder"),
-    );
-    const payer = await t.run((ctx) => addMember(ctx, f.circleId, "payer@example.com", "Pia Paid"));
+    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
+    const sam = await t.run((ctx) => addMember(ctx, f.circleId, "sam@example.com", "Sam"));
     mockCurrentUser.mockResolvedValue(f.owner);
     await t.run(async (ctx) => {
       await seedTransaction(ctx, f, {
-        title: "Match",
-        type: "expense",
-        amountMinorUnits: 5_500,
-        date: "2026-06-15",
+        title: "Groceries Alex",
+        date: "2026-06-10",
         categoryIds: [f.groceriesId],
-        recordedByMemberId: recorder.memberId,
-        paidByMemberId: payer.memberId,
+        paidByMemberId: alex.memberId,
       });
       await seedTransaction(ctx, f, {
-        title: "Wrong amount",
-        amountMinorUnits: 9_000,
-        date: "2026-06-15",
-        recordedByMemberId: recorder.memberId,
-        paidByMemberId: payer.memberId,
-      });
-      await seedTransaction(ctx, f, {
-        title: "Wrong category",
-        amountMinorUnits: 5_500,
-        date: "2026-06-15",
-        categoryIds: [f.diningId],
-        recordedByMemberId: recorder.memberId,
-        paidByMemberId: payer.memberId,
-      });
-    });
-
-    const result = await t.query(api.search.searchTransactions, {
-      circleId: f.circleId,
-      scope: "range",
-      dateFrom: "2026-06-01",
-      dateTo: "2026-06-30",
-      type: "expense",
-      categoryIds: [f.groceriesId],
-      recordedByMemberId: recorder.memberId,
-      paidByMemberId: payer.memberId,
-      amountMin: 5_000,
-      amountMax: 6_000,
-      ...firstPage(25),
-    });
-    expect(result.page.map((txn) => txn.title)).toEqual(["Match"]);
-  });
-
-  it("supports inclusive date ranges and all-time scope", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run(async (ctx) => {
-      await seedTransaction(ctx, f, { title: "Start", date: "2026-05-01" });
-      await seedTransaction(ctx, f, { title: "Middle", date: "2026-05-15" });
-      await seedTransaction(ctx, f, { title: "End", date: "2026-05-31" });
-      await seedTransaction(ctx, f, { title: "Outside", date: "2026-06-01" });
-    });
-
-    const range = await t.query(api.search.searchTransactions, {
-      circleId: f.circleId,
-      scope: "range",
-      dateFrom: "2026-05-01",
-      dateTo: "2026-05-31",
-      ...firstPage(25),
-    });
-    expect(range.page.map((txn) => txn.title)).toEqual(["End", "Middle", "Start"]);
-
-    const all = await t.query(api.search.searchTransactions, {
-      circleId: f.circleId,
-      scope: "all",
-      query: "outside",
-      ...firstPage(25),
-    });
-    expect(all.page.map((txn) => txn.title)).toEqual(["Outside"]);
-  });
-
-  it("excludes archived transactions by default and returns only archived with the archive filter", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run(async (ctx) => {
-      await seedTransaction(ctx, f, { title: "Active receipt", date: "2026-06-10" });
-      await seedTransaction(ctx, f, {
-        title: "Archived receipt",
+        title: "Dining Alex",
         date: "2026-06-11",
-        status: "archived",
+        categoryIds: [f.diningId],
+        paidByMemberId: alex.memberId,
+      });
+      await seedTransaction(ctx, f, {
+        title: "Groceries Sam",
+        date: "2026-06-12",
+        categoryIds: [f.groceriesId],
+        paidByMemberId: sam.memberId,
       });
     });
 
-    const normal = await t.query(api.search.searchTransactions, {
+    const result = await t.query(api.search.filterLedgerTransactions, {
       circleId: f.circleId,
-      scope: "month",
       month: "2026-06",
-      query: "receipt",
+      type: "expense",
+      status: "active",
+      categoryIds: [f.groceriesId, f.diningId],
+      paidByMemberIds: [alex.memberId],
       ...firstPage(25),
     });
-    expect(normal.page.map((txn) => txn.title)).toEqual(["Active receipt"]);
-
-    const archived = await t.query(api.search.searchTransactions, {
-      circleId: f.circleId,
-      scope: "month",
-      month: "2026-06",
-      query: "receipt",
-      archivedOnly: true,
-      ...firstPage(25),
-    });
-    expect(archived.page.map((txn) => txn.title)).toEqual(["Archived receipt"]);
+    expect(result.page.map((txn) => txn.title)).toEqual(["Dining Alex", "Groceries Alex"]);
   });
 
-  it("paginates the indexed source for all-time searches", async () => {
+  it("fills a page past newer rows dropped by post filters", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
     await t.run(async (ctx) => {
-      for (const date of ["2026-05-01", "2026-05-02", "2026-05-03"]) {
-        await seedTransaction(ctx, f, { title: `Txn ${date}`, date });
-      }
+      await seedTransaction(ctx, f, { title: "Newest miss", date: "2026-06-03" });
+      await seedTransaction(ctx, f, { title: "Middle miss", date: "2026-06-02" });
+      await seedTransaction(ctx, f, { title: "Needle match", date: "2026-06-01" });
     });
 
-    const page1 = await t.query(api.search.searchTransactions, {
+    const page = await t.query(api.search.filterLedgerTransactions, {
       circleId: f.circleId,
-      scope: "all",
-      ...firstPage(2),
-    });
-    expect(page1.page.map((txn) => txn.title)).toEqual(["Txn 2026-05-03", "Txn 2026-05-02"]);
-    expect(page1.isDone).toBe(false);
-
-    const page2 = await t.query(api.search.searchTransactions, {
-      circleId: f.circleId,
-      scope: "all",
-      paginationOpts: { numItems: 2, cursor: page1.continueCursor },
-    });
-    expect(page2.page.map((txn) => txn.title)).toEqual(["Txn 2026-05-01"]);
-    expect(page2.isDone).toBe(true);
-  });
-
-  it("fills a result page past newer source rows that filters drop", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run(async (ctx) => {
-      await seedTransaction(ctx, f, { title: "Newest miss", date: "2026-05-03" });
-      await seedTransaction(ctx, f, { title: "Middle miss", date: "2026-05-02" });
-      await seedTransaction(ctx, f, { title: "Needle match", date: "2026-05-01" });
-    });
-
-    const page = await t.query(api.search.searchTransactions, {
-      circleId: f.circleId,
-      scope: "all",
+      month: "2026-06",
+      type: "all",
+      status: "active",
       query: "needle",
       ...firstPage(1),
     });
-
     expect(page.page.map((txn) => txn.title)).toEqual(["Needle match"]);
     expect(page.isDone).toBe(true);
   });
 });
 
-describe("getTransactionSearchMeta", () => {
-  it("returns exact totals and filter options including archived categories and removed members with matching transactions", async () => {
+describe("searchTransactions", () => {
+  it("defaults by explicit status/type to all active circle transactions newest first", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { title: "May row", date: "2026-05-10" });
+      await seedTransaction(ctx, f, { title: "June row", date: "2026-06-10" });
+      await seedTransaction(ctx, f, {
+        title: "Archived row",
+        date: "2026-06-11",
+        status: "archived",
+      });
+    });
+
+    const result = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["June row", "May row"]);
+  });
+
+  it("supports status all, inclusive dates, and inclusive amount range", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, {
+        title: "Start",
+        date: "2026-05-01",
+        amountMinorUnits: 1_000,
+      });
+      await seedTransaction(ctx, f, {
+        title: "End archived",
+        date: "2026-05-31",
+        amountMinorUnits: 2_000,
+        status: "archived",
+      });
+      await seedTransaction(ctx, f, {
+        title: "Outside",
+        date: "2026-06-01",
+        amountMinorUnits: 2_000,
+      });
+    });
+
+    const result = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "all",
+      dateFrom: "2026-05-01",
+      dateTo: "2026-05-31",
+      amountMin: 1_000,
+      amountMax: 2_000,
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["End archived", "Start"]);
+  });
+
+  it("returns an empty page for reversed date or amount ranges", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) => seedTransaction(ctx, f, { title: "Row", date: "2026-05-10" }));
+
+    const reversedDates = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      dateFrom: "2026-05-31",
+      dateTo: "2026-05-01",
+      ...firstPage(25),
+    });
+    expect(reversedDates.page).toEqual([]);
+
+    const reversedAmount = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      amountMin: 2_000,
+      amountMax: 1_000,
+      ...firstPage(25),
+    });
+    expect(reversedAmount.page).toEqual([]);
+  });
+});
+
+describe("search options", () => {
+  it("returns ledger options used in the selected month, including archived categories and removed members", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     const removed = await t.run((ctx) =>
@@ -272,86 +242,67 @@ describe("getTransactionSearchMeta", () => {
     await t.run(async (ctx) => {
       await seedTransaction(ctx, f, {
         title: "Old bill",
-        amountMinorUnits: 4_000,
         date: "2026-06-10",
         categoryIds: [archivedCategory],
-        recordedByMemberId: removed.memberId,
         paidByMemberId: removed.memberId,
       });
-      await seedTransaction(ctx, f, {
-        title: "Income",
-        type: "income",
-        amountMinorUnits: 10_000,
-        date: "2026-06-11",
-        categoryIds: [f.salaryId],
-      });
+      await seedTransaction(ctx, f, { title: "Other month", date: "2026-05-10" });
     });
 
-    const meta = await t.query(api.search.getTransactionSearchMeta, {
+    const options = await t.query(api.search.getLedgerFilterOptions, {
       circleId: f.circleId,
-      scope: "month",
       month: "2026-06",
+      type: "expense",
     });
-    expect(meta?.totals).toEqual({ incomeMinor: 10_000, expenseMinor: 4_000, netMinor: 6_000 });
-    expect(meta?.totalCount).toBe(2);
-    expect(meta?.exact).toBe(true);
-    expect(meta?.categories.map((category) => category.name)).toEqual([
+    expect(options?.categories.map((category) => [category.name, category.status])).toEqual([
+      ["Old Utilities", "archived"],
+    ]);
+    expect(options?.members.map((member) => [member.displayName, member.status])).toContainEqual([
+      "Remy Removed",
+      "removed",
+    ]);
+  });
+
+  it("returns exhaustive search options for the whole circle", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    await t.run((ctx) =>
+      addMember(ctx, f.circleId, "removed@example.com", "Remy Removed", "removed"),
+    );
+    await t.run((ctx) =>
+      makeCategory(ctx, f.circleId, {
+        name: "Old Utilities",
+        status: "archived",
+        creatorUserId: f.owner._id,
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const options = await t.query(api.search.getTransactionSearchOptions, {
+      circleId: f.circleId,
+      type: "all",
+    });
+    expect(options?.categories.map((category) => category.name)).toEqual([
       "Dining",
       "Groceries",
       "Old Utilities",
       "Salary",
     ]);
-    expect(meta?.recordedBy.map((member) => [member.displayName, member.status])).toContainEqual([
-      "Remy Removed",
-      "removed",
-    ]);
-    expect(meta?.paidBy.map((member) => [member.displayName, member.status])).toContainEqual([
+    expect(options?.members.map((member) => [member.displayName, member.status])).toContainEqual([
       "Remy Removed",
       "removed",
     ]);
   });
 
-  it("keeps category options stable while a category filter is selected", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run(async (ctx) => {
-      await seedTransaction(ctx, f, {
-        title: "Groceries row",
-        type: "expense",
-        date: "2026-06-10",
-        categoryIds: [f.groceriesId],
-      });
-      await seedTransaction(ctx, f, {
-        title: "Dining row",
-        type: "expense",
-        date: "2026-06-11",
-        categoryIds: [f.diningId],
-      });
-    });
-
-    const meta = await t.query(api.search.getTransactionSearchMeta, {
-      circleId: f.circleId,
-      scope: "month",
-      month: "2026-06",
-      type: "expense",
-      categoryIds: [f.groceriesId],
-    });
-
-    expect(meta?.totalCount).toBe(1);
-    expect(meta?.categories.map((category) => category.name)).toEqual(["Dining", "Groceries"]);
-  });
-
-  it("returns null for inaccessible circles and is readable for archived circles", async () => {
+  it("returns null for inaccessible circles and remains readable for archived circles", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx, { archived: true }));
     const stranger = await t.run((ctx) => makeUser(ctx, "stranger@example.com", "Stranger"));
     mockCurrentUser.mockResolvedValue(stranger);
     expect(
-      await t.query(api.search.getTransactionSearchMeta, {
+      await t.query(api.search.getTransactionSearchOptions, {
         circleId: f.circleId,
-        scope: "month",
-        month: "2026-06",
+        type: "all",
       }),
     ).toBeNull();
 
@@ -359,11 +310,12 @@ describe("getTransactionSearchMeta", () => {
     await t.run((ctx) =>
       seedTransaction(ctx, f, { title: "Archived circle row", date: "2026-06-10" }),
     );
-    const meta = await t.query(api.search.getTransactionSearchMeta, {
+    const result = await t.query(api.search.searchTransactions, {
       circleId: f.circleId,
-      scope: "month",
-      month: "2026-06",
+      type: "all",
+      status: "active",
+      ...firstPage(25),
     });
-    expect(meta?.totalCount).toBe(1);
+    expect(result.page.map((txn) => txn.title)).toEqual(["Archived circle row"]);
   });
 });

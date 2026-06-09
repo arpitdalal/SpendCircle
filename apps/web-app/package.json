@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.12.2",
+    "@radix-ui/react-dialog": "^1.1.16",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@react-router/node": "^7.16.0",
@@ -28,7 +29,8 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router": "^7.16.0",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "tslib": "^2.8.1"
   },
   "devDependencies": {
     "@react-router/dev": "^7.16.0",

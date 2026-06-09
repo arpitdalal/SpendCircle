@@ -36,6 +36,7 @@ export default [
       route(":circleRef", "routes/layouts/circle-layout.tsx", [
         index("routes/circle/dashboard.tsx"),
         route("transactions", "routes/circle/transactions.tsx"),
+        route("search", "routes/circle/search.tsx"),
         // The Transaction DETAIL object route (ADR 0016/0017) — the REFERENCE object
         // route: a canonical `slug-id` ref under the resolved Circle, resolving its own
         // target by ID via `useResolvedTransactionDetail` and falling back to the Circle's

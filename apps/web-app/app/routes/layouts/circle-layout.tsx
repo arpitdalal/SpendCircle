@@ -33,6 +33,11 @@ export default function CircleLayout() {
       end: false,
     },
     {
+      to: href("/circles/:circleRef/search", { circleRef: circle.ref }),
+      label: "Search",
+      end: false,
+    },
+    {
       to: href("/circles/:circleRef/categories", { circleRef: circle.ref }),
       label: "Categories",
       end: false,
@@ -56,15 +61,15 @@ export default function CircleLayout() {
         </div>
       </div>
 
-      <nav className="flex gap-1 border-b border-neutral-800">
+      <nav className="-mx-4 flex gap-1 overflow-x-auto border-b border-neutral-800 px-4">
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}
             end={tab.end}
-            className={({ isActive }) =>
+            className={({ isActive }: { isActive: boolean }) =>
               cn(
-                "border-b-2 px-3 py-2 text-sm",
+                "shrink-0 border-b-2 px-3 py-2 text-sm",
                 isActive
                   ? "border-neutral-100 text-neutral-100"
                   : "border-transparent text-neutral-400 hover:text-neutral-100",

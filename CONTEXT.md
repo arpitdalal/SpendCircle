@@ -105,7 +105,7 @@ The **Member** who creates a **Transaction**. Only the Recorded By Member can ed
 _Avoid_: Creator
 
 **Paid By**:
-The **Member** the **Transaction's** money movement belongs to. Paid By defaults to the **Recorded By** Member, can be set to another current Member, and preserves historical identity if that Member is later removed; Search and Dashboard filters can still include Removed Members when matching Transactions exist, but when editing Paid By, only current Members can be newly selected. If the same **User** rejoins, Paid By resolves to their current Display Name and Profile Picture again.
+The **Member** the **Transaction's** money movement belongs to. Paid By defaults to the **Recorded By** Member, can be set to another current Member, and preserves historical identity if that Member is later removed; Ledger Filter, Transaction Search, and Dashboard filters can still include Removed Members when relevant, but when editing Paid By, only current Members can be newly selected. If the same **User** rejoins, Paid By resolves to their current Display Name and Profile Picture again.
 _Avoid_: Payer
 
 **Settlement**:
@@ -129,7 +129,7 @@ The positive monetary value of a **Transaction**, using the **Circle's** Currenc
 _Avoid_: Signed Amount
 
 **Title**:
-The required short label for a **Transaction**, shown in lists, Search results, and Dashboard surfaces.
+The required short label for a **Transaction**, shown in lists, Transaction Search results, and Dashboard surfaces.
 _Avoid_: Description
 
 **Note**:
@@ -137,11 +137,11 @@ The optional longer text for a **Transaction**, used for item lists or extra con
 _Avoid_: Memo
 
 **Archived Transaction**:
-A **Transaction** removed from active reporting without being deleted. Archived Transactions are frozen, do not count toward Dashboard metrics, and are excluded from normal Search, but can be found in archived views or archive-only filters; creator Members can restore their own Archived Transactions, and Owners can restore any Archived Transaction in the Circle.
+A **Transaction** removed from active reporting without being deleted. Archived Transactions are frozen, do not count toward Dashboard metrics, and are excluded from default Ledger Filter and Transaction Search results, but can be found when lifecycle scope is set to archived or all; creator Members can restore their own Archived Transactions, and Owners can restore any Archived Transaction in the Circle.
 _Avoid_: Deleted Transaction
 
 **Transaction Date**:
-The plain calendar date assigned to a **Transaction** for reporting and search. It has no time-of-day component, no timezone conversion, and defines Dashboard month buckets and date-range Search.
+The plain calendar date assigned to a **Transaction** for reporting and Transaction Search. It has no time-of-day component, no timezone conversion, and defines Dashboard month buckets and date-range Transaction Search.
 _Avoid_: Timestamp
 
 **Audit Metadata**:
@@ -192,13 +192,17 @@ _Avoid_: Global Dashboard, Overview
 The month-focused Transaction view for a **Circle**. A Monthly Ledger shows one selected month and year, that month's Income, Expenses, and Net, and that month's Transactions sorted by Transaction Date descending and then created-at descending.
 _Avoid_: Transaction List
 
+**Ledger Filter**:
+A lightweight way to narrow a **Monthly Ledger** to the selected month using Transaction text, Transaction type, Category, Recorded By, Paid By, and lifecycle scope: active, archived, or all. A Ledger Filter is reset when the User changes the selected **Monthly Ledger** month.
+_Avoid_: Search, Advanced Search
+
 **Comparison Range**:
 The time window used by the Dashboard's month-over-month comparison. It defaults to six months and can be changed to one month, three months, or one year.
 _Avoid_: Date Range
 
-**Search**:
-A per-**Circle** way to find **Transactions** by Title, Note, Category name, type, Category, Recorded By, Paid By, date range, and amount range. Search defaults to the selected **Monthly Ledger** month unless the User chooses a date range or all-time search; Search includes Archived Categories when matching historical Transactions exist, and Archived Circles are searchable only from archives.
-_Avoid_: Global Search
+**Transaction Search**:
+A dedicated per-**Circle** way to find **Transactions** by Title, Note, type, Category, Recorded By, Paid By, lifecycle scope, date range or all-time scope, and amount range. Transaction Search is separate from the **Monthly Ledger** and offers all Categories and all current or Removed Members as filter options; Archived Circles remain searchable through their read-only Circle routes.
+_Avoid_: Search, Global Search
 
 **Export**:
 A CSV download of **Transactions** from one **Circle**. Any current **Member** can Export Transactions they can view; Export includes active Transactions by default and can optionally include Archived Transactions, and exported amounts identify the **Currency** explicitly. V1 supports Export but does not support importing Transactions.
@@ -298,7 +302,7 @@ _Avoid_: Release Notes
 
 **Engineer**: "If a Member in IST searches May 1 to May 30, does Circle timezone matter?"
 
-**Product**: "No. Transaction Date is a plain date. Search and Dashboard use the dates as entered, without timezone conversion."
+**Product**: "No. Transaction Date is a plain date. Transaction Search and Dashboard use the dates as entered, without timezone conversion."
 
 **Engineer**: "Can Members see who edited a Transaction?"
 
@@ -352,6 +356,6 @@ _Avoid_: Release Notes
 
 **Product**: "No. The v1 Dashboard is per Circle and compares Income, Expenses, and Net over a selected Comparison Range."
 
-**Engineer**: "Can Search find Categories without Transactions?"
+**Engineer**: "Can Transaction Search find Categories without Transactions?"
 
-**Product**: "No. Search finds Transactions. Category names help filter or match those Transactions."
+**Product**: "No. Transaction Search finds Transactions. Categories are structured filters, not text matches."

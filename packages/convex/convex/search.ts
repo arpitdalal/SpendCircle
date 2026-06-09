@@ -9,48 +9,35 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { QueryCtx } from "./_generated/server.js";
 import { query } from "./_generated/server.js";
+import { toCategoryView } from "./categories.js";
 import { resolveCircleAccess } from "./guard.js";
 import { toMemberView } from "./members.js";
 import { monthDateRange } from "./monthActivity.js";
 import { newViewCaches, type TransactionView, toTransactionView } from "./transactions.js";
 
-const transactionType = v.union(v.literal("expense"), v.literal("income"));
-const searchScope = v.union(v.literal("month"), v.literal("range"), v.literal("all"));
-const SEARCH_META_LIMIT = 2_000;
+const filterType = v.union(v.literal("all"), v.literal("expense"), v.literal("income"));
+const lifecycleFilter = v.union(v.literal("active"), v.literal("archived"), v.literal("all"));
 
-const searchArgs = {
+const commonFilterArgs = {
   circleId: v.id("circles"),
   query: v.optional(v.string()),
-  type: v.optional(transactionType),
+  type: filterType,
+  status: lifecycleFilter,
   categoryIds: v.optional(v.array(v.string())),
-  recordedByMemberId: v.optional(v.string()),
-  paidByMemberId: v.optional(v.string()),
-  dateFrom: v.optional(v.string()),
-  dateTo: v.optional(v.string()),
-  month: v.optional(v.string()),
-  amountMin: v.optional(v.number()),
-  amountMax: v.optional(v.number()),
-  scope: searchScope,
-  includeArchived: v.optional(v.boolean()),
-  archivedOnly: v.optional(v.boolean()),
+  recordedByMemberIds: v.optional(v.array(v.string())),
+  paidByMemberIds: v.optional(v.array(v.string())),
 };
 
 interface SearchCaches {
-  members: Map<Id<"members">, Doc<"members"> | null>;
-  categories: Map<Id<"categories">, Doc<"categories"> | null>;
   linksByTransaction: Map<Id<"transactions">, Doc<"transactionCategories">[]>;
 }
 
-function newSearchCaches(): SearchCaches {
-  return { members: new Map(), categories: new Map(), linksByTransaction: new Map() };
+function newSearchCaches() {
+  return { linksByTransaction: new Map() } satisfies SearchCaches;
 }
 
 function emptyPage() {
   return { page: [], isDone: true, continueCursor: "" };
-}
-
-function zeroTotals() {
-  return { incomeMinor: 0, expenseMinor: 0, netMinor: 0 };
 }
 
 function validAmountBoundary(value: number | undefined) {
@@ -59,38 +46,41 @@ function validAmountBoundary(value: number | undefined) {
   );
 }
 
-function normalizeOptionalMemberId(ctx: QueryCtx, value: string | undefined) {
-  return value ? ctx.db.normalizeId("members", value) : null;
+function selectedType(value: "all" | "expense" | "income") {
+  return value === "all" ? undefined : value;
+}
+
+function selectedStatus(value: "active" | "archived" | "all") {
+  return value === "all" ? undefined : value;
 }
 
 function normalizeCategoryIds(ctx: QueryCtx, values: string[] | undefined) {
   const ids = new Set<Id<"categories">>();
+  let sawValue = false;
   for (const value of values ?? []) {
+    sawValue = true;
     const id = ctx.db.normalizeId("categories", value);
     if (id) {
       ids.add(id);
     }
   }
-  return ids;
+  return { ids, hasOnlyUnknown: sawValue && ids.size === 0 };
 }
 
-function resolveDateWindow(args: {
-  scope: "month" | "range" | "all";
-  month?: string;
-  dateFrom?: string;
-  dateTo?: string;
-}) {
-  if (args.scope === "all") {
-    return { ok: true, start: undefined, endExclusive: undefined };
-  }
-  if (args.scope === "month") {
-    const month = args.month ?? currentMonth(new Date());
-    if (!isValidPlainMonth(month)) {
-      return { ok: false };
+function normalizeMemberIds(ctx: QueryCtx, values: string[] | undefined) {
+  const ids = new Set<Id<"members">>();
+  let sawValue = false;
+  for (const value of values ?? []) {
+    sawValue = true;
+    const id = ctx.db.normalizeId("members", value);
+    if (id) {
+      ids.add(id);
     }
-    const range = monthDateRange(month);
-    return { ok: true, start: range.start, endExclusive: range.endExclusive };
   }
+  return { ids, hasOnlyUnknown: sawValue && ids.size === 0 };
+}
+
+function resolveSearchWindow(args: { dateFrom?: string; dateTo?: string }) {
   if (args.dateFrom !== undefined && !isValidPlainDate(args.dateFrom)) {
     return { ok: false };
   }
@@ -116,54 +106,8 @@ function nextPlainDate(date: string) {
   return `${year}-${month}-${day}`;
 }
 
-function archivedMode(args: { includeArchived?: boolean; archivedOnly?: boolean }) {
-  if (args.archivedOnly) {
-    return "only";
-  }
-  return args.includeArchived ? "include" : "exclude";
-}
-
-function matchesDoc(
-  txn: Doc<"transactions">,
-  filters: {
-    type?: "expense" | "income";
-    recordedByMemberId: Id<"members"> | null;
-    paidByMemberId: Id<"members"> | null;
-    amountMin?: number;
-    amountMax?: number;
-    archived: "exclude" | "include" | "only";
-  },
-) {
-  if (filters.archived === "exclude" && txn.status !== "active") return false;
-  if (filters.archived === "only" && txn.status !== "archived") return false;
-  if (filters.type && txn.type !== filters.type) return false;
-  if (filters.recordedByMemberId && txn.recordedByMemberId !== filters.recordedByMemberId) {
-    return false;
-  }
-  if (filters.paidByMemberId && txn.paidByMemberId !== filters.paidByMemberId) {
-    return false;
-  }
-  if (filters.amountMin !== undefined && txn.amountMinorUnits < filters.amountMin) return false;
-  if (filters.amountMax !== undefined && txn.amountMinorUnits > filters.amountMax) return false;
-  return true;
-}
-
-async function memberDoc(ctx: QueryCtx, memberId: Id<"members">, caches: SearchCaches) {
-  if (caches.members.has(memberId)) {
-    return caches.members.get(memberId) ?? null;
-  }
-  const member = await ctx.db.get(memberId);
-  caches.members.set(memberId, member);
-  return member;
-}
-
-async function categoryDoc(ctx: QueryCtx, categoryId: Id<"categories">, caches: SearchCaches) {
-  if (caches.categories.has(categoryId)) {
-    return caches.categories.get(categoryId) ?? null;
-  }
-  const category = await ctx.db.get(categoryId);
-  caches.categories.set(categoryId, category);
-  return category;
+function textIncludes(value: string | undefined, queryText: string) {
+  return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim().includes(queryText);
 }
 
 async function categoryLinksForTransaction(
@@ -183,19 +127,36 @@ async function categoryLinksForTransaction(
   return links;
 }
 
-function textIncludes(value: string | undefined, queryText: string) {
-  return (value ?? "").toLowerCase().includes(queryText);
-}
-
-async function matchesSearchFields(
+async function matchesFilters(
   ctx: QueryCtx,
   txn: Doc<"transactions">,
-  filters: { queryText: string; categoryIds: Set<Id<"categories">> },
+  filters: {
+    type?: "expense" | "income";
+    status?: "active" | "archived";
+    categoryIds: Set<Id<"categories">>;
+    recordedByMemberIds: Set<Id<"members">>;
+    paidByMemberIds: Set<Id<"members">>;
+    amountMin?: number;
+    amountMax?: number;
+    queryText: string;
+  },
   caches: SearchCaches,
 ) {
-  let links: Doc<"transactionCategories">[] | null = null;
+  if (filters.status && txn.status !== filters.status) return false;
+  if (filters.type && txn.type !== filters.type) return false;
+  if (
+    filters.recordedByMemberIds.size > 0 &&
+    !filters.recordedByMemberIds.has(txn.recordedByMemberId)
+  ) {
+    return false;
+  }
+  if (filters.paidByMemberIds.size > 0 && !filters.paidByMemberIds.has(txn.paidByMemberId)) {
+    return false;
+  }
+  if (filters.amountMin !== undefined && txn.amountMinorUnits < filters.amountMin) return false;
+  if (filters.amountMax !== undefined && txn.amountMinorUnits > filters.amountMax) return false;
   if (filters.categoryIds.size > 0) {
-    links = await categoryLinksForTransaction(ctx, txn._id, caches);
+    const links = await categoryLinksForTransaction(ctx, txn._id, caches);
     if (!links.some((link) => filters.categoryIds.has(link.categoryId))) {
       return false;
     }
@@ -203,49 +164,7 @@ async function matchesSearchFields(
   if (!filters.queryText) {
     return true;
   }
-
-  if (
-    textIncludes(txn.title, filters.queryText) ||
-    textIncludes(txn.note, filters.queryText) ||
-    textIncludes(txn.type, filters.queryText)
-  ) {
-    return true;
-  }
-
-  const recordedBy = await memberDoc(ctx, txn.recordedByMemberId, caches);
-  if (textIncludes(recordedBy?.displayName, filters.queryText)) {
-    return true;
-  }
-  const paidBy = await memberDoc(ctx, txn.paidByMemberId, caches);
-  if (textIncludes(paidBy?.displayName, filters.queryText)) {
-    return true;
-  }
-
-  links = links ?? (await categoryLinksForTransaction(ctx, txn._id, caches));
-  for (const link of links) {
-    const category = await categoryDoc(ctx, link.categoryId, caches);
-    if (textIncludes(category?.name, filters.queryText)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function sumTransactionTotals(txns: Doc<"transactions">[]) {
-  let incomeMinor = 0;
-  let expenseMinor = 0;
-  for (const txn of txns) {
-    if (txn.type === "income") {
-      incomeMinor += txn.amountMinorUnits;
-    } else {
-      expenseMinor += txn.amountMinorUnits;
-    }
-  }
-  return { incomeMinor, expenseMinor, netMinor: incomeMinor - expenseMinor };
-}
-
-function categoryView(category: Doc<"categories">) {
-  return { id: category._id, name: category.name, color: category.color };
+  return textIncludes(txn.title, filters.queryText) || textIncludes(txn.note, filters.queryText);
 }
 
 function applyDateRange<
@@ -270,42 +189,46 @@ function pageByWindow(
   args: {
     circleId: Id<"circles">;
     status?: "active" | "archived";
-    paidByMemberId?: Id<"members">;
-    recordedByMemberId?: Id<"members">;
+    paidByMemberIds: Set<Id<"members">>;
+    recordedByMemberIds: Set<Id<"members">>;
     start?: string;
     endExclusive?: string;
     paginationOpts: { numItems: number; cursor: string | null };
   },
 ) {
-  if (args.paidByMemberId && args.status) {
-    const paidByMemberId = args.paidByMemberId;
-    const status = args.status;
-    return ctx.db
-      .query("transactions")
-      .withIndex("by_circle_paidby_status_date", (q) => {
-        const scoped = q
-          .eq("circleId", args.circleId)
-          .eq("paidByMemberId", paidByMemberId)
-          .eq("status", status);
-        return applyDateRange(scoped, args);
-      })
-      .order("desc")
-      .paginate(args.paginationOpts);
+  if (args.paidByMemberIds.size === 1 && args.status) {
+    const paidByMemberId = args.paidByMemberIds.values().next().value;
+    if (paidByMemberId) {
+      const status = args.status;
+      return ctx.db
+        .query("transactions")
+        .withIndex("by_circle_paidby_status_date", (q) => {
+          const scoped = q
+            .eq("circleId", args.circleId)
+            .eq("paidByMemberId", paidByMemberId)
+            .eq("status", status);
+          return applyDateRange(scoped, args);
+        })
+        .order("desc")
+        .paginate(args.paginationOpts);
+    }
   }
-  if (args.recordedByMemberId && args.status) {
-    const recordedByMemberId = args.recordedByMemberId;
-    const status = args.status;
-    return ctx.db
-      .query("transactions")
-      .withIndex("by_circle_recordedby_status_date", (q) => {
-        const scoped = q
-          .eq("circleId", args.circleId)
-          .eq("recordedByMemberId", recordedByMemberId)
-          .eq("status", status);
-        return applyDateRange(scoped, args);
-      })
-      .order("desc")
-      .paginate(args.paginationOpts);
+  if (args.recordedByMemberIds.size === 1 && args.status) {
+    const recordedByMemberId = args.recordedByMemberIds.values().next().value;
+    if (recordedByMemberId) {
+      const status = args.status;
+      return ctx.db
+        .query("transactions")
+        .withIndex("by_circle_recordedby_status_date", (q) => {
+          const scoped = q
+            .eq("circleId", args.circleId)
+            .eq("recordedByMemberId", recordedByMemberId)
+            .eq("status", status);
+          return applyDateRange(scoped, args);
+        })
+        .order("desc")
+        .paginate(args.paginationOpts);
+    }
   }
   if (args.status) {
     const status = args.status;
@@ -335,18 +258,17 @@ async function collectTransactionViews(
     viewerMemberId: Id<"members">;
     viewerIsOwner: boolean;
     status?: "active" | "archived";
-    paidByMemberId: Id<"members"> | null;
-    recordedByMemberId: Id<"members"> | null;
+    paidByMemberIds: Set<Id<"members">>;
+    recordedByMemberIds: Set<Id<"members">>;
     start?: string;
     endExclusive?: string;
     paginationOpts: { numItems: number; cursor: string | null };
     filters: {
       type?: "expense" | "income";
+      categoryIds: Set<Id<"categories">>;
       amountMin?: number;
       amountMax?: number;
-      archived: "exclude" | "include" | "only";
       queryText: string;
-      categoryIds: Set<Id<"categories">>;
     };
   },
 ) {
@@ -358,15 +280,14 @@ async function collectTransactionViews(
   const searchCaches = newSearchCaches();
 
   while (page.length < args.paginationOpts.numItems && !isDone) {
-    const remaining = args.paginationOpts.numItems - page.length;
     const source = await pageByWindow(ctx, {
       circleId: args.circleId,
       status: args.status,
-      paidByMemberId: args.paidByMemberId ?? undefined,
-      recordedByMemberId: args.recordedByMemberId ?? undefined,
+      paidByMemberIds: args.paidByMemberIds,
+      recordedByMemberIds: args.recordedByMemberIds,
       start: args.start,
       endExclusive: args.endExclusive,
-      paginationOpts: { numItems: remaining, cursor },
+      paginationOpts: { numItems: args.paginationOpts.numItems - page.length, cursor },
     });
 
     continueCursor = source.continueCursor;
@@ -378,22 +299,19 @@ async function collectTransactionViews(
 
     for (const txn of source.page) {
       if (
-        !matchesDoc(txn, {
-          type: args.filters.type,
-          recordedByMemberId: args.recordedByMemberId,
-          paidByMemberId: args.paidByMemberId,
-          amountMin: args.filters.amountMin,
-          amountMax: args.filters.amountMax,
-          archived: args.filters.archived,
-        })
-      ) {
-        continue;
-      }
-      if (
-        await matchesSearchFields(
+        await matchesFilters(
           ctx,
           txn,
-          { queryText: args.filters.queryText, categoryIds: args.filters.categoryIds },
+          {
+            type: args.filters.type,
+            status: args.status,
+            categoryIds: args.filters.categoryIds,
+            recordedByMemberIds: args.recordedByMemberIds,
+            paidByMemberIds: args.paidByMemberIds,
+            amountMin: args.filters.amountMin,
+            amountMax: args.filters.amountMax,
+            queryText: args.filters.queryText,
+          },
           searchCaches,
         )
       ) {
@@ -407,188 +325,230 @@ async function collectTransactionViews(
   return { page, isDone, continueCursor };
 }
 
-export const searchTransactions = query({
-  args: { ...searchArgs, paginationOpts: paginationOptsValidator },
+function normalizeCommonFilters(
+  ctx: QueryCtx,
+  args: {
+    type: "all" | "expense" | "income";
+    status: "active" | "archived" | "all";
+    query?: string;
+    categoryIds?: string[];
+    recordedByMemberIds?: string[];
+    paidByMemberIds?: string[];
+  },
+) {
+  const categoryIds = normalizeCategoryIds(ctx, args.categoryIds);
+  const recordedByMemberIds = normalizeMemberIds(ctx, args.recordedByMemberIds);
+  const paidByMemberIds = normalizeMemberIds(ctx, args.paidByMemberIds);
+  return {
+    type: selectedType(args.type),
+    status: selectedStatus(args.status),
+    queryText: (args.query ?? "").trim().toLowerCase().replace(/\s+/g, " "),
+    categoryIds,
+    recordedByMemberIds,
+    paidByMemberIds,
+    hasOnlyUnknownIds:
+      categoryIds.hasOnlyUnknown ||
+      recordedByMemberIds.hasOnlyUnknown ||
+      paidByMemberIds.hasOnlyUnknown,
+  };
+}
+
+export const filterLedgerTransactions = query({
+  args: {
+    ...commonFilterArgs,
+    month: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
     if (!access) {
       return emptyPage();
     }
-    const window = resolveDateWindow(args);
-    const amountMin = args.amountMin;
-    if (!window.ok || !validAmountBoundary(amountMin) || !validAmountBoundary(args.amountMax)) {
-      throw new Error("Invalid search filters");
-    }
-    if ("empty" in window && window.empty) {
+    const month = isValidPlainMonth(args.month) ? args.month : currentMonth(new Date());
+    const range = monthDateRange(month);
+    const filters = normalizeCommonFilters(ctx, args);
+    if (filters.hasOnlyUnknownIds) {
       return emptyPage();
     }
-    if (amountMin !== undefined && args.amountMax !== undefined && amountMin > args.amountMax) {
-      return emptyPage();
-    }
-
-    const mode = archivedMode(args);
-    const singleStatus = mode === "include" ? undefined : mode === "only" ? "archived" : "active";
-    const recordedByMemberId = normalizeOptionalMemberId(ctx, args.recordedByMemberId);
-    const paidByMemberId = normalizeOptionalMemberId(ctx, args.paidByMemberId);
-    const categoryIds = normalizeCategoryIds(ctx, args.categoryIds);
-    const queryText = (args.query ?? "").trim().toLowerCase();
 
     return await collectTransactionViews(ctx, {
       circleId: args.circleId,
       viewerMemberId: access.membership._id,
       viewerIsOwner: access.isOwner,
-      status: singleStatus,
-      paidByMemberId,
-      recordedByMemberId,
-      start: window.start,
-      endExclusive: window.endExclusive,
+      status: filters.status,
+      paidByMemberIds: filters.paidByMemberIds.ids,
+      recordedByMemberIds: filters.recordedByMemberIds.ids,
+      start: range.start,
+      endExclusive: range.endExclusive,
       paginationOpts: args.paginationOpts,
       filters: {
-        type: args.type,
-        amountMin,
-        amountMax: args.amountMax,
-        archived: mode,
-        queryText,
-        categoryIds,
+        type: filters.type,
+        categoryIds: filters.categoryIds.ids,
+        queryText: filters.queryText,
       },
     });
   },
 });
 
-export const getTransactionSearchMeta = query({
-  args: searchArgs,
+export const searchTransactions = query({
+  args: {
+    ...commonFilterArgs,
+    dateFrom: v.optional(v.string()),
+    dateTo: v.optional(v.string()),
+    amountMin: v.optional(v.number()),
+    amountMax: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveCircleAccess(ctx, args.circleId);
+    if (!access) {
+      return emptyPage();
+    }
+    const window = resolveSearchWindow(args);
+    if (
+      !window.ok ||
+      !validAmountBoundary(args.amountMin) ||
+      !validAmountBoundary(args.amountMax)
+    ) {
+      throw new Error("Invalid search filters");
+    }
+    if ("empty" in window && window.empty) {
+      return emptyPage();
+    }
+    if (
+      args.amountMin !== undefined &&
+      args.amountMax !== undefined &&
+      args.amountMin > args.amountMax
+    ) {
+      return emptyPage();
+    }
+
+    const filters = normalizeCommonFilters(ctx, args);
+    if (filters.hasOnlyUnknownIds) {
+      return emptyPage();
+    }
+
+    return await collectTransactionViews(ctx, {
+      circleId: args.circleId,
+      viewerMemberId: access.membership._id,
+      viewerIsOwner: access.isOwner,
+      status: filters.status,
+      paidByMemberIds: filters.paidByMemberIds.ids,
+      recordedByMemberIds: filters.recordedByMemberIds.ids,
+      start: window.start,
+      endExclusive: window.endExclusive,
+      paginationOpts: args.paginationOpts,
+      filters: {
+        type: filters.type,
+        categoryIds: filters.categoryIds.ids,
+        amountMin: args.amountMin,
+        amountMax: args.amountMax,
+        queryText: filters.queryText,
+      },
+    });
+  },
+});
+
+function orderMembers(a: Doc<"members">, b: Doc<"members">) {
+  if (a.role !== b.role) return a.role === "owner" ? -1 : 1;
+  return a.joinedAt - b.joinedAt;
+}
+
+function orderCategories(a: Doc<"categories">, b: Doc<"categories">) {
+  if (a.type !== b.type) return a.type === "expense" ? -1 : 1;
+  return a.name.localeCompare(b.name);
+}
+
+export const getLedgerFilterOptions = query({
+  args: {
+    circleId: v.id("circles"),
+    month: v.string(),
+    type: filterType,
+  },
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
     if (!access) {
       return null;
     }
-    const window = resolveDateWindow(args);
-    const amountMin = args.amountMin;
-    if (!window.ok || !validAmountBoundary(amountMin) || !validAmountBoundary(args.amountMax)) {
-      throw new Error("Invalid search filters");
-    }
-    if ("empty" in window && window.empty) {
-      return {
-        totals: zeroTotals(),
-        totalCount: 0,
-        exact: true,
-        currency: access.circle.currency,
-        categories: [],
-        recordedBy: [],
-        paidBy: [],
-      };
-    }
-    if (amountMin !== undefined && args.amountMax !== undefined && amountMin > args.amountMax) {
-      return {
-        totals: zeroTotals(),
-        totalCount: 0,
-        exact: true,
-        currency: access.circle.currency,
-        categories: [],
-        recordedBy: [],
-        paidBy: [],
-      };
-    }
-
-    const mode = archivedMode(args);
-    const singleStatus = mode === "include" ? undefined : mode === "only" ? "archived" : "active";
-    const recordedByMemberId = normalizeOptionalMemberId(ctx, args.recordedByMemberId);
-    const paidByMemberId = normalizeOptionalMemberId(ctx, args.paidByMemberId);
-    const categoryIds = normalizeCategoryIds(ctx, args.categoryIds);
-    const queryText = (args.query ?? "").trim().toLowerCase();
-    const candidatePage = await pageByWindow(ctx, {
-      circleId: args.circleId,
-      status: singleStatus,
-      paidByMemberId: paidByMemberId ?? undefined,
-      recordedByMemberId: recordedByMemberId ?? undefined,
-      start: window.start,
-      endExclusive: window.endExclusive,
-      paginationOpts: { numItems: SEARCH_META_LIMIT, cursor: null },
-    });
-
-    const caches = newSearchCaches();
-    const matches: Doc<"transactions">[] = [];
-    const categoryFacetMatches: Doc<"transactions">[] = [];
-    for (const txn of candidatePage.page) {
-      if (
-        !matchesDoc(txn, {
-          type: args.type,
-          recordedByMemberId,
-          paidByMemberId,
-          amountMin,
-          amountMax: args.amountMax,
-          archived: mode,
-        })
-      ) {
-        continue;
-      }
-
-      if (await matchesSearchFields(ctx, txn, { queryText, categoryIds: new Set() }, caches)) {
-        categoryFacetMatches.push(txn);
-      }
-
-      if (await matchesSearchFields(ctx, txn, { queryText, categoryIds }, caches)) {
-        matches.push(txn);
-      }
-    }
-
-    const recordedByIds = new Set<Id<"members">>();
-    const paidByIds = new Set<Id<"members">>();
-    for (const txn of matches) {
-      recordedByIds.add(txn.recordedByMemberId);
-      paidByIds.add(txn.paidByMemberId);
-    }
-
-    const categoryRows = await ctx.db
-      .query("categories")
-      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+    const month = isValidPlainMonth(args.month) ? args.month : currentMonth(new Date());
+    const type = selectedType(args.type);
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_circle_and_month", (q) => q.eq("circleId", args.circleId).eq("month", month))
       .collect();
-    const categoryMap = new Map<Id<"categories">, ReturnType<typeof categoryView>>();
-    for (const category of categoryRows) {
-      if (args.type && category.type !== args.type) {
-        continue;
-      }
-      if (category.status === "active") {
-        categoryMap.set(category._id, categoryView(category));
-      }
-    }
-    for (const txn of categoryFacetMatches) {
-      const links = await categoryLinksForTransaction(ctx, txn._id, caches);
-      for (const link of links) {
-        const category = await categoryDoc(ctx, link.categoryId, caches);
-        if (!category || (args.type && category.type !== args.type)) {
-          continue;
+
+    const memberIds = new Set<Id<"members">>();
+    const categoryIds = new Set<Id<"categories">>();
+    for (const txn of transactions) {
+      memberIds.add(txn.recordedByMemberId);
+      memberIds.add(txn.paidByMemberId);
+      if (!type || txn.type === type) {
+        const links = await ctx.db
+          .query("transactionCategories")
+          .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
+          .collect();
+        for (const link of links) {
+          categoryIds.add(link.categoryId);
         }
-        categoryMap.set(category._id, categoryView(category));
       }
     }
 
-    const memberRows = await ctx.db
+    const categoryDocs: Doc<"categories">[] = [];
+    for (const categoryId of categoryIds) {
+      const category = await ctx.db.get(categoryId);
+      if (category && (!type || category.type === type)) {
+        categoryDocs.push(category);
+      }
+    }
+    categoryDocs.sort(orderCategories);
+
+    const memberDocs: Doc<"members">[] = [];
+    for (const memberId of memberIds) {
+      const member = await ctx.db.get(memberId);
+      if (member) {
+        memberDocs.push(member);
+      }
+    }
+    memberDocs.sort(orderMembers);
+
+    return {
+      categories: await Promise.all(categoryDocs.map((category) => toCategoryView(ctx, category))),
+      members: memberDocs.map((member) => toMemberView(member, access.membership._id)),
+    };
+  },
+});
+
+export const getTransactionSearchOptions = query({
+  args: {
+    circleId: v.id("circles"),
+    type: filterType,
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveCircleAccess(ctx, args.circleId);
+    if (!access) {
+      return null;
+    }
+    const type = selectedType(args.type);
+    const categories = type
+      ? await ctx.db
+          .query("categories")
+          .withIndex("by_circle_and_type", (q) => q.eq("circleId", args.circleId).eq("type", type))
+          .collect()
+      : await ctx.db
+          .query("categories")
+          .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+          .collect();
+    categories.sort(orderCategories);
+
+    const members = await ctx.db
       .query("members")
       .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
       .collect();
-    const orderMembers = (a: Doc<"members">, b: Doc<"members">) => {
-      if (a.status !== b.status) return a.status === "active" ? -1 : 1;
-      if (a.role !== b.role) return a.role === "owner" ? -1 : 1;
-      return a.joinedAt - b.joinedAt;
-    };
-    const recordedBy = memberRows
-      .filter((member) => member.status === "active" || recordedByIds.has(member._id))
-      .sort(orderMembers)
-      .map((member) => toMemberView(member, access.membership._id));
-    const paidBy = memberRows
-      .filter((member) => member.status === "active" || paidByIds.has(member._id))
-      .sort(orderMembers)
-      .map((member) => toMemberView(member, access.membership._id));
+    members.sort(orderMembers);
 
     return {
-      totals: sumTransactionTotals(matches),
-      totalCount: matches.length,
-      exact: candidatePage.isDone,
-      currency: access.circle.currency,
-      categories: [...categoryMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
-      recordedBy,
-      paidBy,
+      categories: await Promise.all(categories.map((category) => toCategoryView(ctx, category))),
+      members: members.map((member) => toMemberView(member, access.membership._id)),
     };
   },
 });

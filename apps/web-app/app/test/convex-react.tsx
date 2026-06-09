@@ -13,8 +13,8 @@ import type {
   PaginationStatus,
   Transaction,
   TransactionDetail,
+  TransactionFilterOptions,
   TransactionHistoryEvent,
-  TransactionSearchMeta,
 } from "~/lib/data.js";
 import { SnackbarProvider } from "~/lib/snackbar.js";
 import type { CircleOutletContext } from "~/routes/layouts/circle-layout.js";
@@ -53,8 +53,10 @@ const NAME = {
   getEditableTransaction: getFunctionName(api.transactions.getEditableTransaction),
   getTransaction: getFunctionName(api.transactions.getTransaction),
   listTransactionHistory: getFunctionName(api.transactions.listTransactionHistory),
+  filterLedgerTransactions: getFunctionName(api.search.filterLedgerTransactions),
   searchTransactions: getFunctionName(api.search.searchTransactions),
-  getTransactionSearchMeta: getFunctionName(api.search.getTransactionSearchMeta),
+  getLedgerFilterOptions: getFunctionName(api.search.getLedgerFilterOptions),
+  getTransactionSearchOptions: getFunctionName(api.search.getTransactionSearchOptions),
   getMonthlyLedger: getFunctionName(api.ledger.getMonthlyLedger),
   getDashboard: getFunctionName(api.dashboard.getDashboard),
   getPaidByFilterOptions: getFunctionName(api.dashboard.getPaidByFilterOptions),
@@ -107,9 +109,12 @@ interface ConvexState {
   /** `getMonthlyLedger` summary (totals + currency); `undefined` ≡ loading, `null` ≡
    * inaccessible Circle. Defaults to a zero summary so the totals header renders. */
   monthlySummary?: MonthlySummary | null;
+  ledgerFilterTransactions?: Transaction[];
+  ledgerFilterStatus?: PaginationStatus;
   searchTransactions?: Transaction[];
   searchStatus?: PaginationStatus;
-  searchMeta?: TransactionSearchMeta | null;
+  ledgerFilterOptions?: TransactionFilterOptions | null;
+  transactionSearchOptions?: TransactionFilterOptions | null;
   /** `getDashboard` result; `undefined` ≡ loading, `null` ≡ inaccessible Circle.
    * Defaults to a zero Dashboard so the totals cards render. A function resolves per
    * query args (e.g. by `paidByMemberId`) so a test can model the Paid By filter
@@ -175,9 +180,12 @@ export function configureConvex(state: ConvexState = {}) {
     transactionsStatus = "Exhausted",
     loadMore = () => {},
     monthlySummary = EMPTY_MONTHLY_SUMMARY,
+    ledgerFilterTransactions = [],
+    ledgerFilterStatus = "Exhausted",
     searchTransactions = [],
     searchStatus = "Exhausted",
-    searchMeta,
+    ledgerFilterOptions,
+    transactionSearchOptions,
     dashboard = EMPTY_DASHBOARD,
     paidByFilterOptions,
     // No default: absent ≡ `undefined` ≡ loading (the codebase's reactive-query
@@ -207,8 +215,10 @@ export function configureConvex(state: ConvexState = {}) {
           return members;
         case NAME.getMonthlyLedger:
           return monthlySummary;
-        case NAME.getTransactionSearchMeta:
-          return searchMeta;
+        case NAME.getLedgerFilterOptions:
+          return ledgerFilterOptions;
+        case NAME.getTransactionSearchOptions:
+          return transactionSearchOptions;
         case NAME.getDashboard:
           return typeof dashboard === "function" ? dashboard(args) : dashboard;
         case NAME.getPaidByFilterOptions:
@@ -236,6 +246,9 @@ export function configureConvex(state: ConvexState = {}) {
       // The Transaction History list (TXN-4) is its own paginated query.
       if (name === NAME.listTransactionHistory) {
         return { results: transactionHistory, status: historyStatus, loadMore: historyLoadMore };
+      }
+      if (name === NAME.filterLedgerTransactions) {
+        return { results: ledgerFilterTransactions, status: ledgerFilterStatus, loadMore };
       }
       if (name === NAME.searchTransactions) {
         return { results: searchTransactions, status: searchStatus, loadMore };

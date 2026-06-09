@@ -51,7 +51,7 @@ export default function ProtectedLayout() {
           )}
         </div>
       </header>
-      <main className="flex-1 px-4 py-6">
+      <main className="flex-1 px-4 pb-24 pt-6 sm:pb-6">
         <Outlet />
       </main>
     </div>

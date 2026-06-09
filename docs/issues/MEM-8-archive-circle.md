@@ -62,5 +62,5 @@ revocation, and ensures the UI reacts live.
 
 ## Out of scope
 
-Deleting an empty Circle (MEM-9); the archive-only search filter (RPT-2).
+Deleting an empty Circle (MEM-9); Transaction lifecycle filters (RPT-2).
 </content>

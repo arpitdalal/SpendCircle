@@ -3,12 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { Splash } from "~/components/splash.js";
 import { Button } from "~/components/ui/button.js";
-import {
-  type Circle,
-  type TransactionDetail,
-  type TransactionStatus,
-  useTransactionHistory,
-} from "~/lib/data.js";
+import { type Circle, type TransactionDetail, useTransactionHistory } from "~/lib/data.js";
 import { formatAuditTimestamp } from "~/lib/datetime.js";
 import { editSearch, ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
@@ -55,23 +50,17 @@ function TransactionDetailView({
   const writable = circle.status === "active";
   const isArchived = transaction.status === "archived";
 
-  // Preserve the ledger slice the user opened this from — the selected month and the
-  // active/archived view (ADR 0017) — so Back returns to THAT slice, not the default
-  // current-month active ledger. The ledger row passed these on the detail link; an
-  // invalid/absent month falls through to the bare ledger (which normalizes), and only
-  // an explicit `view=archived` is carried (active is the default).
+  // Preserve only the selected ledger month. Ledger filters are intentionally not
+  // carried into object routes until redirectTo support lands.
   const rawMonth = searchParams.get("month");
   const month = isValidPlainMonth(rawMonth) ? rawMonth : undefined;
-  const status: TransactionStatus | undefined =
-    searchParams.get("view") === "archived" ? "archived" : undefined;
   const ledgerBase = `/circles/${circle.ref}/transactions`;
-  const ledgerUrl = withQuery(ledgerBase, ledgerSearch({ month, status }));
-  // The edit link carries THIS detail's slice (month + view) plus `from=detail`, so the
-  // editor returns here on close (not the ledger) and this page's own Back link still
-  // points at the same ledger slice it was opened from.
+  const ledgerUrl = withQuery(ledgerBase, ledgerSearch({ month }));
+  // The edit link carries THIS detail's month plus `from=detail`, so the editor
+  // returns here on close and this page's Back link still points at the same month.
   const editUrl = withQuery(
     `${ledgerBase}/${transaction.ref}/edit`,
-    editSearch({ month, status, from: "detail" }),
+    editSearch({ month, from: "detail" }),
   );
 
   return (

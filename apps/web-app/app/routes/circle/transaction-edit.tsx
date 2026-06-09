@@ -17,7 +17,7 @@ import { useCircle } from "~/routes/layouts/circle-layout.js";
  * preserved.
  *
  * This route never reads the edit URL's `month`: an edit has no month of its own (its date
- * comes from the saved Transaction). The `month`/`view` slice is just ledger context the
+ * comes from the saved Transaction). The `month` param is just ledger context the
  * close carries BACK untouched. Where close (cancel or successful save) and the archived
  * redirect land is the `from` marker: `from=detail` (the detail page's Edit link) strips
  * only the `/edit` segment to return to this Transaction's detail page, so Detail → Edit →
@@ -41,8 +41,11 @@ export default function TransactionEdit() {
   // The query carries back verbatim (minus the edit-only `from` marker), so an absent slice
   // stays absent. `from=detail` lands on this Transaction's detail object route (drop only
   // `/edit`); the default lands on the ledger (drop `/:transactionRef/edit`).
-  const returnSlice = new URLSearchParams(searchParams);
-  returnSlice.delete(EDIT_RETURN_PARAM);
+  const returnSlice = new URLSearchParams();
+  const month = searchParams.get("month");
+  if (month) {
+    returnSlice.set("month", month);
+  }
   const ledgerBase = `/circles/${circle.ref}/transactions`;
   const returnBase =
     parseEditReturn(searchParams.get(EDIT_RETURN_PARAM)) === "detail"
