@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done · [PR #79](https://github.com/arpitdalal/SpendCircle/pull/79) |
 | **Labels** | `area:reporting`, `backend`, `ui` |
 | **Depends on** | TXN-1, RPT-1 |
 | **PRD stories** | 41, 65, 66, 67 |
