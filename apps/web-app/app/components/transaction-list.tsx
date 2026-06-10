@@ -158,6 +158,10 @@ function LifecycleButton({
     } catch (error) {
       console.error(`${action}Transaction failed`, error);
       show(`${copy.error} Please try again.`);
+    } finally {
+      // Always clear the in-flight flag. On success the row stays mounted in a mixed
+      // `status=all` list and `action` flips with the new `status`, so leaving `pending`
+      // set would strand the button on the opposite action's busy label (issue #82).
       setPending(false);
     }
   };
