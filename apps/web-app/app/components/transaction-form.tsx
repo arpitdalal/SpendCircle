@@ -618,7 +618,7 @@ export function TransactionForm({
       {/* Primary save and a ghost Cancel sit together as the form's action row, so Cancel
           reads as a button colocated with Save rather than a link floating in the header. */}
       <form.Subscribe selector={(state) => state.isSubmitting}>
-        {(isSubmitting: boolean) => (
+        {(isSubmitting) => (
           <div className="flex scroll-mb-28 items-center gap-2 pt-2">
             <Button type="submit" disabled={isSubmitting} className="scroll-mb-28">
               {isSubmitting

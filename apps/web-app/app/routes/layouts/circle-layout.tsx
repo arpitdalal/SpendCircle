@@ -67,7 +67,7 @@ export default function CircleLayout() {
             key={tab.to}
             to={tab.to}
             end={tab.end}
-            className={({ isActive }: { isActive: boolean }) =>
+            className={({ isActive }) =>
               cn(
                 "shrink-0 border-b-2 px-3 py-2 text-sm",
                 isActive
