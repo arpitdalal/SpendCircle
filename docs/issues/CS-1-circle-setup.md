@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done · [PR #87](https://github.com/arpitdalal/SpendCircle/pull/87) |
 | **Labels** | `area:circles`, `backend`, `ui` |
 | **Depends on** | CS-0, CAT-1 |
 | **Unlocks** | — |
