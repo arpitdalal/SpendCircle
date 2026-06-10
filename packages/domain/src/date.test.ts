@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   addMonths,
+  COMPARISON_RANGE_OPTIONS,
+  type ComparisonRangeMonths,
+  comparisonWindowMonths,
   currentMonth,
+  DEFAULT_COMPARISON_RANGE_MONTHS,
   defaultDateInMonth,
+  isComparisonRangeMonths,
   isValidPlainDate,
   isValidPlainMonth,
   monthOf,
@@ -65,6 +70,61 @@ describe("month helpers", () => {
 describe("toPlainDate", () => {
   it("formats a Date using local parts", () => {
     expect(toPlainDate(new Date(2026, 4, 9))).toBe("2026-05-09");
+  });
+});
+
+describe("Comparison Range (RPT-4)", () => {
+  it("offers exactly 1, 3, 6, and 12 months, defaulting to 6 (glossary)", () => {
+    expect(COMPARISON_RANGE_OPTIONS).toEqual([1, 3, 6, 12]);
+    expect(DEFAULT_COMPARISON_RANGE_MONTHS).toBe(6);
+    expect(COMPARISON_RANGE_OPTIONS).toContain(DEFAULT_COMPARISON_RANGE_MONTHS);
+  });
+
+  it("narrows an arbitrary number to a supported range", () => {
+    expect(isComparisonRangeMonths(6)).toBe(true);
+    expect(isComparisonRangeMonths(12)).toBe(true);
+    expect(isComparisonRangeMonths(2)).toBe(false);
+    expect(isComparisonRangeMonths(0)).toBe(false);
+    expect(isComparisonRangeMonths(-6)).toBe(false);
+  });
+
+  it("builds the chronological window of N months ENDING at the end month", () => {
+    expect(comparisonWindowMonths("2026-06", 1)).toEqual(["2026-06"]);
+    expect(comparisonWindowMonths("2026-06", 3)).toEqual(["2026-04", "2026-05", "2026-06"]);
+    expect(comparisonWindowMonths("2026-06", 6)).toEqual([
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+    ]);
+  });
+
+  it("spans year boundaries correctly", () => {
+    expect(comparisonWindowMonths("2026-02", 6)).toEqual([
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+    ]);
+    const yearWindow: ComparisonRangeMonths = 12;
+    expect(comparisonWindowMonths("2026-01", yearWindow)).toEqual([
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+    ]);
   });
 });
 

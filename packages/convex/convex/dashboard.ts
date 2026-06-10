@@ -1,4 +1,4 @@
-import { currentMonth, isValidPlainMonth } from "@spend-circle/domain";
+import { comparisonWindowMonths, currentMonth, isValidPlainMonth } from "@spend-circle/domain";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel.js";
 import { query } from "./_generated/server.js";
@@ -89,6 +89,68 @@ export const getDashboard = query({
       currency: access.circle.currency,
       month,
     };
+  },
+});
+
+/**
+ * The Dashboard's month-over-month comparison series (RPT-4; PRD stories 70, 71, 72):
+ * one entry per month of the Comparison Range — `rangeMonths` months (1/3/6/12, the
+ * glossary's only windows, enforced by the literal validator) ending at `endMonth`
+ * inclusive — each with that month's active Income / Expense / Net **in minor units**
+ * (ADR 0009; the chart only formats, never sums). The series is chronological and
+ * zero-filled by construction: `comparisonWindowMonths` (domain) builds the full
+ * ascending window via `addMonths`/`monthRange` so year boundaries are correct and a
+ * month with no Transactions reduces to zeros rather than a gap.
+ *
+ * `endMonth` defaults to the current month (server clock) when omitted; the route
+ * passes the User's local current month, mirroring `getDashboard`. An explicit
+ * malformed month throws, mirroring the Ledger.
+ *
+ * `paidByMemberId` narrows EVERY month of the series the same way the Dashboard
+ * totals narrow (PRD 69) — a Removed Member's id is accepted (their history still
+ * counts), and an id naming no Member of this Circle matches nothing (an all-zero
+ * series), leaking nothing about it.
+ *
+ * Each month is read through {@link collectMonthActiveTransactions} — the shared
+ * bounded, index-backed Circle-month read (README §4) — and reduced by
+ * {@link sumMonthTotals}, so the comparison can never disagree with the Ledger or
+ * the Dashboard about what a month contains. At most 12 single-month indexed range
+ * reads, fetched in parallel.
+ *
+ * Anti-enumeration (ADR 0016): an inaccessible or missing Circle returns `null`,
+ * indistinguishable from each other.
+ */
+export const getMonthlyComparison = query({
+  args: {
+    circleId: v.id("circles"),
+    endMonth: v.optional(v.string()),
+    rangeMonths: v.union(v.literal(1), v.literal(3), v.literal(6), v.literal(12)),
+    paidByMemberId: v.optional(v.id("members")),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveCircleAccess(ctx, args.circleId);
+    if (!access) {
+      return null;
+    }
+
+    const endMonth = args.endMonth ?? currentMonth(new Date());
+    if (!isValidPlainMonth(endMonth)) {
+      throw new Error("Invalid month");
+    }
+
+    const series = await Promise.all(
+      comparisonWindowMonths(endMonth, args.rangeMonths).map(async (month) => {
+        const monthTxns = await collectMonthActiveTransactions(
+          ctx,
+          args.circleId,
+          month,
+          args.paidByMemberId,
+        );
+        return { month, ...sumMonthTotals(monthTxns) };
+      }),
+    );
+
+    return { series, currency: access.circle.currency };
   },
 });
 

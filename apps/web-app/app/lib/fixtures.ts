@@ -1,8 +1,14 @@
+import {
+  type ComparisonRangeMonths,
+  comparisonWindowMonths,
+  type PlainMonth,
+} from "@spend-circle/domain";
 import type {
   Category,
   Circle,
   Dashboard,
   Member,
+  MonthlyComparison,
   MonthlySummary,
   Transaction,
   TransactionDetail,
@@ -155,6 +161,27 @@ export const MOCK_DASHBOARD: Dashboard = {
   currency: "USD",
   month: "2026-06",
 };
+
+/**
+ * Synthesizes the month-over-month comparison series for the requested Comparison
+ * Range under MOCKS (RPT-4), so the Dashboard chart renders offline and the range
+ * selector visibly reshapes the window (ADR 0006). Typed against the derived
+ * {@link MonthlyComparison} contract, so a shape change to `getMonthlyComparison`
+ * fails typecheck here. Amounts are deterministic per month index (no randomness)
+ * and include an expense-heavy month so the negative-net rendering is exercised.
+ */
+export function mockMonthlyComparison(
+  endMonth: PlainMonth,
+  rangeMonths: ComparisonRangeMonths,
+): MonthlyComparison {
+  const series = comparisonWindowMonths(endMonth, rangeMonths).map((month, index) => {
+    const incomeMinor = 400_000 + index * 25_000;
+    // Every third month spends past its income, so net flips negative in-fixture.
+    const expenseMinor = index % 3 === 2 ? incomeMinor + 50_000 : 210_000 + index * 10_000;
+    return { month, incomeMinor, expenseMinor, netMinor: incomeMinor - expenseMinor };
+  });
+  return { series, currency: "USD" };
+}
 
 export function mockCircle(id: string): Circle {
   return {

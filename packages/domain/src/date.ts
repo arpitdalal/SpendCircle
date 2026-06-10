@@ -68,6 +68,33 @@ export function addMonths(month: PlainMonth, delta: number): PlainMonth {
   return `${newYear.toString().padStart(4, "0")}-${newMonth.toString().padStart(2, "0")}`;
 }
 
+/**
+ * The Comparison Range (CONTEXT glossary): the Dashboard's month-over-month window
+ * is 1, 3, 6, or 12 months and defaults to six. One definition shared by the
+ * backend (arg validation) and the UI (the range selector) so neither can offer or
+ * accept a window the other doesn't understand.
+ */
+export const COMPARISON_RANGE_OPTIONS = [1, 3, 6, 12] as const;
+export type ComparisonRangeMonths = (typeof COMPARISON_RANGE_OPTIONS)[number];
+export const DEFAULT_COMPARISON_RANGE_MONTHS = 6 as const satisfies ComparisonRangeMonths;
+
+export function isComparisonRangeMonths(value: number): value is ComparisonRangeMonths {
+  return (COMPARISON_RANGE_OPTIONS as readonly number[]).includes(value);
+}
+
+/**
+ * The chronological window of `rangeMonths` months ENDING at `endMonth` (inclusive)
+ * — the month buckets a Comparison Range covers. Built on `addMonths`/`monthRange`
+ * so year-boundary spans are correct, and ascending so a series derived from it is
+ * chronological by construction.
+ */
+export function comparisonWindowMonths(
+  endMonth: PlainMonth,
+  rangeMonths: ComparisonRangeMonths,
+): PlainMonth[] {
+  return monthRange(addMonths(endMonth, -(rangeMonths - 1)), endMonth);
+}
+
 /** Inclusive list of months between two months, ascending. */
 export function monthRange(from: PlainMonth, to: PlainMonth): PlainMonth[] {
   const months: PlainMonth[] = [];

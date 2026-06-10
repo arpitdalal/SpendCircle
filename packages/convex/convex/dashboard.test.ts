@@ -447,6 +447,370 @@ describe("getDashboard — isolation & access (ADR 0016)", () => {
   });
 });
 
+describe("getMonthlyComparison — series math (RPT-4)", () => {
+  it("returns a chronological per-month series of income/expense/net in minor units", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, {
+        type: "income",
+        amountMinorUnits: 500_000,
+        date: "2026-04-05",
+        categoryIds: [f.salaryId],
+      });
+      await seedTransaction(ctx, f, { amountMinorUnits: 1_250, date: "2026-04-10" });
+      await seedTransaction(ctx, f, { amountMinorUnits: 7_500, date: "2026-05-20" });
+      await seedTransaction(ctx, f, {
+        type: "income",
+        amountMinorUnits: 2_000,
+        date: "2026-06-01",
+        categoryIds: [f.salaryId],
+      });
+      await seedTransaction(ctx, f, { amountMinorUnits: 9_000, date: "2026-06-02" });
+    });
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 3,
+    });
+    expect(comparison?.series).toEqual([
+      { month: "2026-04", incomeMinor: 500_000, expenseMinor: 1_250, netMinor: 498_750 },
+      { month: "2026-05", incomeMinor: 0, expenseMinor: 7_500, netMinor: -7_500 },
+      { month: "2026-06", incomeMinor: 2_000, expenseMinor: 9_000, netMinor: -7_000 },
+    ]);
+    expect(comparison?.currency).toBe("USD");
+  });
+
+  it("zero-fills months with no transactions — no gaps in the series", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    // Only the first and last months of the window have activity.
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { amountMinorUnits: 100, date: "2026-01-15" });
+      await seedTransaction(ctx, f, { amountMinorUnits: 200, date: "2026-06-15" });
+    });
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 6,
+    });
+    expect(comparison?.series.map((entry) => entry.month)).toEqual([
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+    ]);
+    expect(comparison?.series.map((entry) => entry.expenseMinor)).toEqual([100, 0, 0, 0, 0, 200]);
+    expect(comparison?.series[1]).toEqual({
+      month: "2026-02",
+      incomeMinor: 0,
+      expenseMinor: 0,
+      netMinor: 0,
+    });
+  });
+
+  it("excludes archived transactions and months outside the window", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-06-10" });
+      await seedTransaction(ctx, f, {
+        amountMinorUnits: 9_999,
+        date: "2026-06-11",
+        status: "archived",
+      });
+      // Before the window start and after the end month — neither may appear.
+      await seedTransaction(ctx, f, { amountMinorUnits: 5_000, date: "2026-03-31" });
+      await seedTransaction(ctx, f, { amountMinorUnits: 5_000, date: "2026-07-01" });
+    });
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 3,
+    });
+    expect(comparison?.series.map((entry) => entry.expenseMinor)).toEqual([0, 0, 1_000]);
+  });
+
+  it.each([
+    1, 3, 6, 12,
+  ] as const)("a %i-month range produces exactly that many months ending at endMonth", async (rangeMonths) => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths,
+    });
+    expect(comparison?.series).toHaveLength(rangeMonths);
+    expect(comparison?.series.at(-1)?.month).toBe("2026-06");
+  });
+
+  it("spans a year boundary correctly", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) => seedTransaction(ctx, f, { amountMinorUnits: 700, date: "2025-12-31" }));
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-02",
+      rangeMonths: 6,
+    });
+    expect(comparison?.series.map((entry) => entry.month)).toEqual([
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+    ]);
+    expect(comparison?.series[3]?.expenseMinor).toBe(700);
+  });
+
+  it("defaults endMonth to the current month when omitted", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const now = currentMonth(new Date());
+    await t.run((ctx) => seedTransaction(ctx, f, { amountMinorUnits: 333, date: `${now}-15` }));
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      rangeMonths: 6,
+    });
+    expect(comparison?.series.at(-1)?.month).toBe(now);
+    expect(comparison?.series.at(-1)?.expenseMinor).toBe(333);
+  });
+
+  it("rejects a malformed endMonth", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await expect(
+      t.query(api.dashboard.getMonthlyComparison, {
+        circleId: f.circleId,
+        endMonth: "2026-13",
+        rangeMonths: 6,
+      }),
+    ).rejects.toThrow(/invalid month/i);
+  });
+
+  it("rejects an unsupported rangeMonths at the validator", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await expect(
+      t.query(api.dashboard.getMonthlyComparison, {
+        circleId: f.circleId,
+        endMonth: "2026-06",
+        // @ts-expect-error — 2 is not a Comparison Range; the validator must refuse it.
+        rangeMonths: 2,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("returns the Circle Currency for edge formatting", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx, { currency: "EUR" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 1,
+    });
+    expect(comparison?.currency).toBe("EUR");
+  });
+});
+
+describe("getMonthlyComparison — Paid By filter (PRD 69)", () => {
+  it("narrows every month of the series to one member; default is everyone", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-05-05" });
+      await seedTransaction(ctx, f, {
+        amountMinorUnits: 2_500,
+        date: "2026-05-06",
+        paidByMemberId: alex.memberId,
+      });
+      await seedTransaction(ctx, f, {
+        amountMinorUnits: 4_000,
+        date: "2026-06-06",
+        paidByMemberId: alex.memberId,
+      });
+    });
+
+    const all = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 3,
+    });
+    expect(all?.series.map((entry) => entry.expenseMinor)).toEqual([0, 3_500, 4_000]);
+
+    const onlyAlex = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 3,
+      paidByMemberId: alex.memberId,
+    });
+    expect(onlyAlex?.series.map((entry) => entry.expenseMinor)).toEqual([0, 2_500, 4_000]);
+  });
+
+  it("filters to a Removed Member who is Paid By on matching transactions", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const rae = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "rae@example.com", "Rae Removed", "removed"),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-06-05" });
+      await seedTransaction(ctx, f, {
+        amountMinorUnits: 4_200,
+        date: "2026-06-06",
+        paidByMemberId: rae.memberId,
+      });
+    });
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 1,
+      paidByMemberId: rae.memberId,
+    });
+    expect(comparison?.series).toEqual([
+      { month: "2026-06", incomeMinor: 0, expenseMinor: 4_200, netMinor: -4_200 },
+    ]);
+  });
+
+  it("returns an all-zero series for a member id naming no member of this circle", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const other = await t.run((ctx) => seedFixture(ctx, { currency: "EUR" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) => seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-06-05" }));
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 3,
+      paidByMemberId: other.ownerMemberId,
+    });
+    expect(comparison?.series.every((entry) => entry.netMinor === 0)).toBe(true);
+  });
+});
+
+describe("getMonthlyComparison — isolation & access (ADR 0016)", () => {
+  it("never includes a transaction from another Circle", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const other = await t.run((ctx) => seedFixture(ctx, { currency: "EUR" }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { amountMinorUnits: 100, date: "2026-06-05" });
+      await seedTransaction(ctx, other, { amountMinorUnits: 9_999, date: "2026-06-05" });
+    });
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 1,
+    });
+    expect(comparison?.series[0]?.expenseMinor).toBe(100);
+  });
+
+  it("returns null for a non-member", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+    mockCurrentUser.mockResolvedValue(stranger);
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 6,
+    });
+    expect(comparison).toBeNull();
+  });
+
+  it("returns null for a removed member and an unauthenticated caller", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const removed = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "r@example.com", "Rae Removed", "removed"),
+    );
+
+    mockCurrentUser.mockResolvedValue(removed.user);
+    expect(
+      await t.query(api.dashboard.getMonthlyComparison, {
+        circleId: f.circleId,
+        endMonth: "2026-06",
+        rangeMonths: 6,
+      }),
+    ).toBeNull();
+
+    mockCurrentUser.mockResolvedValue(null);
+    expect(
+      await t.query(api.dashboard.getMonthlyComparison, {
+        circleId: f.circleId,
+        endMonth: "2026-06",
+        rangeMonths: 6,
+      }),
+    ).toBeNull();
+  });
+
+  it("is readable (view-only) for a member of an archived Circle", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx, { archived: true }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) => seedTransaction(ctx, f, { amountMinorUnits: 5_000, date: "2026-06-09" }));
+
+    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 1,
+    });
+    expect(comparison?.series[0]?.expenseMinor).toBe(5_000);
+  });
+
+  it("reflects a transaction archived live: its month drops to zero", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const txnId = await t.run((ctx) =>
+      seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-06-10" }),
+    );
+
+    const before = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 1,
+    });
+    expect(before?.series[0]?.expenseMinor).toBe(1_000);
+
+    await t.run((ctx) => ctx.db.patch(txnId, { status: "archived" }));
+
+    const after = await t.query(api.dashboard.getMonthlyComparison, {
+      circleId: f.circleId,
+      endMonth: "2026-06",
+      rangeMonths: 1,
+    });
+    expect(after?.series[0]?.expenseMinor).toBe(0);
+  });
+});
+
 describe("getPaidByFilterOptions", () => {
   it("returns current members (owner first) by default", async () => {
     const t = convexTest(schema, modules);

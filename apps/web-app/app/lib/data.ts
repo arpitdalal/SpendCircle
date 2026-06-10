@@ -1,5 +1,5 @@
 import { api } from "@spend-circle/convex";
-import type { PlainMonth, TransactionType } from "@spend-circle/domain";
+import type { ComparisonRangeMonths, PlainMonth, TransactionType } from "@spend-circle/domain";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "./env.js";
@@ -11,6 +11,7 @@ import {
   MOCK_MONTHLY_SUMMARY,
   MOCK_TRANSACTION_HISTORY,
   MOCK_TRANSACTIONS,
+  mockMonthlyComparison,
 } from "./fixtures.js";
 
 /**
@@ -364,6 +365,49 @@ export function useDashboard(
         },
   );
   return MOCKS ? MOCK_DASHBOARD : queried;
+}
+
+/**
+ * The Dashboard's month-over-month comparison view contract, derived from
+ * `getMonthlyComparison` so it can't drift from the backend (ADR 0003): a
+ * chronological, zero-filled per-month series of Income / Expense / Net in minor
+ * units plus the Circle Currency. `null` ≡ inaccessible Circle (ADR 0016);
+ * `undefined` while loading.
+ */
+export type MonthlyComparison = NonNullable<
+  FunctionReturnType<typeof api.dashboard.getMonthlyComparison>
+>;
+export type MonthlyComparisonEntry = MonthlyComparison["series"][number];
+
+/**
+ * The Dashboard's month-over-month comparison (RPT-4): `rangeMonths` months (a
+ * Comparison Range — 1/3/6/12) ending at `endMonth`, optionally narrowed to one
+ * Member via the same Paid By filter the totals use, so the chart and the cards
+ * always describe the same activity. `undefined` while loading; `null` for an
+ * inaccessible Circle (the guard ejects before this renders). Mock mode derives a
+ * deterministic fixture series for the requested window and skips the backend
+ * (ADR 0006).
+ */
+export function useMonthlyComparison(
+  circleId: Circle["id"],
+  options: {
+    endMonth: PlainMonth;
+    rangeMonths: ComparisonRangeMonths;
+    paidByMemberId?: Member["id"];
+  },
+) {
+  const queried = useQuery(
+    api.dashboard.getMonthlyComparison,
+    MOCKS
+      ? "skip"
+      : {
+          circleId,
+          endMonth: options.endMonth,
+          rangeMonths: options.rangeMonths,
+          ...(options.paidByMemberId ? { paidByMemberId: options.paidByMemberId } : {}),
+        },
+  );
+  return MOCKS ? mockMonthlyComparison(options.endMonth, options.rangeMonths) : queried;
 }
 
 /**
