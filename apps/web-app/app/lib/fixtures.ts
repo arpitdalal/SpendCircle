@@ -33,6 +33,7 @@ export const MOCK_CIRCLES: Circle[] = [
     color: "blue",
     mark: "P",
     status: "active",
+    setupAnswers: undefined,
     currencyLocked: false,
   },
 ];
@@ -193,6 +194,7 @@ export function mockCircle(id: string): Circle {
     color: "blue",
     mark: "M",
     status: "active",
+    setupAnswers: undefined,
     currencyLocked: false,
   };
 }

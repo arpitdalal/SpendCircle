@@ -39,6 +39,7 @@ function setup(opts: { circle?: Partial<Circle>; categories?: Category[] | null 
     color: "blue",
     mark: "T",
     status: "active",
+    setupAnswers: undefined,
     currencyLocked: false,
     ...opts.circle,
   };

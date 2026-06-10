@@ -1,8 +1,8 @@
 import { categoryInputSchema, colorLabel } from "@spend-circle/domain";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel.js";
-import { mutation, type QueryCtx, query } from "./_generated/server.js";
-import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
+import { type MutationCtx, mutation, type QueryCtx, query } from "./_generated/server.js";
+import { type AuthorizedCircle, requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import { categoryEntity, recordEvent } from "./history.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
@@ -35,6 +35,64 @@ export async function toCategoryView(ctx: QueryCtx, category: Doc<"categories">)
 }
 
 export type CategoryView = Awaited<ReturnType<typeof toCategoryView>>;
+
+interface CreateCategoryForMemberArgs {
+  access: AuthorizedCircle;
+  name: string;
+  type: "expense" | "income";
+  color: string;
+  duplicate: "throw" | "skip";
+}
+
+export async function createCategoryForMember(ctx: MutationCtx, args: CreateCategoryForMemberArgs) {
+  const input = categoryInputSchema.parse({
+    name: args.name,
+    type: args.type,
+    color: args.color,
+  });
+  const nameLower = input.name.toLowerCase();
+
+  // Uniqueness across ALL statuses — archived names are still reserved.
+  const existing = await ctx.db
+    .query("categories")
+    .withIndex("by_circle_type_name", (q) =>
+      q.eq("circleId", args.access.circle._id).eq("type", input.type).eq("nameLower", nameLower),
+    )
+    .first();
+  if (existing) {
+    if (args.duplicate === "skip") {
+      return { created: false };
+    }
+    throw new Error("A category with this name already exists for this type");
+  }
+
+  const categoryId = await ctx.db.insert("categories", {
+    circleId: args.access.circle._id,
+    name: input.name,
+    nameLower,
+    type: input.type,
+    color: input.color,
+    creatorUserId: args.access.user._id,
+    status: "active",
+    createdAt: Date.now(),
+  });
+
+  // Record the create now (ADR 0018) even though the Category History view is
+  // CAT-2 — its view needs this row to exist. Values are pre-formatted human
+  // strings: the color label, never the raw id.
+  await recordEvent(ctx, {
+    entity: categoryEntity(categoryId),
+    actor: args.access.membership,
+    action: "created",
+    changes: [
+      { field: "name", to: input.name },
+      { field: "color", to: colorLabel(input.color) },
+      { field: "type", to: input.type },
+    ],
+  });
+
+  return { created: true, categoryId, name: input.name };
+}
 
 /**
  * Lists a Circle's Categories for one type, active by default. Resolver query
@@ -99,50 +157,10 @@ export const createCategory = mutation({
   handler: async (ctx, args) => {
     const access = await requireCircleAccess(ctx, args.circleId);
     access.assertWritable(); // an archived Circle is read-only (PRD story 79)
-
-    const input = categoryInputSchema.parse({
-      name: args.name,
-      type: args.type,
-      color: args.color,
-    });
-    const nameLower = input.name.toLowerCase();
-
-    // Uniqueness across ALL statuses — archived names are still reserved.
-    const existing = await ctx.db
-      .query("categories")
-      .withIndex("by_circle_type_name", (q) =>
-        q.eq("circleId", args.circleId).eq("type", input.type).eq("nameLower", nameLower),
-      )
-      .first();
-    if (existing) {
+    const result = await createCategoryForMember(ctx, { access, ...args, duplicate: "throw" });
+    if (!result.created) {
       throw new Error("A category with this name already exists for this type");
     }
-
-    const categoryId = await ctx.db.insert("categories", {
-      circleId: args.circleId,
-      name: input.name,
-      nameLower,
-      type: input.type,
-      color: input.color,
-      creatorUserId: access.user._id,
-      status: "active",
-      createdAt: Date.now(),
-    });
-
-    // Record the create now (ADR 0018) even though the Category History view is
-    // CAT-2 — its view needs this row to exist. Values are pre-formatted human
-    // strings: the color label, never the raw id.
-    await recordEvent(ctx, {
-      entity: categoryEntity(categoryId),
-      actor: access.membership,
-      action: "created",
-      changes: [
-        { field: "name", to: input.name },
-        { field: "color", to: colorLabel(input.color) },
-        { field: "type", to: input.type },
-      ],
-    });
-
-    return categoryId;
+    return result.categoryId;
   },
 });

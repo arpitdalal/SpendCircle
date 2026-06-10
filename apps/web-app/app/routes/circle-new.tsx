@@ -31,10 +31,9 @@ import { cn } from "~/lib/utils.js";
  *
  * Names may duplicate by design (PRD 10), so the form NEVER blocks on a name
  * collision — identity is the Mark + Color + ref, not the name. On submit it calls
- * `createCircle`, then navigates to the new Circle's canonical `slug-id` ref
- * (`buildRef`, ADR 0016) so the URL is canonical from creation, and offers to set
- * the Circle up next (CS-1). The server re-validates every field (ADR 0015); this
- * mirrors the shared `circleInputSchema` for inline feedback.
+ * `createCircle`, then navigates to the new Circle's setup route with the canonical
+ * `slug-id` ref (`buildRef`, ADR 0016). The server re-validates every field (ADR
+ * 0015); this mirrors the shared `circleInputSchema` for inline feedback.
  */
 export default function CreateCircle() {
   const navigate = useNavigate();
@@ -74,14 +73,11 @@ export default function CreateCircle() {
         color: parsed.data.color,
         mark: parsed.data.mark,
       });
-      // Navigate to the canonical ref so the URL is id-authoritative from the first
-      // load — no stale-slug redirect (ADR 0016). `buildRef` takes the name + the new
-      // id; the branded id flows through unchanged (no cast).
+      // Navigate with the canonical ref so the URL is id-authoritative from the first
+      // load — no stale-slug redirect (ADR 0016). Setup remains skippable.
       const ref = buildRef(parsed.data.name, circleId);
-      await navigate(href("/circles/:circleRef", { circleRef: ref }));
-      // Offer to set the Circle up next (Circle Setup is CS-1); for now point the
-      // User at the Categories surface that exists today.
-      show(`"${parsed.data.name}" created. Add categories to set it up.`);
+      await navigate(href("/circles/:circleRef/setup", { circleRef: ref }));
+      show(`"${parsed.data.name}" created.`);
     } catch (caught) {
       // Names duplicate by design, so there is no expected "already exists" rejection
       // to mirror; anything thrown is unexpected — surface it (Sentry once it lands,

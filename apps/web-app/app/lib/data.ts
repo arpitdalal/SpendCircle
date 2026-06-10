@@ -45,6 +45,11 @@ export function useCreateCircle() {
   return useMutation(api.circles.createCircle);
 }
 
+/** Completes Circle Setup: answers + optional Currency confirm + starter Categories. */
+export function useCompleteCircleSetup() {
+  return useMutation(api.circles.completeCircleSetup);
+}
+
 /**
  * The single Category view contract, derived from `listCategories` so it cannot
  * drift from `toCategoryView` in `packages/convex/convex/categories.ts` (ADR
