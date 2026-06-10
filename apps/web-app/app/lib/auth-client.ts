@@ -15,10 +15,14 @@ export const authClient = createAuthClient({
   plugins: [convexClient(), crossDomainClient()],
 });
 
-export async function signInWithGoogle(callbackURL = "/"): Promise<void> {
-  await authClient.signIn.social({ provider: "google", callbackURL });
+export async function signInWithGoogle(callbackURL = "/") {
+  const result = await authClient.signIn.social({ provider: "google", callbackURL });
+
+  if (result.error) {
+    throw result.error;
+  }
 }
 
-export async function signOut(): Promise<void> {
+export async function signOut() {
   await authClient.signOut();
 }

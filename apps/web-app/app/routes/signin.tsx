@@ -1,3 +1,5 @@
+import { LoaderCircle } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router";
 import { Button } from "~/components/ui/button.js";
 import { signInWithGoogle } from "~/lib/auth-client.js";
@@ -7,6 +9,26 @@ import { signInWithGoogle } from "~/lib/auth-client.js";
  * and Privacy Policy, with no separate checkbox. Google is the only provider.
  */
 export default function SignIn() {
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGoogleSignIn = async () => {
+    if (isSigningIn) {
+      return;
+    }
+
+    setError(null);
+    setIsSigningIn(true);
+
+    try {
+      await signInWithGoogle("/");
+    } catch {
+      setError("Couldn't start Google sign-in. Try again.");
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
   return (
     <div className="space-y-8 rounded-xl border border-border bg-card/60 p-8 text-center shadow-xl backdrop-blur-sm">
       <div className="space-y-4">
@@ -17,9 +39,21 @@ export default function SignIn() {
         </div>
       </div>
 
-      <Button size="lg" className="w-full" onClick={() => void signInWithGoogle("/")}>
-        Continue with Google
+      <Button
+        size="lg"
+        className="w-full"
+        disabled={isSigningIn}
+        aria-busy={isSigningIn}
+        onClick={() => void handleGoogleSignIn()}
+      >
+        {isSigningIn ? <LoaderCircle aria-hidden className="size-4 animate-spin" /> : null}
+        {isSigningIn ? "Signing in..." : "Continue with Google"}
       </Button>
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
 
       <p className="text-xs text-muted-foreground">
         By continuing you agree to our{" "}
