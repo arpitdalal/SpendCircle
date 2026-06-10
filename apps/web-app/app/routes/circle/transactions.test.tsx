@@ -232,6 +232,39 @@ describe("CircleTransactions", () => {
     });
   });
 
+  it("clears the busy label after a lifecycle action when the row flips in place (#82)", async () => {
+    const user = userEvent.setup();
+    // The mixed status=all view keeps the row mounted across the archive: its `<li key>`
+    // is the stable id, so the LifecycleButton instance (and its in-flight flag) survives
+    // the reactive flip from active→archived. A backing array we mutate in place models
+    // that reactive update arriving after the mutation resolves.
+    const rows = [
+      makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
+    ];
+    const { rerender } = setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: rows,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    expect(archiveTransaction).toHaveBeenCalledWith({
+      transactionId: testId<Transaction["id"]>("t1"),
+    });
+
+    // The reactive ledger query pushes the now-archived row; the row flips to the Restore
+    // action in place.
+    rows[0] = makeTransactionView({ title: "Weekly shop", status: "archived", canArchive: true });
+    rerender();
+
+    // The button must settle on the new action's IDLE label — not strand on the opposite
+    // action's busy label ("Restoring…"/"Archiving…") because the in-flight flag was never
+    // cleared on success (#82). Accessible name is always the idle copy, so assert the
+    // VISIBLE text and that the button is interactive again.
+    const button = await screen.findByRole("button", { name: "Restore Weekly shop" });
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(button).toHaveTextContent(/^Restore$/);
+  });
+
   it("offers per-row lifecycle actions and an archived marker in the mixed status=all view", () => {
     setup({
       initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
