@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-app (dev)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@spend-circle/web-app", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "web-app (dev:mocks)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@spend-circle/web-app", "dev:mocks"],
+      "port": 5173
+    },
+    {
+      "name": "convex (dev)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@spend-circle/convex", "dev"],
+      "port": 3210
+    }
+  ]
+}

@@ -30,3 +30,6 @@ e2e/.auth/
 .idea/
 .vscode/
 *.log
+
+# Claude Code: personal permission grants stay local; launch.json is shared
+.claude/settings.local.json
