@@ -1,4 +1,4 @@
-import type { PlainMonth } from "@spend-circle/domain";
+import { type PlainMonth, plainMonthParts } from "@spend-circle/domain";
 import { viewerLocale } from "./locale.js";
 
 /**
@@ -6,10 +6,12 @@ import { viewerLocale } from "./locale.js";
  * they are labelled by formatting their first day pinned to UTC — a local-zone Date
  * would let a negative offset slide the label into the previous month. The viewer
  * locale drives the month name's language (ADR 0021: explicit locale, never ambient).
+ * Parsing goes through the domain's `plainMonthParts` (no tuple casts); a malformed
+ * month surfaces as Intl's "Invalid Date" label rather than a wrong month.
  */
 function monthFormatter(options: Intl.DateTimeFormatOptions) {
   return (month: PlainMonth) => {
-    const [year, monthIndex] = month.split("-").map(Number) as [number, number];
+    const { year, month: monthIndex } = plainMonthParts(month);
     return new Intl.DateTimeFormat(viewerLocale(), { timeZone: "UTC", ...options }).format(
       new Date(Date.UTC(year, monthIndex - 1, 1)),
     );

@@ -12,6 +12,7 @@ import {
   isValidPlainMonth,
   monthOf,
   monthRange,
+  plainMonthParts,
   toPlainDate,
 } from "./date.js";
 
@@ -49,6 +50,22 @@ describe("isValidPlainMonth", () => {
   it("rejects null/undefined so an absent `?month=` is treated as invalid", () => {
     expect(isValidPlainMonth(null)).toBe(false);
     expect(isValidPlainMonth(undefined)).toBe(false);
+  });
+});
+
+describe("plainMonthParts", () => {
+  it("extracts the numeric year and 1-based month", () => {
+    expect(plainMonthParts("2026-05")).toEqual({ year: 2026, month: 5 });
+    expect(plainMonthParts("0099-12")).toEqual({ year: 99, month: 12 });
+  });
+
+  it("degrades a malformed month to NaN parts instead of lying about numbers", () => {
+    // PlainMonth is structurally a string, so a bad value CAN reach this parser;
+    // NaN is honest (downstream Date/arithmetic surfaces it as invalid) where a
+    // tuple cast would silently fabricate `undefined as number`.
+    expect(plainMonthParts("banana").year).toBeNaN();
+    expect(plainMonthParts("2026").month).toBeNaN();
+    expect(plainMonthParts("").year).toBeNaN();
   });
 });
 
