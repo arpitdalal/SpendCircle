@@ -172,18 +172,18 @@ export type TransactionStatus = Transaction["status"];
 export function useTransactions(
   circleId: Circle["id"],
   month?: PlainMonth,
-  options?: { status?: TransactionStatus },
+  options?: { status?: TransactionStatus; enabled?: boolean },
 ): PaginatedTransactions {
   const status = options?.status ?? "active";
+  const enabled = options?.enabled ?? true;
   const paginated = usePaginatedQuery(
     api.transactions.listTransactions,
-    MOCKS ? "skip" : { circleId, status, ...(month ? { month } : {}) },
+    MOCKS || !enabled ? "skip" : { circleId, status, ...(month ? { month } : {}) },
     { initialNumItems: TRANSACTIONS_PAGE_SIZE },
   );
-  if (MOCKS) {
+  if (MOCKS || !enabled) {
     return {
-      // Archived has no offline fixtures; the active list powers the populated path.
-      transactions: status === "active" ? MOCK_TRANSACTIONS : [],
+      transactions: MOCKS && enabled && status === "active" ? MOCK_TRANSACTIONS : [],
       status: "Exhausted",
       loadMore: () => {},
     };
@@ -204,6 +204,11 @@ export function useTransactions(
 export type MonthlySummary = NonNullable<FunctionReturnType<typeof api.ledger.getMonthlyLedger>>;
 export type MonthlyTotals = MonthlySummary["totals"];
 
+export function useMonthlySummary(circleId: Circle["id"], month: PlainMonth) {
+  const queried = useQuery(api.ledger.getMonthlyLedger, MOCKS ? "skip" : { circleId, month });
+  return MOCKS ? MOCK_MONTHLY_SUMMARY : queried;
+}
+
 /**
  * The Monthly Ledger surface for one Circle-month (RPT-1): the `summary` (totals +
  * Currency, computed server-side over the whole month) fused with the month-scoped,
@@ -222,12 +227,109 @@ export function useMonthlyLedger(
   month: PlainMonth,
   options?: { status?: TransactionStatus },
 ) {
-  const queried = useQuery(api.ledger.getMonthlyLedger, MOCKS ? "skip" : { circleId, month });
+  const queried = useMonthlySummary(circleId, month);
   const transactions = useTransactions(circleId, month, { status: options?.status ?? "active" });
   return {
     summary: MOCKS ? MOCK_MONTHLY_SUMMARY : queried,
     transactions,
   };
+}
+
+export type FilterType = "all" | TransactionType;
+export type LifecycleFilter = "active" | "archived" | "all";
+
+export type TransactionFilterOptions = NonNullable<
+  FunctionReturnType<typeof api.search.getTransactionSearchOptions>
+>;
+
+interface BaseTransactionFilters {
+  query?: string;
+  type: FilterType;
+  status: LifecycleFilter;
+  categoryIds?: string[];
+  recordedByMemberIds?: string[];
+  paidByMemberIds?: string[];
+}
+
+export interface LedgerTransactionFilters extends BaseTransactionFilters {
+  month: PlainMonth;
+}
+
+export interface TransactionSearchFilters extends BaseTransactionFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  amountMin?: number;
+  amountMax?: number;
+}
+
+export function useLedgerTransactionFilter(
+  circleId: Circle["id"],
+  filters: LedgerTransactionFilters,
+  options?: { enabled?: boolean },
+): PaginatedTransactions {
+  const enabled = options?.enabled ?? true;
+  const paginated = usePaginatedQuery(
+    api.search.filterLedgerTransactions,
+    MOCKS || !enabled ? "skip" : { circleId, ...filters },
+    { initialNumItems: TRANSACTIONS_PAGE_SIZE },
+  );
+  if (MOCKS || !enabled) {
+    const status: PaginationStatus = "Exhausted";
+    return {
+      transactions: MOCKS && enabled ? MOCK_TRANSACTIONS : [],
+      status,
+      loadMore: () => {},
+    };
+  }
+  return {
+    transactions: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(TRANSACTIONS_PAGE_SIZE),
+  };
+}
+
+export function useTransactionSearch(circleId: Circle["id"], filters: TransactionSearchFilters) {
+  const paginated = usePaginatedQuery(
+    api.search.searchTransactions,
+    MOCKS ? "skip" : { circleId, ...filters },
+    { initialNumItems: TRANSACTIONS_PAGE_SIZE },
+  );
+  if (MOCKS) {
+    const status: PaginationStatus = "Exhausted";
+    return {
+      transactions: MOCK_TRANSACTIONS,
+      status,
+      loadMore: () => {},
+    };
+  }
+  return {
+    transactions: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(TRANSACTIONS_PAGE_SIZE),
+  };
+}
+
+export function useLedgerFilterOptions(
+  circleId: Circle["id"],
+  month: PlainMonth,
+  type: FilterType,
+): TransactionFilterOptions | null | undefined {
+  const queried = useQuery(
+    api.search.getLedgerFilterOptions,
+    MOCKS ? "skip" : { circleId, month, type },
+  );
+  return MOCKS ? { categories: MOCK_CATEGORIES, members: MOCK_MEMBERS } : queried;
+}
+
+export function useTransactionSearchOptions(
+  circleId: Circle["id"],
+  type: FilterType,
+): TransactionFilterOptions | null | undefined {
+  const queried = useQuery(
+    api.search.getTransactionSearchOptions,
+    MOCKS ? "skip" : { circleId, type },
+  );
+  return MOCKS ? { categories: MOCK_CATEGORIES, members: MOCK_MEMBERS } : queried;
 }
 
 /**

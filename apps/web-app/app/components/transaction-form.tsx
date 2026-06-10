@@ -512,7 +512,7 @@ export function TransactionForm({
                     No {activeType} categories yet. Create one first to record a {activeType}.
                   </p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto rounded-md border border-neutral-800 p-2">
                     {activeCategories.map((category) => {
                       const selected = field.state.value.includes(category.id);
                       return (
@@ -526,7 +526,7 @@ export function TransactionForm({
                               : field.handleChange([...field.state.value, category.id])
                           }
                           className={cn(
-                            "rounded-full border px-3 py-1 text-sm transition-colors",
+                            "max-w-full whitespace-normal break-words rounded-full border px-3 py-1 text-left text-sm transition-colors",
                             selected
                               ? "border-neutral-100 bg-neutral-100 text-neutral-900"
                               : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
@@ -544,7 +544,7 @@ export function TransactionForm({
                           type="button"
                           aria-pressed={true}
                           onClick={() => deselect(category.id)}
-                          className="rounded-full border border-amber-600/70 bg-amber-950/40 px-3 py-1 text-sm text-amber-300 transition-colors hover:text-amber-100"
+                          className="max-w-full whitespace-normal break-words rounded-full border border-amber-600/70 bg-amber-950/40 px-3 py-1 text-left text-sm text-amber-300 transition-colors hover:text-amber-100"
                         >
                           {category.name} · archived{blocking ? " ✕" : ""}
                         </button>
@@ -619,8 +619,8 @@ export function TransactionForm({
           reads as a button colocated with Save rather than a link floating in the header. */}
       <form.Subscribe selector={(state) => state.isSubmitting}>
         {(isSubmitting) => (
-          <div className="flex items-center gap-2">
-            <Button type="submit" disabled={isSubmitting}>
+          <div className="flex scroll-mb-28 items-center gap-2 pt-2">
+            <Button type="submit" disabled={isSubmitting} className="scroll-mb-28">
               {isSubmitting
                 ? "Saving…"
                 : isEdit

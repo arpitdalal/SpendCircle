@@ -165,15 +165,15 @@ describe("TransactionDetail — Transaction History (PRD 77)", () => {
   });
 });
 
-describe("TransactionDetail — ledger slice preserved (Back / Edit links)", () => {
-  it("returns Back to the same ledger slice (month + view) the row was opened from", () => {
+describe("TransactionDetail — ledger month preserved (Back / Edit links)", () => {
+  it("returns Back to the same ledger month the row was opened from", () => {
     setup({
       transactionDetail: makeTransactionDetailView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
       url: `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05&view=archived`,
     });
     expect(screen.getByRole("link", { name: /Back to transactions/ })).toHaveAttribute(
       "href",
-      `/circles/${REF}/transactions?month=2026-05&view=archived`,
+      `/circles/${REF}/transactions?month=2026-05`,
     );
   });
 

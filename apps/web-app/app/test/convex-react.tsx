@@ -13,6 +13,7 @@ import type {
   PaginationStatus,
   Transaction,
   TransactionDetail,
+  TransactionFilterOptions,
   TransactionHistoryEvent,
 } from "~/lib/data.js";
 import { SnackbarProvider } from "~/lib/snackbar.js";
@@ -52,6 +53,10 @@ const NAME = {
   getEditableTransaction: getFunctionName(api.transactions.getEditableTransaction),
   getTransaction: getFunctionName(api.transactions.getTransaction),
   listTransactionHistory: getFunctionName(api.transactions.listTransactionHistory),
+  filterLedgerTransactions: getFunctionName(api.search.filterLedgerTransactions),
+  searchTransactions: getFunctionName(api.search.searchTransactions),
+  getLedgerFilterOptions: getFunctionName(api.search.getLedgerFilterOptions),
+  getTransactionSearchOptions: getFunctionName(api.search.getTransactionSearchOptions),
   getMonthlyLedger: getFunctionName(api.ledger.getMonthlyLedger),
   getDashboard: getFunctionName(api.dashboard.getDashboard),
   getPaidByFilterOptions: getFunctionName(api.dashboard.getPaidByFilterOptions),
@@ -104,6 +109,21 @@ interface ConvexState {
   /** `getMonthlyLedger` summary (totals + currency); `undefined` ≡ loading, `null` ≡
    * inaccessible Circle. Defaults to a zero summary so the totals header renders. */
   monthlySummary?: MonthlySummary | null;
+  ledgerFilterTransactions?: Transaction[];
+  ledgerFilterStatus?: PaginationStatus;
+  searchTransactions?: Transaction[];
+  searchStatus?: PaginationStatus;
+  /** `getLedgerFilterOptions` / `getTransactionSearchOptions` result; `undefined` ≡ loading,
+   * `null` ≡ inaccessible. A function resolves per query args (e.g. by `type`) so a test can
+   * model the type-scoped Category option set the panel narrows to as the draft type flips. */
+  ledgerFilterOptions?:
+    | TransactionFilterOptions
+    | null
+    | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
+  transactionSearchOptions?:
+    | TransactionFilterOptions
+    | null
+    | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
   /** `getDashboard` result; `undefined` ≡ loading, `null` ≡ inaccessible Circle.
    * Defaults to a zero Dashboard so the totals cards render. A function resolves per
    * query args (e.g. by `paidByMemberId`) so a test can model the Paid By filter
@@ -169,6 +189,12 @@ export function configureConvex(state: ConvexState = {}) {
     transactionsStatus = "Exhausted",
     loadMore = () => {},
     monthlySummary = EMPTY_MONTHLY_SUMMARY,
+    ledgerFilterTransactions = [],
+    ledgerFilterStatus = "Exhausted",
+    searchTransactions = [],
+    searchStatus = "Exhausted",
+    ledgerFilterOptions,
+    transactionSearchOptions,
     dashboard = EMPTY_DASHBOARD,
     paidByFilterOptions,
     // No default: absent ≡ `undefined` ≡ loading (the codebase's reactive-query
@@ -198,6 +224,14 @@ export function configureConvex(state: ConvexState = {}) {
           return members;
         case NAME.getMonthlyLedger:
           return monthlySummary;
+        case NAME.getLedgerFilterOptions:
+          return typeof ledgerFilterOptions === "function"
+            ? ledgerFilterOptions(args)
+            : ledgerFilterOptions;
+        case NAME.getTransactionSearchOptions:
+          return typeof transactionSearchOptions === "function"
+            ? transactionSearchOptions(args)
+            : transactionSearchOptions;
         case NAME.getDashboard:
           return typeof dashboard === "function" ? dashboard(args) : dashboard;
         case NAME.getPaidByFilterOptions:
@@ -219,16 +253,25 @@ export function configureConvex(state: ConvexState = {}) {
   convexReactMock.usePaginatedQuery.mockImplementation(
     (fn: FunctionReference<"query">, args: Record<string, unknown> | "skip") => {
       const name = getFunctionName(fn);
+      if (args === "skip") {
+        return { results: [], status: "Exhausted", loadMore: () => {} };
+      }
       // The Transaction History list (TXN-4) is its own paginated query.
       if (name === NAME.listTransactionHistory) {
         return { results: transactionHistory, status: historyStatus, loadMore: historyLoadMore };
+      }
+      if (name === NAME.filterLedgerTransactions) {
+        return { results: ledgerFilterTransactions, status: ledgerFilterStatus, loadMore };
+      }
+      if (name === NAME.searchTransactions) {
+        return { results: searchTransactions, status: searchStatus, loadMore };
       }
       if (name !== NAME.listTransactions) {
         return { results: [], status: "Exhausted", loadMore: () => {} };
       }
       // The active/archived toggle (TXN-3) reads two distinct pages by the query's
       // `status` arg, so the doubles dispatch on it just as the backend does.
-      const archived = args !== "skip" && args.status === "archived";
+      const archived = args.status === "archived";
       return {
         results: archived ? archivedTransactions : transactions,
         status: transactionsStatus,

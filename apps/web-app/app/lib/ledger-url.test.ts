@@ -2,19 +2,12 @@ import { describe, expect, it } from "vitest";
 import { editSearch, ledgerSearch, parseEditReturn, withQuery } from "./ledger-url.js";
 
 describe("ledgerSearch", () => {
-  it("encodes the month alone for the active (default) view", () => {
-    expect(ledgerSearch({ month: "2026-05", status: "active" })).toBe("month=2026-05");
+  it("encodes the month", () => {
+    expect(ledgerSearch({ month: "2026-05" })).toBe("month=2026-05");
   });
 
-  it("adds view=archived only for the archived view", () => {
-    expect(ledgerSearch({ month: "2026-05", status: "archived" })).toBe(
-      "month=2026-05&view=archived",
-    );
-  });
-
-  it("omits an absent month and an absent status", () => {
+  it("omits an absent month", () => {
     expect(ledgerSearch({})).toBe("");
-    expect(ledgerSearch({ status: "archived" })).toBe("view=archived");
   });
 });
 
@@ -29,16 +22,12 @@ describe("withQuery", () => {
 });
 
 describe("editSearch", () => {
-  it("carries the ledger slice without a from marker by default (ledger return)", () => {
-    expect(editSearch({ month: "2026-05", status: "archived" })).toBe(
-      "month=2026-05&view=archived",
-    );
+  it("carries the ledger month without a from marker by default", () => {
+    expect(editSearch({ month: "2026-05" })).toBe("month=2026-05");
   });
 
-  it("appends from=detail after the slice when opened from the detail page", () => {
-    expect(editSearch({ month: "2026-05", status: "archived", from: "detail" })).toBe(
-      "month=2026-05&view=archived&from=detail",
-    );
+  it("appends from=detail after the month when opened from the detail page", () => {
+    expect(editSearch({ month: "2026-05", from: "detail" })).toBe("month=2026-05&from=detail");
   });
 
   it("omits from for an explicit ledger return", () => {

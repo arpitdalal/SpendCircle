@@ -159,7 +159,7 @@ describe("TransactionEdit — return navigation", () => {
 });
 
 describe("TransactionEdit — return to the detail page (from=detail)", () => {
-  it("returns to the transaction detail on cancel when opened from there, keeping the slice", async () => {
+  it("returns to the transaction detail on cancel when opened from there, keeping the month", async () => {
     const user = userEvent.setup();
     const { location } = setup({
       editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
@@ -167,11 +167,7 @@ describe("TransactionEdit — return to the detail page (from=detail)", () => {
       url: `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&view=archived&from=detail`,
     });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    // Back to the detail object route (not the ledger), carrying the slice so detail's own
-    // Back link still resolves to the same ledger view.
-    expect(location()).toBe(
-      `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05&view=archived`,
-    );
+    expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`);
     expect(screen.getByText("detail")).toBeInTheDocument();
   });
 

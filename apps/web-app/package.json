@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.12.2",
+    "@radix-ui/react-dialog": "^1.1.16",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@react-router/node": "^7.16.0",

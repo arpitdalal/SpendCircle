@@ -13,6 +13,13 @@ async function selectMonth(page: Page, month: string) {
   await input.blur();
 }
 
+async function applyLedgerStatus(page: Page, status: "active" | "archived") {
+  await page.getByRole("button", { name: /Filters/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Filters" });
+  await dialog.getByRole("button", { name: status === "active" ? "Active" : "Archived" }).click();
+  await dialog.getByRole("button", { name: "Apply" }).click();
+}
+
 /**
  * TRUE-E2E (ADR 0019): record a Transaction through the real frontend → Convex
  * `createTransaction` mutation → DB → reactive `listTransactions` render path,
@@ -118,7 +125,7 @@ test("the monthly ledger totals a month and navigates between months", async ({
   // create form will default its date into this month.
   await page.getByRole("link", { name: "Transactions" }).click();
   await selectMonth(page, ledger.month);
-  await expect(page.getByText(`No transactions in ${ledger.label}.`)).toBeVisible();
+  await expect(page.getByText(`No active transactions in ${ledger.label}.`)).toBeVisible();
   const totals = page.getByRole("group", { name: "Monthly totals" });
   await expect(totals).toContainText("$0.00");
 
@@ -138,7 +145,7 @@ test("the monthly ledger totals a month and navigates between months", async ({
   // Jump to a far-past month no spec ever writes to: zero totals, empty list (totals are
   // per-month, not global).
   await selectMonth(page, "2000-06");
-  await expect(page.getByText("No transactions in June 2000.")).toBeVisible();
+  await expect(page.getByText("No active transactions in June 2000.")).toBeVisible();
   await expect(row).toHaveCount(0);
   await expect(totals).toContainText("$0.00");
 
@@ -184,7 +191,7 @@ test("the month input registers a whole multi-digit year typed digit-by-digit", 
 
   await expect(page).toHaveURL(new RegExp(`month=${target.value}`));
   await expect(input).toHaveValue(target.value);
-  await expect(page.getByText(`No transactions in ${target.label}.`)).toBeVisible();
+  await expect(page.getByText(`No active transactions in ${target.label}.`)).toBeVisible();
 });
 
 /**
@@ -296,9 +303,9 @@ test("a member archives and restores a transaction", async ({ page }, testInfo) 
   await row.getByRole("button", { name: `Archive ${title}` }).click();
   await expect(row).toHaveCount(0);
 
-  // It surfaces in the Archived view, frozen (no Edit), with a Restore action.
-  await page.getByRole("button", { name: "Archived" }).click();
-  await expect(page).toHaveURL(/view=archived/);
+  // It surfaces through the Archived ledger filter, frozen (no Edit), with a Restore action.
+  await applyLedgerStatus(page, "archived");
+  await expect(page).toHaveURL(/status=archived/);
   const archivedRow = page.getByRole("listitem").filter({ hasText: title });
   await expect(archivedRow).toBeVisible();
   await expect(archivedRow.getByRole("link", { name: `Edit ${title}` })).toHaveCount(0);
@@ -306,7 +313,7 @@ test("a member archives and restores a transaction", async ({ page }, testInfo) 
   // Restore it — it leaves the Archived view and returns to the active list.
   await archivedRow.getByRole("button", { name: `Restore ${title}` }).click();
   await expect(page.getByRole("listitem").filter({ hasText: title })).toHaveCount(0);
-  await page.getByRole("button", { name: "Active" }).click();
+  await applyLedgerStatus(page, "active");
   await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
 });
 
@@ -345,7 +352,7 @@ test("the transactions page restores month, add form, and edit link across reloa
 
   // Opening Add expense deep-links new=expense and the form survives reload.
   await page.getByRole("button", { name: "Add expense" }).click();
-  await expect(page).toHaveURL(new RegExp(`month=${month}&new=expense`));
+  await expect(page).toHaveURL(new RegExp(`month=${month}.*new=expense`));
   await page.reload();
   await expect(page.getByRole("form", { name: /add expense/i })).toBeVisible();
 
@@ -415,18 +422,19 @@ test("the transaction detail shows audit metadata and history reflecting an edit
   const editForm = page.getByRole("form", { name: /edit transaction/i });
   await editForm.getByLabel(/Amount/).fill("25.00");
   await editForm.getByRole("button", { name: "Save changes" }).click();
-  await expect(row).toContainText("-$25.00");
+  const editedRow = page.getByRole("listitem").filter({ hasText: title });
+  await expect(editedRow).toContainText("-$25.00");
 
   // Archive it (active view) → an "archived" event. The row leaves the active list.
-  await row.getByRole("button", { name: `Archive ${title}` }).click();
-  await expect(row).toHaveCount(0);
+  await editedRow.getByRole("button", { name: `Archive ${title}` }).click();
+  await expect(editedRow).toHaveCount(0);
 
   // Open the archived Transaction's detail (via its title link, available on archived rows
   // too) and see its Audit Metadata + the full history: created, edited, and archived.
-  await page.getByRole("button", { name: "Archived" }).click();
+  await applyLedgerStatus(page, "archived");
   const archivedRow = page.getByRole("listitem").filter({ hasText: title });
   await archivedRow.getByRole("link", { name: `View ${title}` }).click();
-  await expect(page).toHaveURL(/\/transactions\/[^/]+$/);
+  await expect(page).toHaveURL(/\/transactions\/[^/]+\?month=/);
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
 
   const audit = page.getByRole("region", { name: "Audit metadata" });

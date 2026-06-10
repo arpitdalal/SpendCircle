@@ -25,8 +25,11 @@ data (PRD 184). Only coarse feature-usage events.
   titles/notes). Default on after legal acceptance; opting out (SET-1) stops capture and
   resets/blocks the client.
 - Define the v1 event set (coarse: circle_created, transaction_added (type only, no
-  amount/title), category_created, search_performed, export_performed, feedback_submitted (type
-  only), etc.).
+  amount/title), category_created, ledger_filter_applied, transaction_search_submitted,
+  export_performed, feedback_submitted (type only), etc.). Search/filter events may include safe
+  coarse props such as lifecycle status, Transaction type, whether archived/all was selected,
+  whether a date range was present, and counts of selected filter values; never include query text,
+  category/member names, IDs, titles, notes, or amounts.
 
 ## Why this way
 

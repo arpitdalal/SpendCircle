@@ -1,6 +1,5 @@
 import {
   addMonths,
-  currentMonth,
   formatMoney,
   isValidPlainMonth,
   money,
@@ -8,128 +7,131 @@ import {
   type TransactionType,
   toCurrencyCode,
 } from "@spend-circle/domain";
+import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { TransactionForm } from "~/components/transaction-form.js";
+import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
+import { FilterPanel } from "~/components/ui/filter-panel.js";
+import { MultiSelect, type MultiSelectOption } from "~/components/ui/multi-select.js";
 import {
-  type Circle,
   type MonthlySummary,
-  type PaginatedTransactions,
-  type Transaction,
-  type TransactionStatus,
-  useArchiveTransaction,
-  useMonthlyLedger,
-  useRestoreTransaction,
+  useLedgerFilterOptions,
+  useLedgerTransactionFilter,
+  useMonthlySummary,
+  useTransactions,
 } from "~/lib/data.js";
-import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
-import { useSnackbar } from "~/lib/snackbar.js";
+import {
+  activeFilterCount,
+  canonicalLedgerParams,
+  defaultLedgerFilters,
+  dropUnknownIds,
+  type LedgerFilters,
+  readLedgerFilters,
+} from "~/lib/transaction-filter-url.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
-/**
- * The Monthly Ledger — the Circle's operational Transaction management surface
- * (glossary; PRD stories 62–67), reached via the Transactions route (the Circle
- * index is the Dashboard — RPT-3/4/6). It shows ONE selected month: that month's
- * Income / Expense / Net totals, that month's active Transactions (sorted
- * Transaction Date desc then created-at desc), and month/year navigation (PRD 64).
- * Archived Transactions are excluded (TXN-3). Dedicated Add Expense / Add Income
- * CTAs (not a type dropdown — PRD 27, 28) open a Transaction form scoped to that
- * type; the live list confirms a create landed. Search/filters are RPT-2.
- *
- * The totals come from `getMonthlyLedger` (a bounded server-side aggregate over the
- * whole month — never summed from the page) and the list from the month-scoped,
- * paginated `listTransactions`; `useMonthlyLedger` fuses the two for the selected
- * month and re-runs when navigation changes it.
- *
- * URL state (TXN-5, ADR 0017): the selected month is the `month=YYYY-MM` query
- * param and the open Add form is `new=expense|income` — both survive reload and
- * direct links. The bare route normalizes to the current month, an invalid `month`
- * replaces to the current month (no snackbar), an invalid `new` is dropped while a
- * valid `month` is preserved, and a read-only (archived) Circle drops the `new`
- * form state. Editing is its OWN object route (`/transactions/:transactionRef/edit`
- * — ADR 0016), so the row Edit is a real canonical link, not local state. Unsaved
- * draft fields are deliberately NOT encoded — reload restores navigation, not drafts.
- */
 export default function CircleTransactions() {
   const circle = useCircle();
   const [searchParams, setSearchParams] = useSearchParams();
   const writable = circle.status === "active";
-
-  const rawMonth = searchParams.get("month");
-  const monthValid = isValidPlainMonth(rawMonth);
-  // `rawMonth` is the source of truth; an absent/invalid one falls back to the current
-  // month for rendering AND is normalized into the URL by the effect below. The guard is
-  // re-applied inline (not via `monthValid`) so TS narrows `rawMonth` to a `PlainMonth`.
-  const month: PlainMonth = isValidPlainMonth(rawMonth) ? rawMonth : currentMonth(new Date());
-
-  // The list status the toggle selects: the month's active Transactions (default) or
-  // its archived ones (TXN-3 — the surface the Restore affordance reads). Only the
-  // explicit "archived" value switches; anything else (incl. absent) is active.
-  const rawView = searchParams.get("view");
-  const archivedView = rawView === "archived";
-  const status: TransactionStatus = archivedView ? "archived" : "active";
-
+  const filters = readLedgerFilters(searchParams);
+  const filterCount = activeFilterCount(filters);
+  const filterActive = filterCount > 0;
   const rawNew = searchParams.get("new");
-  // The open create form's type, or null. Creating belongs to the active view only and a
-  // read-only Circle drops the form entirely (the write surface collapses — ADR 0017),
-  // so `new` only opens a form on a writable Circle in the active view. An invalid value
-  // is treated as no form (and dropped below).
   const createType: TransactionType | null =
-    writable && !archivedView && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
+    writable && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [draft, setDraft] = useState<LedgerFilters>(filters);
+  const options = useLedgerFilterOptions(
+    circle.id,
+    filters.month,
+    panelOpen ? draft.type : filters.type,
+  );
+  const summary = useMonthlySummary(circle.id, filters.month);
+  const baseTransactions = useTransactions(circle.id, filters.month, { enabled: !filterActive });
+  const filteredTransactions = useLedgerTransactionFilter(circle.id, toLedgerQuery(filters), {
+    enabled: filterActive,
+  });
+  const searchKey = searchParams.toString();
 
-  // Normalize malformed/unsupported UI query state with REPLACE navigation rather than
-  // treating it as an unavailable object (ADR 0017): backfill a missing/invalid month to
-  // the current month, drop a redundant `view=active` (active is the absent default) and
-  // an invalid `view`, and drop a `new` that is invalid or not allowed here (read-only
-  // Circle, or the archived view where creating doesn't apply). Replace so these
-  // corrections never litter the Back stack.
   useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    let changed = false;
-    if (!monthValid) {
-      next.set("month", month);
-      changed = true;
+    if (panelOpen) {
+      setDraft(readLedgerFilters(new URLSearchParams(searchKey)));
     }
-    if (rawView !== null && rawView !== "archived") {
-      next.delete("view");
-      changed = true;
-    }
-    const newAllowed = writable && !archivedView && (rawNew === "expense" || rawNew === "income");
-    if (rawNew !== null && !newAllowed) {
+  }, [panelOpen, searchKey]);
+
+  useEffect(() => {
+    const next = canonicalLedgerParams(filters, searchParams);
+    let changed = next.toString() !== searchParams.toString();
+    if (rawNew !== null && !createType) {
       next.delete("new");
       changed = true;
     }
     if (changed) {
       setSearchParams(next, { replace: true });
     }
-  }, [searchParams, monthValid, month, rawNew, rawView, archivedView, writable, setSearchParams]);
+  }, [searchParams, filters, rawNew, createType, setSearchParams]);
 
-  const { summary, transactions } = useMonthlyLedger(circle.id, month, { status });
+  useEffect(() => {
+    // Drop URL-selected ids no longer in the option universe (e.g. a stale deep link).
+    // Only while the panel is CLOSED: open, `options` follows the DRAFT type, so cleaning
+    // the still-applied `filters` against it would strip a valid selection of the applied
+    // type and silently change the live result set before the user applies anything.
+    // Closed, `options` follows `filters.type`, which is exactly what we validate against.
+    if (panelOpen || !options) {
+      return;
+    }
+    const categoryIds = options.categories.map((category) => category.id);
+    const memberIds = options.members.map((member) => member.id);
+    const cleaned = dropUnknownIds(filters, { categoryIds, memberIds });
+    if (
+      cleaned.categories.join(",") !== filters.categories.join(",") ||
+      cleaned.recordedBy.join(",") !== filters.recordedBy.join(",") ||
+      cleaned.paidBy.join(",") !== filters.paidBy.join(",")
+    ) {
+      setSearchParams(canonicalLedgerParams({ ...filters, ...cleaned }, searchParams), {
+        replace: true,
+      });
+    }
+  }, [panelOpen, filters, options, searchParams, setSearchParams]);
 
-  // Month changes PUSH a normal history entry (Back returns to the prior month).
   const goToMonth = (next: PlainMonth) => {
     setSearchParams(
       (prev) => {
         const params = new URLSearchParams(prev);
-        params.set("month", next);
-        return params;
+        const canonical = defaultLedgerFilters(next);
+        return canonicalLedgerParams(canonical, params);
       },
       { replace: false },
     );
   };
 
-  // Opening an Add form deep-links `new=<type>` (preserving the month); closing or
-  // saving removes only `new` and keeps the month.
+  const applyFilters = () => {
+    setSearchParams(canonicalLedgerParams({ ...draft, month: filters.month }, searchParams), {
+      replace: false,
+    });
+    setPanelOpen(false);
+  };
+
+  const resetFilters = () => {
+    setSearchParams(canonicalLedgerParams(defaultLedgerFilters(filters.month), searchParams), {
+      replace: false,
+    });
+    setPanelOpen(false);
+  };
+
   const openCreate = (type: TransactionType) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      params.set("month", month);
       params.set("new", type);
       return params;
     });
   };
+
   const closeCreate = () => {
     setSearchParams(
       (prev) => {
@@ -141,29 +143,13 @@ export default function CircleTransactions() {
     );
   };
 
-  // Toggle the active/archived list (TXN-3): set `view=archived` or drop the param for
-  // the active default, keeping the month. Switching to a view also closes any open
-  // create form (`new`) since it only applies to the active view. PUSH so Back returns
-  // to the prior view.
-  const goToView = (next: TransactionStatus) => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set("month", month);
-      params.delete("new");
-      if (next === "archived") {
-        params.set("view", "archived");
-      } else {
-        params.delete("view");
-      }
-      return params;
-    });
-  };
+  const monthLabel = formatMonthLabel(filters.month);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-semibold">Transactions</h2>
-        {writable && !archivedView ? (
+        {writable ? (
           <div className="flex gap-2">
             <Button type="button" onClick={() => openCreate("expense")}>
               Add expense
@@ -175,10 +161,15 @@ export default function CircleTransactions() {
         ) : null}
       </div>
 
-      <MonthNavigator month={month} onChange={goToMonth} />
-      <MonthlyTotals summary={summary} fallbackCurrency={circle.currency} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <MonthNavigator month={filters.month} onChange={goToMonth} />
+        <Button type="button" variant="outline" onClick={() => setPanelOpen(true)}>
+          <SlidersHorizontal className="size-4" />
+          Filters{filterCount > 0 ? ` (${filterCount})` : ""}
+        </Button>
+      </div>
 
-      <ViewToggle archivedView={archivedView} onChange={goToView} />
+      <MonthlyTotals summary={summary} fallbackCurrency={circle.currency} label="Monthly totals" />
 
       {!writable ? (
         <p className="rounded-md border border-neutral-800 p-3 text-sm text-neutral-500">
@@ -186,74 +177,191 @@ export default function CircleTransactions() {
         </p>
       ) : null}
 
-      {/* The create form is keyed on its type so switching Add expense ↔ Add income
-          remounts it fresh; `createType` is already null for a read-only Circle, so a
-          Circle archived mid-edit (its reactive query flips status) closes the form in
-          place. An inaccessible Circle is handled a layer up by the guard (ADR 0016/0017). */}
       {createType ? (
         <TransactionForm
           key={`create-${createType}`}
           circle={circle}
-          mode={{ kind: "create", type: createType, selectedMonth: month }}
+          mode={{ kind: "create", type: createType, selectedMonth: filters.month }}
           onClose={closeCreate}
         />
       ) : null}
 
       <TransactionList
-        paginated={transactions}
+        paginated={filterActive ? filteredTransactions : baseTransactions}
         circle={circle}
-        month={month}
-        monthLabel={formatMonthLabel(month)}
+        emptyLabel={
+          filterActive ? "No matching transactions." : `No active transactions in ${monthLabel}.`
+        }
         canEdit={writable}
-        archivedView={archivedView}
+        ledgerMonth={filters.month}
+        showLifecycle
+      />
+
+      <FilterPanel
+        open={panelOpen}
+        onOpenChange={setPanelOpen}
+        title="Filters"
+        footer={
+          <>
+            <Button type="button" variant="outline" onClick={resetFilters}>
+              Reset
+            </Button>
+            <Button type="button" className="ml-auto" onClick={applyFilters}>
+              Apply
+            </Button>
+          </>
+        }
+      >
+        <LedgerFilterForm
+          draft={draft}
+          setDraft={setDraft}
+          options={options}
+          optionsLoading={options === undefined}
+        />
+      </FilterPanel>
+    </div>
+  );
+}
+
+function toLedgerQuery(filters: LedgerFilters) {
+  return {
+    month: filters.month,
+    type: filters.type,
+    status: filters.status,
+    ...(filters.q ? { query: filters.q } : {}),
+    ...(filters.categories.length > 0 ? { categoryIds: filters.categories } : {}),
+    ...(filters.recordedBy.length > 0 ? { recordedByMemberIds: filters.recordedBy } : {}),
+    ...(filters.paidBy.length > 0 ? { paidByMemberIds: filters.paidBy } : {}),
+  };
+}
+
+function LedgerFilterForm({
+  draft,
+  setDraft,
+  options,
+  optionsLoading,
+}: {
+  draft: LedgerFilters;
+  setDraft: (filters: LedgerFilters) => void;
+  options: ReturnType<typeof useLedgerFilterOptions>;
+  optionsLoading: boolean;
+}) {
+  const categoryOptions = toCategoryOptions(options?.categories ?? []);
+  const memberOptions = toMemberOptions(options?.members ?? []);
+  return (
+    <div className="space-y-4">
+      <label className="block text-xs text-neutral-500">
+        Search title or note
+        <input
+          type="search"
+          value={draft.q}
+          onChange={(event) => setDraft({ ...draft, q: event.currentTarget.value })}
+          className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+        />
+      </label>
+      <Segmented
+        label="Type"
+        value={draft.type}
+        options={[
+          { label: "All", value: "all" },
+          { label: "Expense", value: "expense" },
+          { label: "Income", value: "income" },
+        ]}
+        onChange={(type) => setDraft({ ...draft, type, categories: [] })}
+      />
+      <Segmented
+        label="Status"
+        value={draft.status}
+        options={[
+          { label: "Active", value: "active" },
+          { label: "Archived", value: "archived" },
+          { label: "All", value: "all" },
+        ]}
+        onChange={(status) => setDraft({ ...draft, status })}
+      />
+      <MultiSelect
+        label="Categories"
+        options={categoryOptions}
+        value={draft.categories}
+        disabled={optionsLoading}
+        onChange={(categories) => setDraft({ ...draft, categories })}
+      />
+      <MultiSelect
+        label="Recorded by"
+        options={memberOptions}
+        value={draft.recordedBy}
+        disabled={optionsLoading}
+        onChange={(recordedBy) => setDraft({ ...draft, recordedBy })}
+      />
+      <MultiSelect
+        label="Paid by"
+        options={memberOptions}
+        value={draft.paidBy}
+        disabled={optionsLoading}
+        onChange={(paidBy) => setDraft({ ...draft, paidBy })}
       />
     </div>
   );
 }
 
-/**
- * Active / Archived list switch for the Ledger (TXN-3). The archived view is where an
- * Archived Transaction is restorable; the active view is the normal surface. Two
- * `aria-pressed` toggle buttons (not a `<select>`) so the state is announced and
- * keyboard-operable, owned by the `view` URL param so it survives reload (ADR 0017).
- */
-function ViewToggle({
-  archivedView,
+function Segmented<Value extends string>({
+  label,
+  value,
+  options,
   onChange,
 }: {
-  archivedView: boolean;
-  onChange: (status: TransactionStatus) => void;
+  label: string;
+  value: Value;
+  options: { label: string; value: Value }[];
+  onChange: (value: Value) => void;
 }) {
-  const options: { status: TransactionStatus; label: string; active: boolean }[] = [
-    { status: "active", label: "Active", active: !archivedView },
-    { status: "archived", label: "Archived", active: archivedView },
-  ];
   return (
-    <fieldset className="flex items-center gap-2">
-      <legend className="sr-only">Show active or archived transactions</legend>
-      {options.map((option) => (
-        <button
-          key={option.status}
-          type="button"
-          aria-pressed={option.active}
-          onClick={() => onChange(option.status)}
-          className={cn(
-            "rounded-md border px-3 py-1 text-sm transition-colors",
-            option.active
-              ? "border-neutral-100 bg-neutral-100 text-neutral-900"
-              : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
+    <fieldset className="space-y-2">
+      <legend className="text-xs text-neutral-500">{label}</legend>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={value === option.value}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "rounded-md border px-3 py-1 text-sm transition-colors",
+              value === option.value
+                ? "border-neutral-100 bg-neutral-100 text-neutral-900"
+                : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
     </fieldset>
   );
 }
 
-/** A "YYYY-MM" month as a human label, e.g. "June 2026". Built from the plain month
- * parts (no timezone parsing) so it matches the stored bucket exactly. */
-function formatMonthLabel(month: PlainMonth): string {
+function toCategoryOptions(
+  categories: NonNullable<ReturnType<typeof useLedgerFilterOptions>>["categories"],
+) {
+  return categories.map((category) => ({
+    value: category.id,
+    label: category.name,
+    detail: category.status === "archived" ? "archived" : undefined,
+    color: category.color,
+  }));
+}
+
+function toMemberOptions(
+  members: NonNullable<ReturnType<typeof useLedgerFilterOptions>>["members"],
+) {
+  return members.map((member) => ({
+    value: member.id,
+    label: member.displayName,
+    detail: member.status === "removed" ? "removed" : undefined,
+  })) satisfies MultiSelectOption[];
+}
+
+function formatMonthLabel(month: PlainMonth) {
   const parts = month.split("-");
   const year = Number(parts[0]);
   const monthIndex = Number(parts[1]);
@@ -263,30 +371,6 @@ function formatMonthLabel(month: PlainMonth): string {
   });
 }
 
-/**
- * Month/year navigation for the Ledger (PRD 64): previous / next step by one month
- * (`addMonths`, so Dec↔Jan crosses the year correctly), and the native month input
- * jumps to any month.
- *
- * The native `<input type="month">` is UNCONTROLLED (`defaultValue` + a ref), not a
- * React-controlled `value`. Typing a 4-digit year is a multi-keystroke edit of the
- * year segment, and writing `value` back into the control mid-edit — from ANY source,
- * even synchronous local state — resets the browser's in-progress segment buffer and
- * drops digits (the TXN-5 regression: month moved from synchronous local state to async
- * URL state, but reflecting any value back is the real fault). Leaving the input
- * uncontrolled lets the browser fully own segment editing, so the whole year always
- * registers; we push external month changes (prev/next, a deep link, normalization)
- * into the DOM through the ref, and read the value back only on commit.
- *
- * Commit happens on blur / Enter, not per keystroke: typing "2026" navigates ONCE to
- * the finished month, never pushing junk history entries (and ledger queries) for the
- * transient 0002 → 0020 → 0202 the year segment emits while filling. Only a valid
- * "YYYY-MM" commits; the native control clears to "" when emptied and degrades to a
- * free-text field (out-of-range/garbage) where the browser has no real month picker —
- * both make the ledger queries throw `Invalid month` (ledger.ts/transactions.ts), so an
- * invalid/partial value reverts to the selected month rather than committing. With that
- * guard `month` is always valid, so the prev/next `addMonths` never sees NaN.
- */
 function MonthNavigator({
   month,
   onChange,
@@ -296,9 +380,6 @@ function MonthNavigator({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // The input is uncontrolled, so `defaultValue` only seeds the first mount; push later
-  // external month changes (prev/next, deep link, normalization) into the DOM directly.
-  // Guarded on inequality so this never clobbers a value the user is mid-typing.
   useEffect(() => {
     const input = inputRef.current;
     if (input && input.value !== month) {
@@ -316,7 +397,7 @@ function MonthNavigator({
         onChange(input.value);
       }
     } else {
-      input.value = month; // revert a cleared/partial value to the selected month
+      input.value = month;
     }
   };
 
@@ -359,23 +440,18 @@ function MonthNavigator({
   );
 }
 
-/**
- * The selected month's Income / Expense / Net header. Totals are minor units summed
- * server-side and formatted ONCE here in the Circle Currency (ADR 0009) — never
- * summed from formatted strings. `summary` is `undefined` while loading (placeholders
- * shown) and `null` only for an inaccessible Circle (the guard ejects before this
- * renders); the currency falls back to the Circle's until the summary resolves.
- */
 function MonthlyTotals({
   summary,
   fallbackCurrency,
+  label,
 }: {
   summary: MonthlySummary | null | undefined;
   fallbackCurrency: string;
+  label: string;
 }) {
   const currency = toCurrencyCode(summary?.currency ?? fallbackCurrency);
   const totals = summary?.totals;
-  const stats: { label: string; amount: number | undefined; tone: string }[] = [
+  const stats = [
     { label: "Income", amount: totals?.incomeMinor, tone: "text-green-400" },
     { label: "Expenses", amount: totals?.expenseMinor, tone: "text-neutral-100" },
     {
@@ -387,7 +463,7 @@ function MonthlyTotals({
 
   return (
     <fieldset>
-      <legend className="sr-only">Monthly totals</legend>
+      <legend className="sr-only">{label}</legend>
       <dl className="grid grid-cols-3 gap-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-md border border-neutral-800 p-3">
@@ -401,189 +477,5 @@ function MonthlyTotals({
         ))}
       </dl>
     </fieldset>
-  );
-}
-
-/**
- * The active Transactions, most recent first, with money formatted in the Circle
- * Currency. Paginated: it renders the loaded page and a Load more control while
- * more remain, so an arbitrarily long ledger never loads in one shot.
- *
- * The Edit affordance is a canonical object LINK to `/transactions/:transactionRef/edit`
- * (ADR 0016) — a real, shareable, reload-safe URL, not local state (TXN-5) — carrying
- * the selected `month` so the edit route returns to this same ledger month on close.
- * It shows only where the server marked the viewer as able to edit (`canEditFields` —
- * the Recorded By Member) and the Circle is writable; the server re-checks on save and
- * the edit-target query re-checks on open, so this is the courtesy, not the enforcement
- * (ADR 0015).
- *
- * Archive / Restore are the TXN-3 lifecycle actions, gated on `canArchive` (the Recorded
- * By Member OR the Owner — server-enforced moderation, not a field-edit backdoor) and a
- * writable Circle. In the ACTIVE view a row offers Edit + Archive; in the ARCHIVED view
- * a row is FROZEN — no Edit affordance — and offers only Restore.
- */
-function TransactionList({
-  paginated,
-  circle,
-  month,
-  monthLabel,
-  canEdit,
-  archivedView,
-}: {
-  paginated: PaginatedTransactions;
-  circle: Circle;
-  month: PlainMonth;
-  monthLabel: string;
-  canEdit: boolean;
-  archivedView: boolean;
-}) {
-  const { transactions, status, loadMore } = paginated;
-
-  if (status === "LoadingFirstPage") {
-    return <p className="text-sm text-neutral-500">Loading transactions…</p>;
-  }
-  // An inaccessible Circle (ADR 0016) and a month with no Transactions of this status
-  // both arrive as an empty page — the Circle guard already gated entry, so treat both
-  // as nothing to show, naming the month (and whether this is the archived view) so an
-  // empty view reads as "this month is empty" rather than "this circle is empty".
-  if (transactions.length === 0) {
-    return (
-      <p className="text-sm text-neutral-500">
-        {archivedView
-          ? `No archived transactions in ${monthLabel}.`
-          : `No transactions in ${monthLabel}.`}
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <ul className="space-y-2">
-        {transactions.map((txn) => (
-          <li
-            key={txn.id}
-            className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
-          >
-            <div className="min-w-0">
-              {/* The title is a canonical object LINK to the Transaction detail surface
-                  (TXN-4) — Audit Metadata + Transaction History. A real, shareable,
-                  reload-safe URL (ADR 0016), available for active and archived rows alike
-                  (detail is a read surface). It carries the ledger slice (month + view) so
-                  the detail's Back link returns to THIS slice, matching the Edit link's
-                  month preservation. */}
-              <p className="truncate text-sm font-medium">
-                <Link
-                  to={withQuery(
-                    `/circles/${circle.ref}/transactions/${txn.ref}`,
-                    ledgerSearch({ month, status: archivedView ? "archived" : "active" }),
-                  )}
-                  className="hover:underline"
-                  aria-label={`View ${txn.title}`}
-                >
-                  {txn.title}
-                </Link>
-              </p>
-              <p className="truncate text-xs text-neutral-500">
-                {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
-                {txn.paidBy.displayName}
-              </p>
-            </div>
-            <span
-              className={cn(
-                "ml-auto text-sm font-medium tabular-nums",
-                txn.type === "income" ? "text-green-400" : "text-neutral-100",
-              )}
-            >
-              {txn.type === "income" ? "+" : "-"}
-              {formatMoney(
-                money(txn.amountMinorUnits, toCurrencyCode(circle.currency)),
-                viewerLocale(),
-              )}
-            </span>
-            {/* Active rows can be edited (recorder only) + archived; archived rows are
-                frozen (no Edit) and can only be restored. */}
-            {!archivedView && canEdit && txn.canEditFields ? (
-              <Button asChild variant="outline">
-                <Link
-                  to={`/circles/${circle.ref}/transactions/${txn.ref}/edit?month=${month}`}
-                  aria-label={`Edit ${txn.title}`}
-                >
-                  Edit
-                </Link>
-              </Button>
-            ) : null}
-            {canEdit && txn.canArchive ? (
-              <LifecycleButton transaction={txn} action={archivedView ? "restore" : "archive"} />
-            ) : null}
-          </li>
-        ))}
-      </ul>
-
-      {status === "CanLoadMore" || status === "LoadingMore" ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={loadMore}
-          disabled={status === "LoadingMore"}
-        >
-          {status === "LoadingMore" ? "Loading…" : "Load more"}
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * The Archive / Restore button for one Transaction row (TXN-3). The mutation is the
- * authority on the permission and the writable-Circle rule (ADR 0015); this disables
- * itself while in flight (guarding double-submit) and surfaces an unexpected failure
- * through the snackbar rather than swallowing it (README §4 no silent failures). On
- * success the reactive list drops the row from this view — no manual navigation. The
- * `aria-label` names the Transaction so the action is unambiguous to assistive tech.
- */
-const LIFECYCLE_COPY = {
-  archive: { idle: "Archive", busy: "Archiving…", error: "Couldn't archive the transaction." },
-  restore: { idle: "Restore", busy: "Restoring…", error: "Couldn't restore the transaction." },
-} as const;
-
-function LifecycleButton({
-  transaction,
-  action,
-}: {
-  transaction: Transaction;
-  action: "archive" | "restore";
-}) {
-  const archiveTransaction = useArchiveTransaction();
-  const restoreTransaction = useRestoreTransaction();
-  const { show } = useSnackbar();
-  const [pending, setPending] = useState(false);
-  const copy = LIFECYCLE_COPY[action];
-
-  const onClick = async () => {
-    setPending(true);
-    try {
-      const run = action === "archive" ? archiveTransaction : restoreTransaction;
-      await run({ transactionId: transaction.id });
-      // The reactive list re-queries and drops the row from this view on success.
-    } catch (error) {
-      // Known guard rejections (permission, archived Circle) can't normally be reached
-      // from here (the affordance is already gated), so anything thrown is unexpected:
-      // surface it (Sentry once it lands — ADR 0012) and tell the user, never swallow.
-      console.error(`${action}Transaction failed`, error);
-      show(`${copy.error} Please try again.`);
-      setPending(false); // keep the row actionable for a retry
-    }
-  };
-
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      disabled={pending}
-      onClick={onClick}
-      aria-label={`${copy.idle} ${transaction.title}`}
-    >
-      {pending ? copy.busy : copy.idle}
-    </Button>
   );
 }

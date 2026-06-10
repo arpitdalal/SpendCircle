@@ -14,7 +14,7 @@ const transactionType = v.union(v.literal("expense"), v.literal("income"));
  * Category without re-resolving. Categories created by a Removed Member stay
  * active (PRD story 53); the frozen removed-member identity is what shows.
  */
-async function toCategoryView(ctx: QueryCtx, category: Doc<"categories">) {
+export async function toCategoryView(ctx: QueryCtx, category: Doc<"categories">) {
   const creatorMembership = await ctx.db
     .query("members")
     .withIndex("by_circle_and_user", (q) =>

@@ -5,7 +5,7 @@
 | **Status** | Done · [PR #71](https://github.com/arpitdalal/SpendCircle/pull/71) |
 | **Labels** | `area:transactions`, `backend`, `ui` |
 | **Depends on** | TXN-1 |
-| **Unlocks** | (RPT-* exclude archived from totals; RPT-2 archive filter) |
+| **Unlocks** | (RPT-* exclude archived from default totals/search; RPT-2 lifecycle filters) |
 | **PRD stories** | 39, 40, 41, 46 |
 | **ADRs** | 0015, 0016, 0018 |
 | **Glossary** | Archived Transaction, Owner |
@@ -13,8 +13,8 @@
 ## Intent
 
 Archiving is the moderation/void path that preserves history instead of deleting (PRD 46). An
-**Archived Transaction is frozen, excluded from Dashboard totals and normal Search, and only
-visible in archived views / archive-only filters** (PRD 40, 41). The permission shape is the
+**Archived Transaction is frozen, excluded from Dashboard totals and default Ledger Filter /
+Transaction Search results, and visible when lifecycle scope is archived or all** (PRD 40, 41). The permission shape is the
 counterpart to TXN-2: **the Recorded By creator OR the Owner** can archive/restore — but the
 Owner archiving someone's Transaction must NOT let them edit its fields (PRD 39). This is how
 an Owner moderates without rewriting records.
@@ -38,7 +38,7 @@ an Owner moderates without rewriting records.
   path. This is exactly the `requireTransactionAccess` example in `guard.ts`; instantiate it.
 - **Exclusion from totals/search is enforced in the reporting queries** (RPT-*), but archived
   state is set here; RPT slices must filter `status === "active"` by default. Document the
-  contract: archived ⇒ excluded unless an archive view/filter explicitly includes it.
+  contract: archived ⇒ excluded unless lifecycle scope is archived or all.
 
 ## How to test
 
@@ -50,7 +50,7 @@ an Owner moderates without rewriting records.
   second archive of an already-archived txn is a no-op or rejected (decide + test).
 - **Lifecycle:** archive/restore in an archived Circle ✗.
 - **Reporting contract (set up assertions RPT consumes):** an archived Transaction is
-  excluded from a default active query and included only when the archive filter is set.
+  excluded from a default active query and included only when lifecycle scope is archived or all.
 - **History:** archive/restore events record the moderator as actor, correct action, no raw IDs.
 
 ## Done when
@@ -61,6 +61,6 @@ an Owner moderates without rewriting records.
 
 ## Out of scope
 
-The actual Dashboard/Search exclusion math and archive filters (RPT-2, RPT-3) — this slice
+The actual Dashboard/Search exclusion math and lifecycle filters (RPT-2, RPT-3) — this slice
 sets state and defines the contract.
 </content>
