@@ -12,8 +12,9 @@
 ## Intent
 
 Data portability: any current **Member** can export the current **Transaction Search** result set
-as CSV (PRD 87). Export includes **active Transactions by default** and includes Archived
-Transactions when the Search lifecycle scope is archived or all (PRD 88). Only Transactions they
+as CSV (PRD 87). Export scope follows the Search lifecycle filter — default `status=all` exports
+all Transactions (active and archived); `status=active` exports active only; `status=archived`
+exports archived only (PRD 88). Only Transactions they
 can view (the Circle's), formatted for human reading (amounts with explicit Currency, plain dates,
 Member display names, category names) — never raw internal IDs.
 
@@ -29,7 +30,7 @@ Member display names, category names) — never raw internal IDs.
     name), status. No IDs. Cap synchronous export at `EXPORT_LIMIT = 5000`; if the result exceeds
     that cap, return a refusal state instead of partial CSV.
 - **Web:** an Export action on the Transaction Search page. It exports the current applied Search
-  URL state; default `/search?status=active&type=all` exports all active Circle Transactions.
+  URL state; default `/search?status=all&type=all` exports all Circle Transactions.
   Build the CSV client-side from the query result (proper escaping of commas/quotes/newlines) and
   trigger a download. No Export button on the Monthly Ledger for v1.
 
@@ -49,8 +50,8 @@ Member display names, category names) — never raw internal IDs.
 
 ## How to test
 
-- **Scope:** default Search exports active Transactions; `status=archived` exports archived only;
-  `status=all` exports both and flags status in a column.
+- **Scope:** default Search (`status=all`) exports all Transactions and flags status in a column;
+  `status=active` exports active only; `status=archived` exports archived only.
 - **Filter parity:** title/note query, type, Category, Recorded By, Paid By, date range, amount
   range, and lifecycle status match Transaction Search semantics.
 - **Content/format:** positive amount decimals come from minor units; Currency is explicit;

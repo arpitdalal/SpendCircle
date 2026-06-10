@@ -40,7 +40,9 @@ export default function CircleTransactions() {
   const writable = circle.status === "active";
   const filters = readLedgerFilters(searchParams);
   const filterCount = activeFilterCount(filters);
-  const filterActive = filterCount > 0;
+  // "all" is the default status, so treat any non-"active" status as needing the filter
+  // path (baseTransactions is active-only and would miss archived rows).
+  const filterActive = filterCount > 0 || filters.status !== "active";
   const rawNew = searchParams.get("new");
   const createType: TransactionType | null =
     writable && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
@@ -190,7 +192,7 @@ export default function CircleTransactions() {
         paginated={filterActive ? filteredTransactions : baseTransactions}
         circle={circle}
         emptyLabel={
-          filterActive ? "No matching transactions." : `No active transactions in ${monthLabel}.`
+          filterCount > 0 ? "No matching transactions." : `No transactions in ${monthLabel}.`
         }
         canEdit={writable}
         ledgerMonth={filters.month}

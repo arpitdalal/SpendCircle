@@ -31,7 +31,7 @@ export interface SearchFilters extends BaseTransactionFilters {
 }
 
 export const DEFAULT_TYPE: TypeFilter = "all";
-export const DEFAULT_STATUS: LifecycleFilter = "active";
+export const DEFAULT_STATUS: LifecycleFilter = "all";
 export const LEDGER_FILTER_PARAMS = ["q", "type", "status", "categories", "recordedBy", "paidBy"];
 export const SEARCH_FILTER_PARAMS = [
   "q",
