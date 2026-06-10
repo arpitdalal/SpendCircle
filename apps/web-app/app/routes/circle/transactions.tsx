@@ -148,7 +148,7 @@ export default function CircleTransactions() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Transactions</h2>
+        <h2 className="font-display text-lg font-semibold tracking-tight">Transactions</h2>
         {writable ? (
           <div className="flex gap-2">
             <Button type="button" onClick={() => openCreate("expense")}>
@@ -172,7 +172,7 @@ export default function CircleTransactions() {
       <MonthlyTotals summary={summary} fallbackCurrency={circle.currency} label="Monthly totals" />
 
       {!writable ? (
-        <p className="rounded-md border border-neutral-800 p-3 text-sm text-neutral-500">
+        <p className="rounded-lg border border-border bg-card p-3 shadow-sm text-sm text-muted-foreground">
           This circle is archived. Restore it to add transactions.
         </p>
       ) : null}
@@ -250,13 +250,13 @@ function LedgerFilterForm({
   const memberOptions = toMemberOptions(options?.members ?? []);
   return (
     <div className="space-y-4">
-      <label className="block text-xs text-neutral-500">
+      <label className="block text-xs text-muted-foreground">
         Search title or note
         <input
           type="search"
           value={draft.q}
           onChange={(event) => setDraft({ ...draft, q: event.currentTarget.value })}
-          className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+          className="mt-1 w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
         />
       </label>
       <Segmented
@@ -317,7 +317,7 @@ function Segmented<Value extends string>({
 }) {
   return (
     <fieldset className="space-y-2">
-      <legend className="text-xs text-neutral-500">{label}</legend>
+      <legend className="text-xs text-muted-foreground">{label}</legend>
       <div className="flex flex-wrap gap-2">
         {options.map((option) => (
           <button
@@ -328,8 +328,8 @@ function Segmented<Value extends string>({
             className={cn(
               "rounded-md border px-3 py-1 text-sm transition-colors",
               value === option.value
-                ? "border-neutral-100 bg-neutral-100 text-neutral-900"
-                : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:text-foreground",
             )}
           >
             {option.label}
@@ -426,7 +426,7 @@ function MonthNavigator({
             commit();
           }
         }}
-        className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400"
+        className="rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
       />
       <Button
         type="button"
@@ -452,12 +452,12 @@ function MonthlyTotals({
   const currency = toCurrencyCode(summary?.currency ?? fallbackCurrency);
   const totals = summary?.totals;
   const stats = [
-    { label: "Income", amount: totals?.incomeMinor, tone: "text-green-400" },
-    { label: "Expenses", amount: totals?.expenseMinor, tone: "text-neutral-100" },
+    { label: "Income", amount: totals?.incomeMinor, tone: "text-positive" },
+    { label: "Expenses", amount: totals?.expenseMinor, tone: "text-foreground" },
     {
       label: "Net",
       amount: totals?.netMinor,
-      tone: (totals?.netMinor ?? 0) >= 0 ? "text-green-400" : "text-red-400",
+      tone: (totals?.netMinor ?? 0) >= 0 ? "text-positive" : "text-destructive",
     },
   ];
 
@@ -466,9 +466,14 @@ function MonthlyTotals({
       <legend className="sr-only">{label}</legend>
       <dl className="grid grid-cols-3 gap-3">
         {stats.map((stat) => (
-          <div key={stat.label} className="rounded-md border border-neutral-800 p-3">
-            <dt className="text-xs text-neutral-500">{stat.label}</dt>
-            <dd className={cn("text-sm font-semibold tabular-nums", stat.tone)}>
+          <div key={stat.label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <dt className="text-xs text-muted-foreground">{stat.label}</dt>
+            <dd
+              className={cn(
+                "mt-1 font-display text-lg font-semibold tabular-nums sm:text-2xl",
+                stat.tone,
+              )}
+            >
               {stat.amount === undefined
                 ? "…"
                 : formatMoney(money(stat.amount, currency), viewerLocale())}

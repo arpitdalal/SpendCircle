@@ -85,7 +85,7 @@ export function FieldDescription({ className, ...props }: ComponentProps<"p">) {
   return (
     <p
       data-slot="field-description"
-      className={cn("text-xs text-neutral-500", className)}
+      className={cn("text-xs text-muted-foreground", className)}
       {...props}
     />
   );
@@ -132,7 +132,7 @@ export function FieldError({
     <div
       role="alert"
       data-slot="field-error"
-      className={cn("text-sm text-red-400", className)}
+      className={cn("text-sm text-destructive", className)}
       {...props}
     >
       {content}

@@ -9,9 +9,9 @@ export default function Invite() {
   const { token } = useParams();
   return (
     <div className="space-y-4 text-center">
-      <h1 className="text-xl font-semibold">You've been invited</h1>
-      <p className="text-sm text-neutral-400">Validating your invitation…</p>
-      <p className="text-xs text-neutral-600">token: {token}</p>
+      <h1 className="font-display text-2xl font-semibold tracking-tight">You've been invited</h1>
+      <p className="text-sm text-muted-foreground">Validating your invitation…</p>
+      <p className="text-xs text-faint">token: {token}</p>
     </div>
   );
 }

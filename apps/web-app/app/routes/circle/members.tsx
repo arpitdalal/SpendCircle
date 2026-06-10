@@ -16,7 +16,7 @@ export default function CircleMembers() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-base font-semibold">Members</h2>
+      <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
       <MemberList members={members} />
     </div>
   );
@@ -24,13 +24,13 @@ export default function CircleMembers() {
 
 function MemberList({ members }: { members: Member[] | null | undefined }) {
   if (members === undefined) {
-    return <p className="text-sm text-neutral-500">Loading members…</p>;
+    return <p className="text-sm text-muted-foreground">Loading members…</p>;
   }
   // null ≡ inaccessible Circle (ADR 0016); the Circle guard already gated entry, so
   // a late null means there's nothing to show. An empty list can't normally happen
   // (every Circle keeps its Owner) — fall through to the same message defensively.
   if (members === null || members.length === 0) {
-    return <p className="text-sm text-neutral-500">Members are unavailable.</p>;
+    return <p className="text-sm text-muted-foreground">Members are unavailable.</p>;
   }
 
   return (
@@ -38,7 +38,7 @@ function MemberList({ members }: { members: Member[] | null | undefined }) {
       {members.map((member) => (
         <li
           key={member.id}
-          className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
+          className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
         >
           <Avatar name={member.displayName} image={member.image} />
           {/* Name + (You) form one flex-1 cluster: the name truncates so a long
@@ -47,11 +47,11 @@ function MemberList({ members }: { members: Member[] | null | undefined }) {
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <span className="truncate text-sm font-medium">{member.displayName}</span>
             {member.isSelf ? (
-              <span className="shrink-0 text-xs text-neutral-500">(You)</span>
+              <span className="shrink-0 text-xs text-muted-foreground">(You)</span>
             ) : null}
           </span>
           {member.role === "owner" ? (
-            <span className="shrink-0 rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-300">
+            <span className="shrink-0 rounded-full border border-primary/40 bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-foreground">
               Owner
             </span>
           ) : null}

@@ -8,27 +8,50 @@ import { signInWithGoogle } from "~/lib/auth-client.js";
  */
 export default function SignIn() {
   return (
-    <div className="space-y-8 text-center">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Spend Circle</h1>
-        <p className="text-sm text-neutral-400">Track money together in shared circles.</p>
+    <div className="space-y-8 rounded-xl border border-border bg-card/60 p-8 text-center shadow-xl backdrop-blur-sm">
+      <div className="space-y-4">
+        <CircleGlyph />
+        <div className="space-y-2">
+          <h1 className="font-display text-3xl font-semibold tracking-tight">Spend Circle</h1>
+          <p className="text-sm text-muted-foreground">Track money together in shared circles.</p>
+        </div>
       </div>
 
-      <Button className="w-full" onClick={() => void signInWithGoogle("/")}>
+      <Button size="lg" className="w-full" onClick={() => void signInWithGoogle("/")}>
         Continue with Google
       </Button>
 
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted-foreground">
         By continuing you agree to our{" "}
-        <Link to="/terms" className="underline hover:text-neutral-300">
+        <Link
+          to="/terms"
+          className="underline underline-offset-2 transition-colors hover:text-foreground"
+        >
           Terms
         </Link>{" "}
         and{" "}
-        <Link to="/privacy" className="underline hover:text-neutral-300">
+        <Link
+          to="/privacy"
+          className="underline underline-offset-2 transition-colors hover:text-foreground"
+        >
           Privacy Policy
         </Link>
         .
       </p>
     </div>
+  );
+}
+
+/** The circle motif at hero size: concentric iris rings around a solid core. */
+function CircleGlyph() {
+  return (
+    <span
+      aria-hidden
+      className="mx-auto flex size-16 items-center justify-center rounded-full border-2 border-primary/20"
+    >
+      <span className="flex size-11 items-center justify-center rounded-full border-2 border-primary/45">
+        <span className="size-5 rounded-full bg-primary" />
+      </span>
+    </span>
   );
 }

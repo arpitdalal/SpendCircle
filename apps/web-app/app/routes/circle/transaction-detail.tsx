@@ -66,7 +66,7 @@ function TransactionDetailView({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <Link to={ledgerUrl} className="text-sm text-neutral-400 hover:text-neutral-100">
+        <Link to={ledgerUrl} className="text-sm text-muted-foreground hover:text-foreground">
           ‹ Back to transactions
         </Link>
         {writable && transaction.canEditFields && !isArchived ? (
@@ -80,9 +80,9 @@ function TransactionDetailView({
 
       <header className="space-y-2">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold">{transaction.title}</h2>
+          <h2 className="font-display text-xl font-semibold tracking-tight">{transaction.title}</h2>
           {isArchived ? (
-            <span className="rounded-md border border-neutral-700 px-2 py-0.5 text-xs text-neutral-400">
+            <span className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
               Archived
             </span>
           ) : null}
@@ -90,8 +90,8 @@ function TransactionDetailView({
         <p
           className={
             transaction.type === "income"
-              ? "text-xl font-semibold tabular-nums text-green-400"
-              : "text-xl font-semibold tabular-nums text-neutral-100"
+              ? "font-display text-3xl font-semibold tabular-nums text-positive"
+              : "font-display text-3xl font-semibold tabular-nums text-foreground"
           }
         >
           {transaction.type === "income" ? "+" : "-"}
@@ -120,8 +120,8 @@ function TransactionDetailView({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-neutral-500">{label}</dt>
-      <dd className="truncate text-neutral-100">{children}</dd>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="truncate text-foreground">{children}</dd>
     </div>
   );
 }
@@ -142,9 +142,9 @@ function AuditMetadata({ audit }: { audit: TransactionDetail["audit"] }) {
       <dl className="grid gap-y-2 text-sm">
         {rows.map((row) => (
           <div key={row.label} className="flex flex-wrap items-baseline gap-x-2">
-            <dt className="text-neutral-500">{row.label} by</dt>
-            <dd className="text-neutral-100">{row.member}</dd>
-            <dd className="text-neutral-500">
+            <dt className="text-muted-foreground">{row.label} by</dt>
+            <dd className="text-foreground">{row.member}</dd>
+            <dd className="text-muted-foreground">
               ·{" "}
               <time dateTime={new Date(row.at).toISOString()}>{formatAuditTimestamp(row.at)}</time>
             </dd>

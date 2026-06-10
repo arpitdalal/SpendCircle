@@ -78,7 +78,7 @@ export default function CircleSearch() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Search</h2>
+        <h2 className="font-display text-lg font-semibold tracking-tight">Search</h2>
       </div>
 
       <form onSubmit={submit} className="flex gap-2">
@@ -88,7 +88,7 @@ export default function CircleSearch() {
             type="search"
             value={draft.q}
             onChange={(event) => setDraft({ ...draft, q: event.currentTarget.value })}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
           />
         </label>
         <Button type="submit" disabled={hasReversedRange(draft)}>
@@ -199,29 +199,29 @@ function SearchFilterForm({
         onChange={(status) => setDraft({ ...draft, status })}
       />
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs text-neutral-500">
+        <label className="block text-xs text-muted-foreground">
           From
           <input
             type="date"
             value={draft.from}
             max={draft.to || undefined}
             onChange={(event) => setDraft({ ...draft, from: event.currentTarget.value })}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+            className="mt-1 w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
           />
         </label>
-        <label className="block text-xs text-neutral-500">
+        <label className="block text-xs text-muted-foreground">
           To
           <input
             type="date"
             value={draft.to}
             min={draft.from || undefined}
             onChange={(event) => setDraft({ ...draft, to: event.currentTarget.value })}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+            className="mt-1 w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
           />
         </label>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs text-neutral-500">
+        <label className="block text-xs text-muted-foreground">
           Amount min
           <input
             type="number"
@@ -229,10 +229,10 @@ function SearchFilterForm({
             step="0.01"
             value={draft.min}
             onChange={(event) => setDraft({ ...draft, min: event.currentTarget.value })}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+            className="mt-1 w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
           />
         </label>
-        <label className="block text-xs text-neutral-500">
+        <label className="block text-xs text-muted-foreground">
           Amount max
           <input
             type="number"
@@ -240,7 +240,7 @@ function SearchFilterForm({
             step="0.01"
             value={draft.max}
             onChange={(event) => setDraft({ ...draft, max: event.currentTarget.value })}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-400"
+            className="mt-1 w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
           />
         </label>
       </div>
@@ -282,7 +282,7 @@ function Segmented<Value extends string>({
 }) {
   return (
     <fieldset className="space-y-2">
-      <legend className="text-xs text-neutral-500">{label}</legend>
+      <legend className="text-xs text-muted-foreground">{label}</legend>
       <div className="flex flex-wrap gap-2">
         {options.map((option) => (
           <button
@@ -293,8 +293,8 @@ function Segmented<Value extends string>({
             className={cn(
               "rounded-md border px-3 py-1 text-sm transition-colors",
               value === option.value
-                ? "border-neutral-100 bg-neutral-100 text-neutral-900"
-                : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:text-foreground",
             )}
           >
             {option.label}

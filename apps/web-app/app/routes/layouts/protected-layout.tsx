@@ -31,17 +31,21 @@ export default function ProtectedLayout() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-neutral-950">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+    <div className="flex min-h-dvh flex-col bg-background">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/80 px-4 py-3 backdrop-blur-md">
         <div className="flex items-center gap-3">
-          <Link to="/" className="font-semibold">
+          <Link
+            to="/"
+            className="flex items-center gap-2 font-display text-base font-semibold tracking-tight"
+          >
+            <BrandMark />
             Spend Circle
           </Link>
           <CircleSwitcher />
         </div>
-        <div className="flex items-center gap-3 text-sm text-neutral-400">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <span className="hidden sm:inline">{session.user.displayName}</span>
-          <Link to="/settings" className="hover:text-neutral-100">
+          <Link to="/settings" className="transition-colors hover:text-foreground">
             Settings
           </Link>
           {!MOCKS && (
@@ -55,5 +59,17 @@ export default function ProtectedLayout() {
         <Outlet />
       </main>
     </div>
+  );
+}
+
+/** The circle motif as the brand glyph: two concentric rings in the accent. */
+function BrandMark() {
+  return (
+    <span
+      aria-hidden
+      className="relative flex size-6 items-center justify-center rounded-full border-2 border-primary/35"
+    >
+      <span className="size-2.5 rounded-full bg-primary" />
+    </span>
   );
 }

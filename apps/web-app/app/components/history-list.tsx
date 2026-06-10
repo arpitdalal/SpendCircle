@@ -67,7 +67,7 @@ function HistoryValue({
     );
   }
   if (text == null || text === "") {
-    return <span className="text-neutral-500">—</span>;
+    return <span className="text-muted-foreground">—</span>;
   }
   return <span>{text}</span>;
 }
@@ -78,11 +78,11 @@ function HistoryChangeRow({ change }: { change: HistoryChangeLike }) {
   const hasFrom = change.from !== undefined || change.fromMoney !== undefined;
   return (
     <li className="flex flex-wrap items-baseline gap-x-2 text-sm">
-      <span className="text-neutral-400">{FIELD_LABEL[change.field] ?? change.field}:</span>
+      <span className="text-muted-foreground">{FIELD_LABEL[change.field] ?? change.field}:</span>
       {hasFrom ? (
         <>
           <HistoryValue text={change.from} amount={change.fromMoney} />
-          <span aria-hidden className="text-neutral-600">
+          <span aria-hidden className="text-faint">
             →
           </span>
         </>
@@ -120,20 +120,20 @@ export function HistoryList({
     <section aria-label={label} className="space-y-3">
       <h3 className="text-sm font-semibold">{label}</h3>
       {status === "LoadingFirstPage" ? (
-        <p className="text-sm text-neutral-500">Loading history…</p>
+        <p className="text-sm text-muted-foreground">Loading history…</p>
       ) : events.length === 0 ? (
-        <p className="text-sm text-neutral-500">No history yet.</p>
+        <p className="text-sm text-muted-foreground">No history yet.</p>
       ) : (
         <>
           <ol className="space-y-3">
             {events.map((event) => (
-              <li key={event.id} className="rounded-md border border-neutral-800 p-3">
+              <li key={event.id} className="rounded-lg border border-border bg-card p-3 shadow-sm">
                 <p className="text-sm">
                   <span className="font-medium">{event.actor?.displayName ?? "System"}</span>{" "}
-                  <span className="text-neutral-400">
+                  <span className="text-muted-foreground">
                     {ACTION_LABEL[event.action] ?? event.action}
                   </span>{" "}
-                  <span className="text-neutral-500">
+                  <span className="text-muted-foreground">
                     ·{" "}
                     <time dateTime={new Date(event.createdAt).toISOString()}>
                       {formatAuditTimestamp(event.createdAt)}

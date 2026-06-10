@@ -38,10 +38,14 @@ export function TransactionList({
   const { transactions, status, loadMore } = paginated;
 
   if (status === "LoadingFirstPage") {
-    return <p className="text-sm text-neutral-500">Loading transactions…</p>;
+    return <p className="text-sm text-muted-foreground">Loading transactions…</p>;
   }
   if (transactions.length === 0) {
-    return <p className="text-sm text-neutral-500">{emptyLabel}</p>;
+    return (
+      <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+        {emptyLabel}
+      </p>
+    );
   }
 
   return (
@@ -50,7 +54,7 @@ export function TransactionList({
         {transactions.map((txn) => (
           <li
             key={txn.id}
-            className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
+            className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
           >
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">
@@ -62,15 +66,15 @@ export function TransactionList({
                   {txn.title}
                 </Link>
               </p>
-              <p className="truncate text-xs text-neutral-500">
+              <p className="truncate text-xs text-muted-foreground">
                 {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
                 {txn.paidBy.displayName}
               </p>
             </div>
             <span
               className={cn(
-                "ml-auto text-sm font-medium tabular-nums",
-                txn.type === "income" ? "text-green-400" : "text-neutral-100",
+                "ml-auto text-sm font-semibold tabular-nums",
+                txn.type === "income" ? "text-positive" : "text-foreground",
               )}
             >
               {txn.type === "income" ? "+" : "-"}
@@ -80,7 +84,7 @@ export function TransactionList({
               )}
             </span>
             {ledgerMonth && txn.status === "active" && canEdit && txn.canEditFields ? (
-              <Button asChild variant="outline">
+              <Button asChild variant="outline" size="sm">
                 <Link
                   to={`/circles/${circle.ref}/transactions/${txn.ref}/edit?month=${ledgerMonth}`}
                   aria-label={`Edit ${txn.title}`}
@@ -152,6 +156,7 @@ function LifecycleButton({
     <Button
       type="button"
       variant="outline"
+      size="sm"
       disabled={pending}
       onClick={onClick}
       aria-label={`${copy.idle} ${transaction.title}`}

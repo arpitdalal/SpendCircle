@@ -41,7 +41,7 @@ export default function CircleDashboard() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Dashboard</h2>
+        <h2 className="font-display text-lg font-semibold tracking-tight">Dashboard</h2>
         <PaidByFilter options={filterOptions} value={paidByMemberId} onChange={setPaidByMemberId} />
       </div>
 
@@ -74,7 +74,7 @@ function PaidByFilter({
 
   return (
     <div className="flex items-center gap-2">
-      <label htmlFor="dashboard-paid-by" className="text-xs text-neutral-500">
+      <label htmlFor="dashboard-paid-by" className="text-xs text-muted-foreground">
         Paid by
       </label>
       <select
@@ -86,7 +86,7 @@ function PaidByFilter({
           // string the DOM emits; "" is the "All members" sentinel (no filter).
           onChange(members.find((member) => member.id === event.target.value)?.id)
         }
-        className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400 disabled:opacity-50"
+        className="rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:opacity-50"
       >
         <option value="">All members</option>
         {members.map((member) => (
@@ -117,12 +117,12 @@ function DashboardTotalsCards({
   const currency = toCurrencyCode(dashboard?.currency ?? fallbackCurrency);
   const totals: DashboardTotals | undefined = dashboard?.totals;
   const stats: { label: string; amount: number | undefined; tone: string }[] = [
-    { label: "Income", amount: totals?.incomeMinor, tone: "text-green-400" },
-    { label: "Expenses", amount: totals?.expenseMinor, tone: "text-neutral-100" },
+    { label: "Income", amount: totals?.incomeMinor, tone: "text-positive" },
+    { label: "Expenses", amount: totals?.expenseMinor, tone: "text-foreground" },
     {
       label: "Net",
       amount: totals?.netMinor,
-      tone: (totals?.netMinor ?? 0) >= 0 ? "text-green-400" : "text-red-400",
+      tone: (totals?.netMinor ?? 0) >= 0 ? "text-positive" : "text-destructive",
     },
   ];
 
@@ -131,9 +131,14 @@ function DashboardTotalsCards({
       <legend className="sr-only">This month's totals</legend>
       <dl className="grid grid-cols-3 gap-3">
         {stats.map((stat) => (
-          <div key={stat.label} className="rounded-md border border-neutral-800 p-3">
-            <dt className="text-xs text-neutral-500">{stat.label}</dt>
-            <dd className={cn("text-sm font-semibold tabular-nums", stat.tone)}>
+          <div key={stat.label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <dt className="text-xs text-muted-foreground">{stat.label}</dt>
+            <dd
+              className={cn(
+                "mt-1 font-display text-lg font-semibold tabular-nums sm:text-2xl",
+                stat.tone,
+              )}
+            >
               {stat.amount === undefined
                 ? "…"
                 : formatMoney(money(stat.amount, currency), viewerLocale())}
@@ -164,13 +169,15 @@ function RecentTransactions({
 
   return (
     <section className="space-y-3" aria-labelledby="dashboard-recent-heading">
-      <h3 id="dashboard-recent-heading" className="text-sm font-semibold text-neutral-300">
+      <h3 id="dashboard-recent-heading" className="text-sm font-semibold text-foreground">
         Recent activity
       </h3>
       {dashboard === undefined ? (
-        <p className="text-sm text-neutral-500">Loading recent activity…</p>
+        <p className="text-sm text-muted-foreground">Loading recent activity…</p>
       ) : !dashboard || dashboard.recent.length === 0 ? (
-        <p className="text-sm text-neutral-500">No recent activity.</p>
+        <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          No recent activity.
+        </p>
       ) : (
         <ul className="space-y-2">
           {dashboard.recent.map((txn) => (
@@ -190,18 +197,18 @@ function RecentRow({
   currency: ReturnType<typeof toCurrencyCode>;
 }) {
   return (
-    <li className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2">
+    <li className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">{txn.title}</p>
-        <p className="truncate text-xs text-neutral-500">
+        <p className="truncate text-xs text-muted-foreground">
           {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
           {txn.paidBy.displayName}
         </p>
       </div>
       <span
         className={cn(
-          "ml-auto text-sm font-medium tabular-nums",
-          txn.type === "income" ? "text-green-400" : "text-neutral-100",
+          "ml-auto text-sm font-semibold tabular-nums",
+          txn.type === "income" ? "text-positive" : "text-foreground",
         )}
       >
         {txn.type === "income" ? "+" : "-"}
