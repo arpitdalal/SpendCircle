@@ -13,8 +13,11 @@
 ## Intent
 
 Archiving is the moderation/void path that preserves history instead of deleting (PRD 46). An
-**Archived Transaction is frozen, excluded from Dashboard totals and default Ledger Filter /
-Transaction Search results, and visible when lifecycle scope is archived or all** (PRD 40, 41). The permission shape is the
+**Archived Transaction is frozen and excluded from Dashboard totals** (PRD 40). Archived
+Transactions are **visible by default in Ledger Filter and Transaction Search** but are visually
+distinguished (muted title, "Archived" badge) so the full history is always present while active
+and archived rows remain easy to tell apart; users can narrow to active-only or archived-only via
+the lifecycle status filter (PRD 41). The permission shape is the
 counterpart to TXN-2: **the Recorded By creator OR the Owner** can archive/restore — but the
 Owner archiving someone's Transaction must NOT let them edit its fields (PRD 39). This is how
 an Owner moderates without rewriting records.
@@ -36,9 +39,12 @@ an Owner moderates without rewriting records.
 - **`canArchive = isRecorder || isOwner`** but **`canEditFields = isRecorder` only** — keep
   these as two distinct predicates so an Owner never gains field-edit through the archive
   path. This is exactly the `requireTransactionAccess` example in `guard.ts`; instantiate it.
-- **Exclusion from totals/search is enforced in the reporting queries** (RPT-*), but archived
-  state is set here; RPT slices must filter `status === "active"` by default. Document the
-  contract: archived ⇒ excluded unless lifecycle scope is archived or all.
+- **Exclusion from totals is enforced in the reporting queries** (RPT-*), but archived state is
+  set here; RPT Dashboard (RPT-3) must filter `status === "active"` so archived Transactions never
+  affect totals. Ledger Filter and Transaction Search default to `status = "all"` and show archived
+  rows with a visual distinction (muted title, "Archived" badge) rather than hiding them. Document
+  the contract: archived ⇒ excluded from Dashboard totals; visible by default in lists with visual
+  distinction; narrowable via lifecycle scope filter.
 
 ## How to test
 
@@ -49,14 +55,16 @@ an Owner moderates without rewriting records.
 - **Frozen:** editing an archived Transaction ✗ (already in TXN-2 — assert again here); a
   second archive of an already-archived txn is a no-op or rejected (decide + test).
 - **Lifecycle:** archive/restore in an archived Circle ✗.
-- **Reporting contract (set up assertions RPT consumes):** an archived Transaction is
-  excluded from a default active query and included only when lifecycle scope is archived or all.
+- **Reporting contract (set up assertions RPT consumes):** an archived Transaction is excluded
+  from Dashboard totals; visible by default in Ledger Filter and Transaction Search (with visual
+  distinction); excluded when lifecycle scope is `active`; included when `archived` or `all`.
 - **History:** archive/restore events record the moderator as actor, correct action, no raw IDs.
 
 ## Done when
 
-- Creator-or-Owner archive/restore enforced; Owner gains no field-edit; archived txns frozen
-  and excluded by default; events recorded; `requireTransactionAccess` extracted and reused;
+- Creator-or-Owner archive/restore enforced; Owner gains no field-edit; archived txns frozen,
+  excluded from Dashboard totals, and visually distinguished in lists by default; events recorded;
+  `requireTransactionAccess` extracted and reused;
   tests green; gates pass.
 
 ## Out of scope

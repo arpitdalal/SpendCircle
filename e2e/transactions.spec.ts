@@ -125,7 +125,7 @@ test("the monthly ledger totals a month and navigates between months", async ({
   // create form will default its date into this month.
   await page.getByRole("link", { name: "Transactions" }).click();
   await selectMonth(page, ledger.month);
-  await expect(page.getByText(`No active transactions in ${ledger.label}.`)).toBeVisible();
+  await expect(page.getByText(`No transactions in ${ledger.label}.`)).toBeVisible();
   const totals = page.getByRole("group", { name: "Monthly totals" });
   await expect(totals).toContainText("$0.00");
 
@@ -145,7 +145,7 @@ test("the monthly ledger totals a month and navigates between months", async ({
   // Jump to a far-past month no spec ever writes to: zero totals, empty list (totals are
   // per-month, not global).
   await selectMonth(page, "2000-06");
-  await expect(page.getByText("No active transactions in June 2000.")).toBeVisible();
+  await expect(page.getByText("No transactions in June 2000.")).toBeVisible();
   await expect(row).toHaveCount(0);
   await expect(totals).toContainText("$0.00");
 
@@ -191,7 +191,7 @@ test("the month input registers a whole multi-digit year typed digit-by-digit", 
 
   await expect(page).toHaveURL(new RegExp(`month=${target.value}`));
   await expect(input).toHaveValue(target.value);
-  await expect(page.getByText(`No active transactions in ${target.label}.`)).toBeVisible();
+  await expect(page.getByText(`No transactions in ${target.label}.`)).toBeVisible();
 });
 
 /**
@@ -298,23 +298,34 @@ test("a member archives and restores a transaction", async ({ page }, testInfo) 
 
   const row = page.getByRole("listitem").filter({ hasText: title });
   await expect(row).toBeVisible();
+  // Active row: editable, with no archived marker.
+  await expect(row.getByRole("link", { name: `Edit ${title}` })).toBeVisible();
+  await expect(row.getByText("Archived", { exact: true })).toHaveCount(0);
 
-  // Archive it — the reactive active list drops it with no reload.
+  // Archive it — the default (status=all) view keeps the row reactively but now distinguishes
+  // it: an "Archived" marker, a Restore action, and no Edit affordance (frozen).
   await row.getByRole("button", { name: `Archive ${title}` }).click();
-  await expect(row).toHaveCount(0);
+  await expect(row.getByText("Archived", { exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: `Restore ${title}` })).toBeVisible();
+  await expect(row.getByRole("link", { name: `Edit ${title}` })).toHaveCount(0);
 
-  // It surfaces through the Archived ledger filter, frozen (no Edit), with a Restore action.
+  // Narrowing to Active drops it from view; the Archived filter shows it, frozen (no Edit).
+  await applyLedgerStatus(page, "active");
+  await expect(page.getByRole("listitem").filter({ hasText: title })).toHaveCount(0);
   await applyLedgerStatus(page, "archived");
   await expect(page).toHaveURL(/status=archived/);
   const archivedRow = page.getByRole("listitem").filter({ hasText: title });
   await expect(archivedRow).toBeVisible();
   await expect(archivedRow.getByRole("link", { name: `Edit ${title}` })).toHaveCount(0);
 
-  // Restore it — it leaves the Archived view and returns to the active list.
+  // Restore it — it leaves the Archived view; back in Active it is editable again, unmarked.
   await archivedRow.getByRole("button", { name: `Restore ${title}` }).click();
   await expect(page.getByRole("listitem").filter({ hasText: title })).toHaveCount(0);
   await applyLedgerStatus(page, "active");
-  await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
+  const restoredRow = page.getByRole("listitem").filter({ hasText: title });
+  await expect(restoredRow).toBeVisible();
+  await expect(restoredRow.getByText("Archived", { exact: true })).toHaveCount(0);
+  await expect(restoredRow.getByRole("link", { name: `Edit ${title}` })).toBeVisible();
 });
 
 /**
@@ -425,9 +436,10 @@ test("the transaction detail shows audit metadata and history reflecting an edit
   const editedRow = page.getByRole("listitem").filter({ hasText: title });
   await expect(editedRow).toContainText("-$25.00");
 
-  // Archive it (active view) → an "archived" event. The row leaves the active list.
+  // Archive it → an "archived" event. The default (status=all) view keeps the row but marks
+  // it archived: a Restore action replaces Archive.
   await editedRow.getByRole("button", { name: `Archive ${title}` }).click();
-  await expect(editedRow).toHaveCount(0);
+  await expect(editedRow.getByRole("button", { name: `Restore ${title}` })).toBeVisible();
 
   // Open the archived Transaction's detail (via its title link, available on archived rows
   // too) and see its Audit Metadata + the full history: created, edited, and archived.

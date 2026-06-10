@@ -57,7 +57,12 @@ export function TransactionList({
             className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
           >
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">
+              <p
+                className={cn(
+                  "truncate text-sm font-medium",
+                  txn.status === "archived" && "text-muted-foreground",
+                )}
+              >
                 <Link
                   to={transactionDetailHref(circle, txn, ledgerMonth)}
                   className="hover:underline"
@@ -69,6 +74,11 @@ export function TransactionList({
               <p className="truncate text-xs text-muted-foreground">
                 {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
                 {txn.paidBy.displayName}
+                {txn.status === "archived" ? (
+                  <span className="ml-1.5 inline-flex items-center rounded border border-border px-1.5 py-px text-xs font-medium">
+                    Archived
+                  </span>
+                ) : null}
               </p>
             </div>
             <span

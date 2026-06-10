@@ -30,7 +30,7 @@ test("transaction search finds circle transactions across months and opens detai
   await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
 
   await page.getByRole("link", { name: "Search", exact: true }).click();
-  await expect(page).toHaveURL(/\/search\?type=all&status=active/);
+  await expect(page).toHaveURL(/\/search\?type=all&status=all/);
   await page.getByRole("searchbox", { name: "Search title or note" }).fill(title);
   await page.getByRole("button", { name: "Search" }).click();
   const result = page.getByRole("listitem").filter({ hasText: title });

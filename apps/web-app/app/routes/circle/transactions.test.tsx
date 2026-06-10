@@ -123,28 +123,29 @@ describe("CircleTransactions", () => {
     const { location } = setup({ initialEntries: [`/circles/${REF}/transactions`] });
     await waitFor(() =>
       expect(location()).toBe(
-        `/circles/${REF}/transactions?month=${NOW_MONTH}&type=all&status=active`,
+        `/circles/${REF}/transactions?month=${NOW_MONTH}&type=all&status=all`,
       ),
     );
     expect(screen.getByLabelText("Month")).toHaveValue(NOW_MONTH);
   });
 
-  it("uses the base monthly list and skips ledger filter pagination when filters are default", async () => {
-    setup({ transactions: [makeTransactionView({ title: "Weekly shop" })] });
+  it("drives the list from the ledger filter query with status=all by default", async () => {
+    setup({ filteredTransactions: [makeTransactionView({ title: "Weekly shop" })] });
 
     expect(screen.getByText("Weekly shop")).toBeInTheDocument();
+    // One query owns the list — no active-only base-list shortcut — so the unfiltered
+    // default is a live status=all read, not skipped.
     await waitFor(() => {
       const filterCall = convexReactMock.usePaginatedQuery.mock.calls.find(
         ([fn]) => getFunctionName(fn) === FILTER_LEDGER,
       );
-      expect(filterCall?.[1]).toBe("skip");
+      expect(filterCall?.[1]).toMatchObject({ status: "all" });
     });
   });
 
   it("applies ledger filters only when Apply is clicked and leaves monthly totals unchanged", async () => {
     const user = userEvent.setup();
     const { location } = setup({
-      transactions: [makeTransactionView({ title: "Weekly shop" })],
       filteredTransactions: [makeTransactionView({ title: "Rent payment" })],
       monthlySummary: {
         totals: { incomeMinor: 0, expenseMinor: 12_500, netMinor: -12_500 },
@@ -159,7 +160,7 @@ describe("CircleTransactions", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
 
     expect(location()).toBe(
-      `/circles/${REF}/transactions?month=2026-05&type=all&status=active&q=rent`,
+      `/circles/${REF}/transactions?month=2026-05&type=all&status=all&q=rent`,
     );
     expect(screen.getByText("Rent payment")).toBeInTheDocument();
     expect(screen.getAllByText(/\$125\.00/)).toHaveLength(2);
@@ -175,7 +176,7 @@ describe("CircleTransactions", () => {
 
     await user.click(screen.getByRole("button", { name: "Previous month" }));
     expect(location()).toBe(
-      `/circles/${REF}/transactions?month=${addMonths("2026-05", -1)}&type=all&status=active`,
+      `/circles/${REF}/transactions?month=${addMonths("2026-05", -1)}&type=all&status=all`,
     );
   });
 
@@ -189,7 +190,7 @@ describe("CircleTransactions", () => {
 
     await user.click(screen.getByRole("button", { name: /Filters/ }));
     await user.click(screen.getByRole("button", { name: "Reset" }));
-    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05&type=all&status=active`);
+    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05&type=all&status=all`);
   });
 
   it("carries only month to detail and edit object routes", async () => {
@@ -211,7 +212,7 @@ describe("CircleTransactions", () => {
     const { location } = setup();
     await user.click(screen.getByRole("button", { name: "Add expense" }));
     expect(location()).toBe(
-      `/circles/${REF}/transactions?month=2026-05&type=all&status=active&new=expense`,
+      `/circles/${REF}/transactions?month=2026-05&type=all&status=all&new=expense`,
     );
     expect(screen.getByRole("form", { name: /add expense/i })).toBeInTheDocument();
   });
@@ -231,7 +232,7 @@ describe("CircleTransactions", () => {
     });
   });
 
-  it("offers per-row lifecycle actions in the mixed status=all view", () => {
+  it("offers per-row lifecycle actions and an archived marker in the mixed status=all view", () => {
     setup({
       initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
       filteredTransactions: [
@@ -249,6 +250,13 @@ describe("CircleTransactions", () => {
     // active rows Archive, archived rows Restore.
     expect(screen.getByRole("button", { name: "Archive Active buy" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Restore Archived buy" })).toBeInTheDocument();
+
+    // The archived row is distinguished by an "Archived" marker so the mixed default view
+    // stays readable; the active row carries none, so exactly one marker shows. The marker
+    // sits on the archived row (its `<li>` also holds that row's "Archived buy" title).
+    const marker = screen.getByText("Archived", { exact: true });
+    expect(screen.getAllByText("Archived", { exact: true })).toHaveLength(1);
+    expect(marker.closest("li")).toHaveTextContent("Archived buy");
   });
 
   it("does not rewrite applied filters when the open panel's draft type changes the options", async () => {
@@ -290,13 +298,13 @@ describe("CircleTransactions", () => {
 
   it("renders Load more and pages by the shared page size", async () => {
     const user = userEvent.setup();
-    setup({ transactions: [makeTransactionView()], status: "CanLoadMore" });
+    setup({ filteredTransactions: [makeTransactionView()], status: "CanLoadMore" });
     await user.click(screen.getByRole("button", { name: "Load more" }));
     expect(paginatedLoadMore).toHaveBeenCalledWith(TRANSACTIONS_PAGE_SIZE);
   });
 
   it("hides write actions in archived circles", () => {
-    setup({ circle: { status: "archived" }, transactions: [makeTransactionView()] });
+    setup({ circle: { status: "archived" }, filteredTransactions: [makeTransactionView()] });
     expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
     expect(screen.getByText(/circle is archived/i)).toBeInTheDocument();
     expect(within(screen.getByRole("listitem")).queryByRole("link", { name: /Edit/ })).toBeNull();

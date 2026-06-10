@@ -16,7 +16,9 @@ dedicated **Transaction Search** route. Ledger Filter narrows the selected **Mon
 month only. Transaction Search is a top-level Circle page for finding Transactions across the
 Circle with explicit date range or all-time scope. Both surfaces filter text by Title and Note
 only; Category is a structured filter, not a second text-matching path. Default lifecycle scope is
-active; users can choose active, archived, or all.
+all; archived Transactions are shown by default but visually distinguished (muted title, "Archived"
+badge) so the full history is visible without filtering while active and archived rows remain
+easy to tell apart. Users can narrow to active-only or archived-only via the status filter.
 
 ## Implement
 
@@ -83,12 +85,13 @@ active; users can choose active, archived, or all.
 
 ## How to test
 
-- **Ledger Filter:** canonical URL includes `month`, `status=active`, and `type=all`; selected
+- **Ledger Filter:** canonical URL includes `month`, `status=all`, and `type=all`; selected
   month only; month change resets Ledger Filter-owned params back to defaults; text matches
   Title/Note; category/member/status/type filters combine; option lists are sourced from that
-  month’s Transactions only.
-- **Transaction Search:** canonical URL includes `status=active` and `type=all`; default URL
-  searches all active Circle Transactions newest-first; exact
+  month’s Transactions only; archived rows show a visual badge and muted title.
+- **Transaction Search:** canonical URL includes `status=all` and `type=all`; default URL
+  searches all Circle Transactions (active and archived) newest-first, with archived rows
+  visually distinguished; exact
   date range narrows inclusively; empty date range means all-time; text matches Title/Note; type,
   Category, Recorded By, Paid By, lifecycle status, and amount range combine.
 - **URL encoding:** `q`, `type`, `status`, comma-separated `categories`, comma-separated `paidBy`,
