@@ -1,5 +1,6 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Dashboard, Member, MonthlyComparison, Transaction } from "~/lib/data.js";
 import {
@@ -7,6 +8,7 @@ import {
   makeCircleView,
   makeMemberView,
   makeTransactionView,
+  renderCircleRoutes,
   renderInCircle,
   testId,
 } from "~/test/convex-react.js";
@@ -277,5 +279,100 @@ describe("Dashboard Paid By filter", () => {
     configureConvex({ dashboard: makeDashboard(), paidByFilterOptions: undefined });
     renderInCircle(makeCircleView(), <CircleDashboard />);
     expect(screen.getByLabelText(/paid by/i)).toBeDisabled();
+  });
+});
+
+describe("Dashboard URL state (paidBy + range)", () => {
+  const you = makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" });
+  const alex = makeMemberView({
+    id: testId<Member["id"]>("mem-alex"),
+    displayName: "Alex",
+    role: "member",
+    isSelf: false,
+  });
+  const ROUTES = <Route path="circles/:circleRef" element={<CircleDashboard />} />;
+
+  function setup(initialSearch = "") {
+    return renderCircleRoutes(makeCircleView(), ROUTES, {
+      initialEntries: [`/circles/trip-c1${initialSearch}`],
+    });
+  }
+
+  it("restores a deep-linked Paid By + range and queries with both", () => {
+    configureConvex({
+      paidByFilterOptions: [you, alex],
+      // The double inspects the queried args, so this asserts the URL actually
+      // flowed through the real hooks into the subscription.
+      monthlyComparison: (args) =>
+        args.rangeMonths === 3 && args.paidByMemberId === "mem-alex"
+          ? {
+              series: [{ month: "2026-06", incomeMinor: 0, expenseMinor: 4_200, netMinor: -4_200 }],
+              currency: "USD",
+            }
+          : { series: [], currency: "USD" },
+      dashboard: (args) =>
+        args.paidByMemberId === "mem-alex"
+          ? makeDashboard({ totals: { incomeMinor: 0, expenseMinor: 2_500, netMinor: -2_500 } })
+          : makeDashboard(),
+    });
+    setup("?paidBy=mem-alex&range=3");
+
+    expect(screen.getByLabelText(/paid by/i)).toHaveValue("mem-alex");
+    expect(screen.getByLabelText(/range/i)).toHaveValue("3");
+    expect(screen.getByText("$25.00")).toBeInTheDocument(); // filtered totals
+    const section = screen.getByRole("region", { name: /month-over-month/i });
+    expect(within(section).getByText("-$42.00")).toBeInTheDocument(); // filtered series
+  });
+
+  it("writes selections to the URL and clears them back to a bare URL on defaults", async () => {
+    configureConvex({ paidByFilterOptions: [you, alex] });
+    const view = setup();
+
+    await userEvent.selectOptions(screen.getByLabelText(/range/i), "12");
+    expect(view.location()).toBe("/circles/trip-c1?range=12");
+
+    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "mem-alex");
+    expect(view.location()).toBe("/circles/trip-c1?paidBy=mem-alex&range=12");
+
+    // Back to the defaults: the params drop, leaving the canonical bare URL.
+    await userEvent.selectOptions(screen.getByLabelText(/range/i), "6");
+    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "");
+    expect(view.location()).toBe("/circles/trip-c1");
+  });
+
+  it("falls back to the default range for an unsupported range param", () => {
+    configureConvex({ paidByFilterOptions: [you] });
+    setup("?range=9");
+    expect(screen.getByLabelText(/range/i)).toHaveValue("6");
+  });
+
+  it("cleans a paidBy the loaded options do not know and shows the unfiltered view", async () => {
+    configureConvex({
+      paidByFilterOptions: [you],
+      dashboard: (args) =>
+        args.paidByMemberId
+          ? makeDashboard({ totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 } })
+          : makeDashboard(),
+    });
+    const view = setup("?paidBy=mem-ghost");
+
+    // The stale id is dropped from the URL (same observable result as any unknown
+    // id — ADR 0016) and the queries run unfiltered.
+    await waitFor(() => expect(view.location()).toBe("/circles/trip-c1"));
+    expect(screen.getByLabelText(/paid by/i)).toHaveValue("");
+    expect(screen.getByText("$5,000.00")).toBeInTheDocument();
+  });
+
+  it("holds the money queries while a deep-linked paidBy awaits its options", () => {
+    // Options still loading + a paidBy in the URL: the dashboard and comparison must
+    // read as LOADING (queries skipped), never flash unfiltered totals where a
+    // filtered view was deep-linked.
+    configureConvex({ paidByFilterOptions: undefined, dashboard: makeDashboard() });
+    setup("?paidBy=mem-alex");
+
+    expect(screen.getAllByText("…")).toHaveLength(3);
+    expect(screen.getByText(/loading comparison/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading recent activity/i)).toBeInTheDocument();
+    expect(screen.queryByText("$5,000.00")).not.toBeInTheDocument();
   });
 });

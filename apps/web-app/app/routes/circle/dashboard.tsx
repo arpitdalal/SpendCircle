@@ -2,14 +2,14 @@ import {
   COMPARISON_RANGE_OPTIONS,
   type ComparisonRangeMonths,
   currentMonth,
-  DEFAULT_COMPARISON_RANGE_MONTHS,
   formatMoney,
   getCurrency,
   isComparisonRangeMonths,
   money,
   toCurrencyCode,
 } from "@spend-circle/domain";
-import { useState } from "react";
+import { useEffect } from "react";
+import { useSearchParams } from "react-router";
 import {
   Bar,
   CartesianGrid,
@@ -21,6 +21,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  canonicalDashboardParams,
+  type DashboardSelection,
+  readDashboardSelection,
+} from "~/lib/dashboard-url.js";
 import {
   type Circle,
   type Dashboard,
@@ -51,37 +56,75 @@ import { useCircle } from "~/routes/layouts/circle-layout.js";
  * Totals and recent come from `getDashboard` (a bounded server-side aggregate over the
  * month — never summed on the client, ADR 0009); the Paid By options come from
  * `getPaidByFilterOptions` (current Members + Removed Members with matching active
- * Transactions). The filter is local component state: the Dashboard is a single-month
- * inspection surface, so the selection is transient rather than URL-encoded.
+ * Transactions).
+ *
+ * The Paid By filter and the Comparison Range live in the URL (`dashboard-url.ts` —
+ * the Ledger's URL-as-state policy), so a narrowed Dashboard survives reload and can
+ * be shared; selection changes push history entries so Back walks them. The URL's
+ * `paidBy` id is only TRUSTED once the loaded options vouch for it: until they
+ * resolve, both money queries are held (`enabled: false`, reading as loading) so an
+ * unverified id never reaches the backend and unfiltered totals never flash where a
+ * filtered view was deep-linked; an id the options do not know (stale link, removed
+ * relevance, hand-edited URL) is cleaned back to All members — the same observable
+ * result as any other unknown id (ADR 0016).
  */
 export default function CircleDashboard() {
   const circle = useCircle();
   const month = currentMonth(new Date());
-  const [paidByMemberId, setPaidByMemberId] = useState<Member["id"] | undefined>(undefined);
-  const [rangeMonths, setRangeMonths] = useState<ComparisonRangeMonths>(
-    DEFAULT_COMPARISON_RANGE_MONTHS,
-  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selection = readDashboardSelection(searchParams);
 
-  const dashboard = useDashboard(circle.id, { month, paidByMemberId });
+  const filterOptions = usePaidByFilterOptions(circle.id);
+  // The URL carries a raw id; the loaded options are the validator. `undefined`
+  // means "not vouched for (yet)" — either still loading or unknown.
+  const paidByMemberId = selection.paidBy
+    ? filterOptions?.find((member) => member.id === selection.paidBy)?.id
+    : undefined;
+  const awaitingPaidBy = selection.paidBy !== "" && filterOptions === undefined;
+
+  // Drop a paidBy the loaded options do not know — mirroring the Ledger's
+  // dropUnknownIds cleanup — so the URL never keeps naming a filter that isn't
+  // applied. Range needs no cleanup: a malformed value already READS as the default.
+  useEffect(() => {
+    if (selection.paidBy && filterOptions && !paidByMemberId) {
+      setSearchParams(canonicalDashboardParams({ ...selection, paidBy: "" }, searchParams), {
+        replace: true,
+      });
+    }
+  }, [selection, filterOptions, paidByMemberId, searchParams, setSearchParams]);
+
+  const dashboard = useDashboard(circle.id, {
+    month,
+    paidByMemberId,
+    enabled: !awaitingPaidBy,
+  });
   const comparison = useMonthlyComparison(circle.id, {
     endMonth: month,
-    rangeMonths,
+    rangeMonths: selection.range,
     paidByMemberId,
+    enabled: !awaitingPaidBy,
   });
-  const filterOptions = usePaidByFilterOptions(circle.id);
+
+  const select = (next: DashboardSelection) => {
+    setSearchParams(canonicalDashboardParams(next, searchParams), { replace: false });
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-display text-lg font-semibold tracking-tight">Dashboard</h2>
-        <PaidByFilter options={filterOptions} value={paidByMemberId} onChange={setPaidByMemberId} />
+        <PaidByFilter
+          options={filterOptions}
+          value={paidByMemberId}
+          onChange={(memberId) => select({ ...selection, paidBy: memberId ?? "" })}
+        />
       </div>
 
       <DashboardTotalsCards dashboard={dashboard} fallbackCurrency={circle.currency} />
       <MonthlyComparisonSection
         comparison={comparison}
-        rangeMonths={rangeMonths}
-        onRangeChange={setRangeMonths}
+        rangeMonths={selection.range}
+        onRangeChange={(range) => select({ ...selection, range })}
       />
       <RecentTransactions dashboard={dashboard} circle={circle} />
     </div>

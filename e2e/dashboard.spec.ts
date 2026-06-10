@@ -55,7 +55,14 @@ test("the dashboard shows recent activity and a working Paid By filter", async (
   await expect(filter).toBeVisible();
   await filter.selectOption({ index: 1 });
   await expect(recent.getByRole("listitem").filter({ hasText: title })).toBeVisible();
-  await filter.selectOption("");
+  // The selection is URL-owned: it lands in `paidBy`, survives a reload, and
+  // clears from the URL when back on All members (the canonical bare route).
+  await expect(page).toHaveURL(/paidBy=/);
+  await page.reload();
+  await expect(page.getByLabel(/paid by/i)).not.toHaveValue("");
+  await expect(recent.getByRole("listitem").filter({ hasText: title })).toBeVisible();
+  await page.getByLabel(/paid by/i).selectOption("");
+  await expect(page).not.toHaveURL(/paidBy=/);
   await expect(recent.getByRole("listitem").filter({ hasText: title })).toBeVisible();
 });
 
@@ -100,4 +107,13 @@ test("the month-over-month comparison defaults to 6 months and the range selecto
   await range.selectOption("12");
   await expect(rows).toHaveCount(12);
   await expect(rows.last()).toContainText(currentMonthLabel);
+
+  // The range is URL-owned: it lands in `range`, survives a reload, and clears
+  // from the URL when back on the six-month default.
+  await expect(page).toHaveURL(/range=12/);
+  await page.reload();
+  await expect(page.getByLabel(/range/i)).toHaveValue("12");
+  await expect(page.locator("tbody tr")).toHaveCount(12);
+  await page.getByLabel(/range/i).selectOption("6");
+  await expect(page).not.toHaveURL(/range=/);
 });

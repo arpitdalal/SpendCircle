@@ -349,14 +349,20 @@ export type DashboardTotals = Dashboard["totals"];
  * SAME active set the filter narrows, so they never disagree. `undefined` while
  * loading; `null` for an inaccessible Circle (the guard ejects before this renders).
  * Mock mode returns fixtures and skips the backend (ADR 0006).
+ *
+ * `enabled: false` skips the query and reads as loading (`undefined`). The route uses
+ * it while a URL-carried Paid By id is still being validated against the loaded filter
+ * options, so an unverified id is never sent to the backend and unfiltered money never
+ * flashes where a filtered view was deep-linked.
  */
 export function useDashboard(
   circleId: Circle["id"],
-  options?: { month?: PlainMonth; paidByMemberId?: Member["id"] },
+  options?: { month?: PlainMonth; paidByMemberId?: Member["id"]; enabled?: boolean },
 ) {
+  const enabled = options?.enabled ?? true;
   const queried = useQuery(
     api.dashboard.getDashboard,
-    MOCKS
+    MOCKS || !enabled
       ? "skip"
       : {
           circleId,
@@ -364,6 +370,9 @@ export function useDashboard(
           ...(options?.paidByMemberId ? { paidByMemberId: options.paidByMemberId } : {}),
         },
   );
+  if (!enabled) {
+    return undefined;
+  }
   return MOCKS ? MOCK_DASHBOARD : queried;
 }
 
@@ -386,7 +395,8 @@ export type MonthlyComparisonEntry = MonthlyComparison["series"][number];
  * always describe the same activity. `undefined` while loading; `null` for an
  * inaccessible Circle (the guard ejects before this renders). Mock mode derives a
  * deterministic fixture series for the requested window and skips the backend
- * (ADR 0006).
+ * (ADR 0006). `enabled: false` skips the query and reads as loading — see
+ * {@link useDashboard}.
  */
 export function useMonthlyComparison(
   circleId: Circle["id"],
@@ -394,11 +404,13 @@ export function useMonthlyComparison(
     endMonth: PlainMonth;
     rangeMonths: ComparisonRangeMonths;
     paidByMemberId?: Member["id"];
+    enabled?: boolean;
   },
 ) {
+  const enabled = options.enabled ?? true;
   const queried = useQuery(
     api.dashboard.getMonthlyComparison,
-    MOCKS
+    MOCKS || !enabled
       ? "skip"
       : {
           circleId,
@@ -407,6 +419,9 @@ export function useMonthlyComparison(
           ...(options.paidByMemberId ? { paidByMemberId: options.paidByMemberId } : {}),
         },
   );
+  if (!enabled) {
+    return undefined;
+  }
   return MOCKS ? mockMonthlyComparison(options.endMonth, options.rangeMonths) : queried;
 }
 
