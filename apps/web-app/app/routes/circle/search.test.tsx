@@ -39,7 +39,10 @@ function setup(
   opts: {
     circle?: Partial<Circle>;
     searchTransactions?: Transaction[];
-    options?: TransactionFilterOptions | null;
+    options?:
+      | TransactionFilterOptions
+      | null
+      | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
     initialEntries?: string[];
   } = {},
 ) {
@@ -128,6 +131,42 @@ describe("CircleSearch", () => {
     await user.click(screen.getByRole("button", { name: /Filters/ }));
     await user.click(screen.getByRole("button", { name: "Reset" }));
     expect(location()).toBe(`/circles/${REF}/search?type=all&status=active`);
+  });
+
+  it("does not rewrite applied filters when the open panel's draft type changes the options", async () => {
+    const user = userEvent.setup();
+    const url = `/circles/${REF}/search?type=expense&status=active&categories=cat-grocery`;
+    const { location } = setup({
+      initialEntries: [url],
+      // Options narrow by type: the applied expense category vanishes from the income set.
+      options: (args) =>
+        args.type === "income"
+          ? {
+              categories: [
+                makeCategoryView({ id: testId<Category["id"]>("cat-salary"), name: "Salary" }),
+              ],
+              members: [
+                makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" }),
+              ],
+            }
+          : {
+              categories: [
+                makeCategoryView({ id: testId<Category["id"]>("cat-grocery"), name: "Groceries" }),
+              ],
+              members: [
+                makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" }),
+              ],
+            },
+    });
+
+    await waitFor(() => expect(location()).toBe(url));
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    await user.click(screen.getByRole("button", { name: "Income" }));
+
+    // Draft edits never touch the applied URL — the still-applied expense category survives
+    // even though the income draft's option set no longer contains it.
+    expect(location()).toBe(url);
   });
 
   it("opens a result detail without search params", async () => {

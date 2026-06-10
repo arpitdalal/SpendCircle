@@ -77,7 +77,12 @@ export default function CircleTransactions() {
   }, [searchParams, filters, rawNew, createType, setSearchParams]);
 
   useEffect(() => {
-    if (!options) {
+    // Drop URL-selected ids no longer in the option universe (e.g. a stale deep link).
+    // Only while the panel is CLOSED: open, `options` follows the DRAFT type, so cleaning
+    // the still-applied `filters` against it would strip a valid selection of the applied
+    // type and silently change the live result set before the user applies anything.
+    // Closed, `options` follows `filters.type`, which is exactly what we validate against.
+    if (panelOpen || !options) {
       return;
     }
     const categoryIds = options.categories.map((category) => category.id);
@@ -92,7 +97,7 @@ export default function CircleTransactions() {
         replace: true,
       });
     }
-  }, [filters, options, searchParams, setSearchParams]);
+  }, [panelOpen, filters, options, searchParams, setSearchParams]);
 
   const goToMonth = (next: PlainMonth) => {
     setSearchParams(
@@ -189,13 +194,7 @@ export default function CircleTransactions() {
         }
         canEdit={writable}
         ledgerMonth={filters.month}
-        lifecycleMode={
-          filters.status === "archived"
-            ? "archived"
-            : filters.status === "active"
-              ? "active"
-              : undefined
-        }
+        showLifecycle
       />
 
       <FilterPanel
@@ -471,7 +470,7 @@ function MonthlyTotals({
             <dt className="text-xs text-neutral-500">{stat.label}</dt>
             <dd className={cn("text-sm font-semibold tabular-nums", stat.tone)}>
               {stat.amount === undefined
-                ? "..."
+                ? "…"
                 : formatMoney(money(stat.amount, currency), viewerLocale())}
             </dd>
           </div>

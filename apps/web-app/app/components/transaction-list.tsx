@@ -20,19 +20,25 @@ export function TransactionList({
   emptyLabel,
   canEdit,
   ledgerMonth,
-  lifecycleMode,
+  showLifecycle,
 }: {
   paginated: PaginatedTransactions;
   circle: Circle;
   emptyLabel: string;
   canEdit: boolean;
   ledgerMonth?: PlainMonth;
-  lifecycleMode?: "active" | "archived";
+  /**
+   * Whether rows offer lifecycle actions (Archive/Restore). The ledger sets this; Search
+   * is a read-only discovery surface and acts through the detail page instead. The action
+   * each row offers is derived from that row's own `status`, so a mixed `status=all` list
+   * still shows Archive on active rows and Restore on archived rows (not a dead view).
+   */
+  showLifecycle?: boolean;
 }) {
   const { transactions, status, loadMore } = paginated;
 
   if (status === "LoadingFirstPage") {
-    return <p className="text-sm text-neutral-500">Loading transactions...</p>;
+    return <p className="text-sm text-neutral-500">Loading transactions…</p>;
   }
   if (transactions.length === 0) {
     return <p className="text-sm text-neutral-500">{emptyLabel}</p>;
@@ -73,7 +79,7 @@ export function TransactionList({
                 viewerLocale(),
               )}
             </span>
-            {ledgerMonth && lifecycleMode === "active" && canEdit && txn.canEditFields ? (
+            {ledgerMonth && txn.status === "active" && canEdit && txn.canEditFields ? (
               <Button asChild variant="outline">
                 <Link
                   to={`/circles/${circle.ref}/transactions/${txn.ref}/edit?month=${ledgerMonth}`}
@@ -83,10 +89,10 @@ export function TransactionList({
                 </Link>
               </Button>
             ) : null}
-            {lifecycleMode && canEdit && txn.canArchive ? (
+            {showLifecycle && canEdit && txn.canArchive ? (
               <LifecycleButton
                 transaction={txn}
-                action={lifecycleMode === "archived" ? "restore" : "archive"}
+                action={txn.status === "archived" ? "restore" : "archive"}
               />
             ) : null}
           </li>
@@ -100,7 +106,7 @@ export function TransactionList({
           onClick={loadMore}
           disabled={status === "LoadingMore"}
         >
-          {status === "LoadingMore" ? "Loading..." : "Load more"}
+          {status === "LoadingMore" ? "Loading…" : "Load more"}
         </Button>
       ) : null}
     </div>
@@ -113,8 +119,8 @@ function transactionDetailHref(circle: Circle, txn: Transaction, ledgerMonth?: P
 }
 
 const LIFECYCLE_COPY = {
-  archive: { idle: "Archive", busy: "Archiving...", error: "Couldn't archive the transaction." },
-  restore: { idle: "Restore", busy: "Restoring...", error: "Couldn't restore the transaction." },
+  archive: { idle: "Archive", busy: "Archiving…", error: "Couldn't archive the transaction." },
+  restore: { idle: "Restore", busy: "Restoring…", error: "Couldn't restore the transaction." },
 };
 
 function LifecycleButton({

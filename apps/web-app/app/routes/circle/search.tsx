@@ -41,7 +41,12 @@ export default function CircleSearch() {
   }, [searchKey]);
 
   useEffect(() => {
-    if (!options) {
+    // Drop URL-selected ids no longer in the option universe (e.g. a stale deep link).
+    // Only while the panel is CLOSED: open, `options` follows the DRAFT type, so cleaning
+    // the still-applied `filters` against it would strip a valid selection of the applied
+    // type and silently change the live result set before the user applies anything.
+    // Closed, `options` follows `filters.type`, which is exactly what we validate against.
+    if (panelOpen || !options) {
       return;
     }
     const categoryIds = options.categories.map((category) => category.id);
@@ -54,7 +59,7 @@ export default function CircleSearch() {
     ) {
       setSearchParams(canonicalSearchParams({ ...filters, ...cleaned }), { replace: true });
     }
-  }, [filters, options, setSearchParams]);
+  }, [panelOpen, filters, options, setSearchParams]);
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();

@@ -60,7 +60,10 @@ function setup(
     filteredTransactions?: Transaction[];
     status?: PaginationStatus;
     monthlySummary?: MonthlySummary | null;
-    filterOptions?: TransactionFilterOptions | null;
+    filterOptions?:
+      | TransactionFilterOptions
+      | null
+      | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
     initialEntries?: string[];
   } = {},
 ) {
@@ -226,6 +229,63 @@ describe("CircleTransactions", () => {
     expect(restoreTransaction).toHaveBeenCalledWith({
       transactionId: testId<Transaction["id"]>("t1"),
     });
+  });
+
+  it("offers per-row lifecycle actions in the mixed status=all view", () => {
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: [
+        makeTransactionView({ ref: "active-t", title: "Active buy", status: "active" }),
+        makeTransactionView({
+          id: testId<Transaction["id"]>("t2"),
+          ref: "archived-t",
+          title: "Archived buy",
+          status: "archived",
+        }),
+      ],
+    });
+
+    // A row's action is derived from its own status, so the mixed list isn't a dead view:
+    // active rows Archive, archived rows Restore.
+    expect(screen.getByRole("button", { name: "Archive Active buy" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore Archived buy" })).toBeInTheDocument();
+  });
+
+  it("does not rewrite applied filters when the open panel's draft type changes the options", async () => {
+    const user = userEvent.setup();
+    const url = `/circles/${REF}/transactions?month=2026-05&type=expense&status=active&categories=cat-grocery`;
+    const { location } = setup({
+      initialEntries: [url],
+      filteredTransactions: [makeTransactionView({ title: "Weekly shop" })],
+      // Options narrow by type: the applied expense category vanishes from the income set.
+      filterOptions: (args) =>
+        args.type === "income"
+          ? {
+              categories: [
+                makeCategoryView({ id: testId<Category["id"]>("cat-salary"), name: "Salary" }),
+              ],
+              members: [
+                makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" }),
+              ],
+            }
+          : {
+              categories: [
+                makeCategoryView({ id: testId<Category["id"]>("cat-grocery"), name: "Groceries" }),
+              ],
+              members: [
+                makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" }),
+              ],
+            },
+    });
+
+    await waitFor(() => expect(location()).toBe(url));
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    await user.click(screen.getByRole("button", { name: "Income" }));
+
+    // Draft edits never touch the applied URL — the still-applied expense category survives
+    // even though the income draft's option set no longer contains it.
+    expect(location()).toBe(url);
   });
 
   it("renders Load more and pages by the shared page size", async () => {

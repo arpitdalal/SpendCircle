@@ -113,8 +113,17 @@ interface ConvexState {
   ledgerFilterStatus?: PaginationStatus;
   searchTransactions?: Transaction[];
   searchStatus?: PaginationStatus;
-  ledgerFilterOptions?: TransactionFilterOptions | null;
-  transactionSearchOptions?: TransactionFilterOptions | null;
+  /** `getLedgerFilterOptions` / `getTransactionSearchOptions` result; `undefined` ≡ loading,
+   * `null` ≡ inaccessible. A function resolves per query args (e.g. by `type`) so a test can
+   * model the type-scoped Category option set the panel narrows to as the draft type flips. */
+  ledgerFilterOptions?:
+    | TransactionFilterOptions
+    | null
+    | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
+  transactionSearchOptions?:
+    | TransactionFilterOptions
+    | null
+    | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
   /** `getDashboard` result; `undefined` ≡ loading, `null` ≡ inaccessible Circle.
    * Defaults to a zero Dashboard so the totals cards render. A function resolves per
    * query args (e.g. by `paidByMemberId`) so a test can model the Paid By filter
@@ -216,9 +225,13 @@ export function configureConvex(state: ConvexState = {}) {
         case NAME.getMonthlyLedger:
           return monthlySummary;
         case NAME.getLedgerFilterOptions:
-          return ledgerFilterOptions;
+          return typeof ledgerFilterOptions === "function"
+            ? ledgerFilterOptions(args)
+            : ledgerFilterOptions;
         case NAME.getTransactionSearchOptions:
-          return transactionSearchOptions;
+          return typeof transactionSearchOptions === "function"
+            ? transactionSearchOptions(args)
+            : transactionSearchOptions;
         case NAME.getDashboard:
           return typeof dashboard === "function" ? dashboard(args) : dashboard;
         case NAME.getPaidByFilterOptions:
