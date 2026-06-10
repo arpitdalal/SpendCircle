@@ -20,7 +20,6 @@ import {
   useLedgerFilterOptions,
   useLedgerTransactionFilter,
   useMonthlySummary,
-  useTransactions,
 } from "~/lib/data.js";
 import { viewerLocale } from "~/lib/locale.js";
 import {
@@ -40,9 +39,6 @@ export default function CircleTransactions() {
   const writable = circle.status === "active";
   const filters = readLedgerFilters(searchParams);
   const filterCount = activeFilterCount(filters);
-  // "all" is the default status, so treat any non-"active" status as needing the filter
-  // path (baseTransactions is active-only and would miss archived rows).
-  const filterActive = filterCount > 0 || filters.status !== "active";
   const rawNew = searchParams.get("new");
   const createType: TransactionType | null =
     writable && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
@@ -54,10 +50,10 @@ export default function CircleTransactions() {
     panelOpen ? draft.type : filters.type,
   );
   const summary = useMonthlySummary(circle.id, filters.month);
-  const baseTransactions = useTransactions(circle.id, filters.month, { enabled: !filterActive });
-  const filteredTransactions = useLedgerTransactionFilter(circle.id, toLedgerQuery(filters), {
-    enabled: filterActive,
-  });
+  // One query owns the list. It serves the unfiltered default (status=all, whole month)
+  // as well as any narrowing filters — there is no active-only base-list shortcut, so the
+  // default view can include archived rows (distinguished in the row, not hidden).
+  const transactions = useLedgerTransactionFilter(circle.id, toLedgerQuery(filters));
   const searchKey = searchParams.toString();
 
   useEffect(() => {
@@ -189,7 +185,7 @@ export default function CircleTransactions() {
       ) : null}
 
       <TransactionList
-        paginated={filterActive ? filteredTransactions : baseTransactions}
+        paginated={transactions}
         circle={circle}
         emptyLabel={
           filterCount > 0 ? "No matching transactions." : `No transactions in ${monthLabel}.`

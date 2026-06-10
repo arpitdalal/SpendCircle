@@ -86,7 +86,7 @@ describe("CircleSearch", () => {
       searchTransactions: [makeTransactionView({ title: "Weekly shop" })],
     });
 
-    await waitFor(() => expect(location()).toBe(`/circles/${REF}/search?type=all&status=active`));
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/search?type=all&status=all`));
     expect(screen.getByText("Weekly shop")).toBeInTheDocument();
   });
 
@@ -105,10 +105,11 @@ describe("CircleSearch", () => {
   it("applies advanced filters through the panel", async () => {
     const user = userEvent.setup();
     const { location } = setup({
-      initialEntries: [`/circles/${REF}/search?type=all&status=active`],
+      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
       searchTransactions: [makeTransactionView({ title: "Archived rent", status: "archived" })],
     });
 
+    // Start from the canonical default (status=all), so the Filters button carries no count.
     await user.click(screen.getByRole("button", { name: "Filters" }));
     await user.click(screen.getByRole("button", { name: "Archived" }));
     await user.click(screen.getByRole("button", { name: "Expense" }));
@@ -130,7 +131,7 @@ describe("CircleSearch", () => {
 
     await user.click(screen.getByRole("button", { name: /Filters/ }));
     await user.click(screen.getByRole("button", { name: "Reset" }));
-    expect(location()).toBe(`/circles/${REF}/search?type=all&status=active`);
+    expect(location()).toBe(`/circles/${REF}/search?type=all&status=all`);
   });
 
   it("does not rewrite applied filters when the open panel's draft type changes the options", async () => {

@@ -129,22 +129,23 @@ describe("CircleTransactions", () => {
     expect(screen.getByLabelText("Month")).toHaveValue(NOW_MONTH);
   });
 
-  it("uses the ledger filter query with status=all by default (no base-list shortcut)", async () => {
+  it("drives the list from the ledger filter query with status=all by default", async () => {
     setup({ filteredTransactions: [makeTransactionView({ title: "Weekly shop" })] });
 
     expect(screen.getByText("Weekly shop")).toBeInTheDocument();
+    // One query owns the list — no active-only base-list shortcut — so the unfiltered
+    // default is a live status=all read, not skipped.
     await waitFor(() => {
       const filterCall = convexReactMock.usePaginatedQuery.mock.calls.find(
         ([fn]) => getFunctionName(fn) === FILTER_LEDGER,
       );
-      expect(filterCall?.[1]).not.toBe("skip");
+      expect(filterCall?.[1]).toMatchObject({ status: "all" });
     });
   });
 
   it("applies ledger filters only when Apply is clicked and leaves monthly totals unchanged", async () => {
     const user = userEvent.setup();
     const { location } = setup({
-      transactions: [makeTransactionView({ title: "Weekly shop" })],
       filteredTransactions: [makeTransactionView({ title: "Rent payment" })],
       monthlySummary: {
         totals: { incomeMinor: 0, expenseMinor: 12_500, netMinor: -12_500 },
@@ -231,7 +232,7 @@ describe("CircleTransactions", () => {
     });
   });
 
-  it("offers per-row lifecycle actions in the mixed status=all view", () => {
+  it("offers per-row lifecycle actions and an archived marker in the mixed status=all view", () => {
     setup({
       initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
       filteredTransactions: [
@@ -249,6 +250,13 @@ describe("CircleTransactions", () => {
     // active rows Archive, archived rows Restore.
     expect(screen.getByRole("button", { name: "Archive Active buy" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Restore Archived buy" })).toBeInTheDocument();
+
+    // The archived row is distinguished by an "Archived" marker so the mixed default view
+    // stays readable; the active row carries none, so exactly one marker shows. The marker
+    // sits on the archived row (its `<li>` also holds that row's "Archived buy" title).
+    const marker = screen.getByText("Archived", { exact: true });
+    expect(screen.getAllByText("Archived", { exact: true })).toHaveLength(1);
+    expect(marker.closest("li")).toHaveTextContent("Archived buy");
   });
 
   it("does not rewrite applied filters when the open panel's draft type changes the options", async () => {
