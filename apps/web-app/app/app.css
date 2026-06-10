@@ -79,18 +79,19 @@
     font-family: var(--font-sans);
     @apply antialiased;
   }
+}
 
-  /* Must out-cascade Tailwind's animation/transition utilities, which live in the
-     later `utilities` layer (later layers win regardless of specificity) — hence
-     `!important`, the standard global reduced-motion reset. */
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
+/* Global reduced-motion reset. Deliberately UNLAYERED: unlayered declarations
+   out-cascade every @layer, so this suppresses Tailwind's animation/transition
+   utilities (which live in the later `utilities` layer and would otherwise win
+   over any layered override) without resorting to !important. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }
 
