@@ -21,6 +21,7 @@ import {
   useLedgerTransactionFilter,
   useMonthlySummary,
 } from "~/lib/data.js";
+import { formatMonthLabel } from "~/lib/datetime.js";
 import { viewerLocale } from "~/lib/locale.js";
 import {
   activeFilterCount,
@@ -357,16 +358,6 @@ function toMemberOptions(
     label: member.displayName,
     detail: member.status === "removed" ? "removed" : undefined,
   })) satisfies MultiSelectOption[];
-}
-
-function formatMonthLabel(month: PlainMonth) {
-  const parts = month.split("-");
-  const year = Number(parts[0]);
-  const monthIndex = Number(parts[1]);
-  return new Date(year, monthIndex - 1, 1).toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  });
 }
 
 function MonthNavigator({

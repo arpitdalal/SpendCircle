@@ -14,7 +14,10 @@ export function isValidPlainDate(value: string | null | undefined): value is Pla
   if (value == null || !PLAIN_DATE_RE.test(value)) {
     return false;
   }
-  const [year, month, day] = value.split("-").map(Number) as [number, number, number];
+  const [yearPart = "", monthPart = "", dayPart = ""] = value.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  const day = Number(dayPart);
   if (month < 1 || month > 12) {
     return false;
   }
@@ -59,13 +62,56 @@ export function defaultDateInMonth(month: PlainMonth, today: Date): PlainDate {
   return monthOf(todayDate) === month ? todayDate : `${month}-01`;
 }
 
+/**
+ * The numeric parts of a "YYYY-MM" month: the year and the 1-based month. The ONE
+ * sanctioned way to read a PlainMonth's numbers — `PlainMonth` is structurally a
+ * string, so ad-hoc `split(...) as [number, number]` tuple casts would let a
+ * malformed value fabricate `undefined as number`; here a missing part is an honest
+ * `NaN`, which downstream Date construction and arithmetic surface as invalid
+ * instead of silently mislabelling a month.
+ */
+export function plainMonthParts(month: PlainMonth): { year: number; month: number } {
+  // A missing or empty part is NaN explicitly — `Number("")` would be 0, and a
+  // fabricated year/month 0 can masquerade as real data where NaN cannot.
+  const numberPart = (part: string | undefined) => (part ? Number(part) : Number.NaN);
+  const [yearPart, monthPart] = month.split("-");
+  return { year: numberPart(yearPart), month: numberPart(monthPart) };
+}
+
 /** Moves a "YYYY-MM" month by `delta` months (negative moves backward). */
 export function addMonths(month: PlainMonth, delta: number): PlainMonth {
-  const [year, monthIndex] = month.split("-").map(Number) as [number, number];
+  const { year, month: monthIndex } = plainMonthParts(month);
   const zeroBased = year * 12 + (monthIndex - 1) + delta;
   const newYear = Math.floor(zeroBased / 12);
   const newMonth = (zeroBased % 12) + 1;
   return `${newYear.toString().padStart(4, "0")}-${newMonth.toString().padStart(2, "0")}`;
+}
+
+/**
+ * The Comparison Range (CONTEXT glossary): the Dashboard's month-over-month window
+ * is 1, 3, 6, or 12 months and defaults to six. One definition shared by the
+ * backend (arg validation) and the UI (the range selector) so neither can offer or
+ * accept a window the other doesn't understand.
+ */
+export const COMPARISON_RANGE_OPTIONS = [1, 3, 6, 12] as const;
+export type ComparisonRangeMonths = (typeof COMPARISON_RANGE_OPTIONS)[number];
+export const DEFAULT_COMPARISON_RANGE_MONTHS = 6 as const satisfies ComparisonRangeMonths;
+
+export function isComparisonRangeMonths(value: number): value is ComparisonRangeMonths {
+  return (COMPARISON_RANGE_OPTIONS as readonly number[]).includes(value);
+}
+
+/**
+ * The chronological window of `rangeMonths` months ENDING at `endMonth` (inclusive)
+ * — the month buckets a Comparison Range covers. Built on `addMonths`/`monthRange`
+ * so year-boundary spans are correct, and ascending so a series derived from it is
+ * chronological by construction.
+ */
+export function comparisonWindowMonths(
+  endMonth: PlainMonth,
+  rangeMonths: ComparisonRangeMonths,
+): PlainMonth[] {
+  return monthRange(addMonths(endMonth, -(rangeMonths - 1)), endMonth);
 }
 
 /** Inclusive list of months between two months, ascending. */

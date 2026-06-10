@@ -1,4 +1,28 @@
+import { type PlainMonth, plainMonthParts } from "@spend-circle/domain";
 import { viewerLocale } from "./locale.js";
+
+/**
+ * "YYYY-MM" months are plain calendar buckets with no timezone (domain/date.ts), so
+ * they are labelled by formatting their first day pinned to UTC — a local-zone Date
+ * would let a negative offset slide the label into the previous month. The viewer
+ * locale drives the month name's language (ADR 0021: explicit locale, never ambient).
+ * Parsing goes through the domain's `plainMonthParts` (no tuple casts); a malformed
+ * month surfaces as Intl's "Invalid Date" label rather than a wrong month.
+ */
+function monthFormatter(options: Intl.DateTimeFormatOptions) {
+  return (month: PlainMonth) => {
+    const { year, month: monthIndex } = plainMonthParts(month);
+    return new Intl.DateTimeFormat(viewerLocale(), { timeZone: "UTC", ...options }).format(
+      new Date(Date.UTC(year, monthIndex - 1, 1)),
+    );
+  };
+}
+
+/** Full month label, e.g. "June 2026" — list headings, table rows, tooltips. */
+export const formatMonthLabel = monthFormatter({ month: "long", year: "numeric" });
+
+/** Compact month label, e.g. "Jun" — chart axis ticks where space is tight. */
+export const formatMonthTick = monthFormatter({ month: "short" });
 
 /**
  * Formats an Audit Metadata / Transaction History timestamp (TXN-4).

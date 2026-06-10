@@ -1,5 +1,5 @@
 import { api } from "@spend-circle/convex";
-import type { PlainMonth, TransactionType } from "@spend-circle/domain";
+import type { ComparisonRangeMonths, PlainMonth, TransactionType } from "@spend-circle/domain";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "./env.js";
@@ -11,6 +11,7 @@ import {
   MOCK_MONTHLY_SUMMARY,
   MOCK_TRANSACTION_HISTORY,
   MOCK_TRANSACTIONS,
+  mockMonthlyComparison,
 } from "./fixtures.js";
 
 /**
@@ -348,14 +349,20 @@ export type DashboardTotals = Dashboard["totals"];
  * SAME active set the filter narrows, so they never disagree. `undefined` while
  * loading; `null` for an inaccessible Circle (the guard ejects before this renders).
  * Mock mode returns fixtures and skips the backend (ADR 0006).
+ *
+ * `enabled: false` skips the query and reads as loading (`undefined`). The route uses
+ * it while a URL-carried Paid By id is still being validated against the loaded filter
+ * options, so an unverified id is never sent to the backend and unfiltered money never
+ * flashes where a filtered view was deep-linked.
  */
 export function useDashboard(
   circleId: Circle["id"],
-  options?: { month?: PlainMonth; paidByMemberId?: Member["id"] },
+  options?: { month?: PlainMonth; paidByMemberId?: Member["id"]; enabled?: boolean },
 ) {
+  const enabled = options?.enabled ?? true;
   const queried = useQuery(
     api.dashboard.getDashboard,
-    MOCKS
+    MOCKS || !enabled
       ? "skip"
       : {
           circleId,
@@ -363,7 +370,59 @@ export function useDashboard(
           ...(options?.paidByMemberId ? { paidByMemberId: options.paidByMemberId } : {}),
         },
   );
+  if (!enabled) {
+    return undefined;
+  }
   return MOCKS ? MOCK_DASHBOARD : queried;
+}
+
+/**
+ * The Dashboard's month-over-month comparison view contract, derived from
+ * `getMonthlyComparison` so it can't drift from the backend (ADR 0003): a
+ * chronological, zero-filled per-month series of Income / Expense / Net in minor
+ * units plus the Circle Currency. `null` ≡ inaccessible Circle (ADR 0016);
+ * `undefined` while loading.
+ */
+export type MonthlyComparison = NonNullable<
+  FunctionReturnType<typeof api.dashboard.getMonthlyComparison>
+>;
+export type MonthlyComparisonEntry = MonthlyComparison["series"][number];
+
+/**
+ * The Dashboard's month-over-month comparison (RPT-4): `rangeMonths` months (a
+ * Comparison Range — 1/3/6/12) ending at `endMonth`, optionally narrowed to one
+ * Member via the same Paid By filter the totals use, so the chart and the cards
+ * always describe the same activity. `undefined` while loading; `null` for an
+ * inaccessible Circle (the guard ejects before this renders). Mock mode derives a
+ * deterministic fixture series for the requested window and skips the backend
+ * (ADR 0006). `enabled: false` skips the query and reads as loading — see
+ * {@link useDashboard}.
+ */
+export function useMonthlyComparison(
+  circleId: Circle["id"],
+  options: {
+    endMonth: PlainMonth;
+    rangeMonths: ComparisonRangeMonths;
+    paidByMemberId?: Member["id"];
+    enabled?: boolean;
+  },
+) {
+  const enabled = options.enabled ?? true;
+  const queried = useQuery(
+    api.dashboard.getMonthlyComparison,
+    MOCKS || !enabled
+      ? "skip"
+      : {
+          circleId,
+          endMonth: options.endMonth,
+          rangeMonths: options.rangeMonths,
+          ...(options.paidByMemberId ? { paidByMemberId: options.paidByMemberId } : {}),
+        },
+  );
+  if (!enabled) {
+    return undefined;
+  }
+  return MOCKS ? mockMonthlyComparison(options.endMonth, options.rangeMonths) : queried;
 }
 
 /**

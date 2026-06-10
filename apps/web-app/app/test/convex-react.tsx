@@ -1,4 +1,9 @@
 import { api } from "@spend-circle/convex";
+import {
+  comparisonWindowMonths,
+  DEFAULT_COMPARISON_RANGE_MONTHS,
+  isComparisonRangeMonths,
+} from "@spend-circle/domain";
 import { render } from "@testing-library/react";
 import { type FunctionReference, getFunctionName } from "convex/server";
 import type { ReactElement, ReactNode } from "react";
@@ -9,6 +14,7 @@ import type {
   Circle,
   Dashboard,
   Member,
+  MonthlyComparison,
   MonthlySummary,
   PaginationStatus,
   Transaction,
@@ -59,6 +65,7 @@ const NAME = {
   getTransactionSearchOptions: getFunctionName(api.search.getTransactionSearchOptions),
   getMonthlyLedger: getFunctionName(api.ledger.getMonthlyLedger),
   getDashboard: getFunctionName(api.dashboard.getDashboard),
+  getMonthlyComparison: getFunctionName(api.dashboard.getMonthlyComparison),
   getPaidByFilterOptions: getFunctionName(api.dashboard.getPaidByFilterOptions),
   createCircle: getFunctionName(api.circles.createCircle),
   createTransaction: getFunctionName(api.transactions.createTransaction),
@@ -81,6 +88,30 @@ const EMPTY_DASHBOARD: Dashboard = {
   currency: "USD",
   month: "2026-06",
 };
+
+/**
+ * A zero-filled comparison series for the queried window — the `getMonthlyComparison`
+ * default, modelling the backend contract (chronological, zero-filled, ending at
+ * `endMonth`) so Dashboard tests that don't drive the chart still render it over the
+ * window the route actually requested. The window comes from the same domain helper
+ * the backend uses (its math is covered by the domain + convex suites).
+ */
+function emptyMonthlyComparison(args: Record<string, unknown>): MonthlyComparison {
+  const endMonth = typeof args.endMonth === "string" ? args.endMonth : "2026-06";
+  const parsedRange = Number(args.rangeMonths);
+  const rangeMonths = isComparisonRangeMonths(parsedRange)
+    ? parsedRange
+    : DEFAULT_COMPARISON_RANGE_MONTHS;
+  return {
+    series: comparisonWindowMonths(endMonth, rangeMonths).map((month) => ({
+      month,
+      incomeMinor: 0,
+      expenseMinor: 0,
+      netMinor: 0,
+    })),
+    currency: "USD",
+  };
+}
 
 /** Models the `listCategories` backend contract: filter by type, optionally include
  * archived. The single definition the doubles share so it cannot drift per file. */
@@ -129,6 +160,14 @@ interface ConvexState {
    * query args (e.g. by `paidByMemberId`) so a test can model the Paid By filter
    * flipping the result without a loading gap. */
   dashboard?: Dashboard | null | ((args: Record<string, unknown>) => Dashboard | null | undefined);
+  /** `getMonthlyComparison` result (RPT-4); `undefined` ≡ loading, `null` ≡ inaccessible
+   * Circle. Defaults to a zero series over the queried window so the chart renders. A
+   * function resolves per query args (e.g. by `rangeMonths` / `paidByMemberId`) so a test
+   * can model the range selector or Paid By filter reshaping the series. */
+  monthlyComparison?:
+    | MonthlyComparison
+    | null
+    | ((args: Record<string, unknown>) => MonthlyComparison | null | undefined);
   /** `getPaidByFilterOptions` result; `undefined` ≡ loading, `null` ≡ inaccessible. */
   paidByFilterOptions?: Member[] | null;
   /** `getEditableTransaction` edit target (TXN-5); `undefined` ≡ loading, `null` ≡
@@ -196,6 +235,7 @@ export function configureConvex(state: ConvexState = {}) {
     ledgerFilterOptions,
     transactionSearchOptions,
     dashboard = EMPTY_DASHBOARD,
+    monthlyComparison = emptyMonthlyComparison,
     paidByFilterOptions,
     // No default: absent ≡ `undefined` ≡ loading (the codebase's reactive-query
     // convention); a test passes `null` to model an unavailable edit target.
@@ -234,6 +274,10 @@ export function configureConvex(state: ConvexState = {}) {
             : transactionSearchOptions;
         case NAME.getDashboard:
           return typeof dashboard === "function" ? dashboard(args) : dashboard;
+        case NAME.getMonthlyComparison:
+          return typeof monthlyComparison === "function"
+            ? monthlyComparison(args)
+            : monthlyComparison;
         case NAME.getPaidByFilterOptions:
           return paidByFilterOptions;
         case NAME.getEditableTransaction:
