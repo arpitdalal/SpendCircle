@@ -1,10 +1,71 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/bricolage-grotesque";
 @import "tailwindcss";
 
-/* Dark-first theme baseline (ADR 0005). shadcn/ui components and Recharts are
-   layered on top of these tokens as the UI is built out. */
+/*
+ * "Iris ledger" design tokens (ADR 0005, dark-first). Surfaces are violet-tinted
+ * ink rather than flat neutral so the app reads warm and communal; one iris-purple
+ * accent carries all interactive state. The `.light` palette is defined and ready
+ * but unwired — theme switching is a future slice, dark stays the default.
+ */
 @layer base {
   :root {
     color-scheme: dark;
+
+    /* Surfaces */
+    --background: oklch(0.155 0.018 295);
+    --foreground: oklch(0.94 0.01 290);
+    --card: oklch(0.195 0.022 295);
+    --card-foreground: oklch(0.94 0.01 290);
+    --popover: oklch(0.215 0.024 295);
+    --popover-foreground: oklch(0.94 0.01 290);
+
+    /* Muted / borders */
+    --muted: oklch(0.245 0.025 295);
+    --muted-foreground: oklch(0.67 0.025 290);
+    --faint-foreground: oklch(0.55 0.025 290);
+    --border: oklch(0.285 0.03 295);
+    --input: oklch(0.32 0.032 295);
+
+    /* Iris accent */
+    --primary: oklch(0.63 0.2 295);
+    --primary-foreground: oklch(0.985 0.005 295);
+    --primary-soft: oklch(0.63 0.2 295 / 14%);
+    --ring: oklch(0.68 0.18 295);
+
+    /* Semantic money + state */
+    --positive: oklch(0.78 0.15 162);
+    --destructive: oklch(0.7 0.18 22);
+    --destructive-soft: oklch(0.7 0.18 22 / 14%);
+
+    --radius: 0.625rem;
+  }
+
+  /* Light palette — ready for the theme-switching slice; nothing applies it yet. */
+  .light {
+    color-scheme: light;
+
+    --background: oklch(0.977 0.006 300);
+    --foreground: oklch(0.25 0.03 295);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.25 0.03 295);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.25 0.03 295);
+
+    --muted: oklch(0.94 0.012 297);
+    --muted-foreground: oklch(0.5 0.03 293);
+    --faint-foreground: oklch(0.6 0.025 293);
+    --border: oklch(0.89 0.016 296);
+    --input: oklch(0.84 0.02 296);
+
+    --primary: oklch(0.54 0.21 295);
+    --primary-foreground: oklch(0.985 0.005 295);
+    --primary-soft: oklch(0.54 0.21 295 / 10%);
+    --ring: oklch(0.54 0.21 295);
+
+    --positive: oklch(0.55 0.14 162);
+    --destructive: oklch(0.55 0.2 25);
+    --destructive-soft: oklch(0.55 0.2 25 / 10%);
   }
 
   html,
@@ -13,6 +74,105 @@
   }
 
   body {
-    @apply bg-neutral-950 text-neutral-100 antialiased;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    @apply antialiased;
+  }
+}
+
+/* Global reduced-motion reset. Deliberately UNLAYERED: unlayered declarations
+   out-cascade every @layer, so this suppresses Tailwind's animation/transition
+   utilities (which live in the later `utilities` layer and would otherwise win
+   over any layered override) without resorting to !important. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-ring: var(--ring);
+  --color-positive: var(--positive);
+  --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "Inter Variable", ui-sans-serif, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+
+  --animate-pop-in: pop-in 180ms var(--ease-out-quart);
+  --animate-fade-in: fade-in 200ms var(--ease-out-quart);
+  --animate-slide-up: slide-up 250ms var(--ease-out-quart);
+  --animate-panel-up: panel-up 250ms var(--ease-out-quart);
+  --animate-panel-side: panel-side 250ms var(--ease-out-quart);
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes panel-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  @keyframes panel-side {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
   }
 }

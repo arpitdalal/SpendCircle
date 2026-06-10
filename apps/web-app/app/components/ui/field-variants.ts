@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 // component module only exports components (fast refresh / react-doctor). `data-invalid`
 // flips the group to the error color so a label/description tint with its control.
 export const fieldVariants = cva(
-  "group/field flex w-full gap-1.5 data-[invalid=true]:text-red-400",
+  "group/field flex w-full gap-1.5 data-[invalid=true]:text-destructive",
   {
     variants: {
       orientation: {

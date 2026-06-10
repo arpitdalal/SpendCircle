@@ -32,11 +32,11 @@ export default function CircleCategories() {
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <h2 className="text-base font-semibold">Categories</h2>
+        <h2 className="font-display text-lg font-semibold tracking-tight">Categories</h2>
         <div
           role="tablist"
           aria-label="Category type"
-          className="inline-flex rounded-md bg-neutral-800 p-1"
+          className="inline-flex rounded-md bg-muted p-1"
         >
           {TYPE_TABS.map((tab) => (
             <button
@@ -48,8 +48,8 @@ export default function CircleCategories() {
               className={cn(
                 "rounded px-3 py-1 text-sm transition-colors",
                 type === tab.value
-                  ? "bg-neutral-100 text-neutral-900"
-                  : "text-neutral-300 hover:text-neutral-100",
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {tab.label}
@@ -83,7 +83,7 @@ function NewCategoryForm({
 
   if (!writable) {
     return (
-      <p className="rounded-md border border-neutral-800 p-3 text-sm text-neutral-500">
+      <p className="rounded-lg border border-border bg-card p-3 shadow-sm text-sm text-muted-foreground">
         This circle is archived. Restore it to add categories.
       </p>
     );
@@ -118,7 +118,10 @@ function NewCategoryForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4 rounded-lg border border-neutral-800 p-4">
+    <form
+      onSubmit={onSubmit}
+      className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
+    >
       <div className="space-y-1.5">
         <label htmlFor="category-name" className="block text-sm font-medium">
           New {type} category
@@ -138,7 +141,7 @@ function NewCategoryForm({
           autoComplete="off"
           aria-invalid={error != null}
           aria-describedby={error ? "category-error" : undefined}
-          className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
         />
       </div>
 
@@ -154,17 +157,17 @@ function NewCategoryForm({
               onClick={() => setColor(paletteColor.id)}
               style={{ backgroundColor: paletteColor.hex }}
               className={cn(
-                "size-7 rounded-full ring-offset-2 ring-offset-neutral-900 transition",
-                color === paletteColor.id ? "ring-2 ring-neutral-100" : "ring-0",
+                "size-7 rounded-full ring-offset-2 ring-offset-background transition",
+                color === paletteColor.id ? "ring-2 ring-ring" : "ring-0",
               )}
             />
           ))}
         </div>
-        <p className="text-xs text-neutral-500">{colorLabel(color)}</p>
+        <p className="text-xs text-muted-foreground">{colorLabel(color)}</p>
       </fieldset>
 
       {error ? (
-        <p id="category-error" role="alert" className="text-sm text-red-400">
+        <p id="category-error" role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : null}
@@ -185,12 +188,12 @@ function CategoryList({
   type: TransactionType;
 }) {
   if (categories === undefined) {
-    return <p className="text-sm text-neutral-500">Loading categories…</p>;
+    return <p className="text-sm text-muted-foreground">Loading categories…</p>;
   }
   // null ≡ inaccessible Circle (ADR 0016); the Circle guard already gated entry,
   // so treat a late null as simply nothing to show.
   if (categories === null || categories.length === 0) {
-    return <p className="text-sm text-neutral-500">No {type} categories yet.</p>;
+    return <p className="text-sm text-muted-foreground">No {type} categories yet.</p>;
   }
 
   return (
@@ -200,7 +203,7 @@ function CategoryList({
         return (
           <li
             key={category.id}
-            className="flex items-center gap-3 rounded-md border border-neutral-800 px-3 py-2"
+            className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
           >
             <span
               aria-hidden
@@ -208,7 +211,9 @@ function CategoryList({
               style={{ backgroundColor: swatch?.hex }}
             />
             <span className="text-sm font-medium">{category.name}</span>
-            <span className="ml-auto text-xs text-neutral-500">{category.creator.displayName}</span>
+            <span className="ml-auto text-xs text-muted-foreground">
+              {category.creator.displayName}
+            </span>
           </li>
         );
       })}

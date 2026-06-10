@@ -95,17 +95,20 @@ export default function CreateCircle() {
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Create a circle</h1>
-        <p className="text-sm text-neutral-500">
+        <h1 className="font-display text-2xl font-semibold tracking-tight">Create a circle</h1>
+        <p className="text-sm text-muted-foreground">
           A shared space to track money with others. You can invite people and set it up after.
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-5 rounded-lg border border-neutral-800 p-4">
+      <form
+        onSubmit={onSubmit}
+        className="space-y-5 rounded-xl border border-border bg-card p-5 shadow-sm"
+      >
         <div className="flex items-center gap-3">
           {/* Live Mark preview: the derived initials tinted with the chosen Color. */}
           <CircleMark mark={mark} color={color} className="size-12 text-base" />
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-muted-foreground">
             The mark is made from your circle’s initials and color.
           </p>
         </div>
@@ -129,7 +132,7 @@ export default function CreateCircle() {
             autoComplete="off"
             aria-invalid={error != null}
             aria-describedby={error ? "circle-error" : undefined}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
           />
         </div>
 
@@ -141,7 +144,7 @@ export default function CreateCircle() {
             id="circle-currency"
             value={currency}
             onChange={(event) => setCurrency(event.target.value)}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400"
+            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
           >
             {SUPPORTED_CURRENCIES.map((option) => (
               <option key={option.code} value={option.code}>
@@ -149,7 +152,7 @@ export default function CreateCircle() {
               </option>
             ))}
           </select>
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-muted-foreground">
             Every transaction in this circle uses this currency. It locks once the circle has
             transactions.
           </p>
@@ -167,17 +170,17 @@ export default function CreateCircle() {
                 onClick={() => setColor(paletteColor.id)}
                 style={{ backgroundColor: paletteColor.hex }}
                 className={cn(
-                  "size-7 rounded-full ring-offset-2 ring-offset-neutral-900 transition",
-                  color === paletteColor.id ? "ring-2 ring-neutral-100" : "ring-0",
+                  "size-7 rounded-full ring-offset-2 ring-offset-background transition",
+                  color === paletteColor.id ? "ring-2 ring-ring" : "ring-0",
                 )}
               />
             ))}
           </div>
-          <p className="text-xs text-neutral-500">{colorLabel(color)}</p>
+          <p className="text-xs text-muted-foreground">{colorLabel(color)}</p>
         </fieldset>
 
         {error ? (
-          <p id="circle-error" role="alert" className="text-sm text-red-400">
+          <p id="circle-error" role="alert" className="text-sm text-destructive">
             {error}
           </p>
         ) : null}

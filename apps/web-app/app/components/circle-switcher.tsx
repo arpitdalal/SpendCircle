@@ -69,12 +69,15 @@ export function CircleSwitcher() {
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1.5 text-sm text-neutral-200 hover:border-neutral-500"
+        className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-foreground transition-colors duration-150 hover:border-ring/60 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         Circles
         <span
           aria-hidden
-          className={cn("text-neutral-500 transition-transform", open && "rotate-180")}
+          className={cn(
+            "text-muted-foreground transition-transform duration-200",
+            open && "rotate-180",
+          )}
         >
           ▾
         </span>
@@ -85,19 +88,19 @@ export function CircleSwitcher() {
           id={menuId}
           role="menu"
           aria-label="Your circles"
-          className="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-md border border-neutral-700 bg-neutral-900 py-1 shadow-lg"
+          className="absolute left-0 z-50 mt-1.5 w-64 origin-top-left animate-pop-in overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-xl"
         >
           <CircleItems circles={circles} onSelect={() => setOpen(false)} />
-          <div className="my-1 border-t border-neutral-800" />
+          <div className="my-1 border-t border-border" />
           <Link
             role="menuitem"
             to={href("/circles/new")}
             onClick={() => setOpen(false)}
-            className="flex items-center gap-3 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800"
+            className="flex items-center gap-3 px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
           >
             <span
               aria-hidden
-              className="flex size-9 shrink-0 items-center justify-center rounded-md border border-dashed border-neutral-600 text-base text-neutral-400"
+              className="flex size-9 shrink-0 items-center justify-center rounded-md border border-dashed border-primary/50 text-base text-primary"
             >
               +
             </span>
@@ -121,7 +124,7 @@ function CircleItems({
 }) {
   if (circles === undefined) {
     return (
-      <p className="px-3 py-2 text-sm text-neutral-500" aria-live="polite">
+      <p className="px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
         Loading circles…
       </p>
     );
@@ -135,7 +138,7 @@ function CircleItems({
           role="menuitem"
           to={href("/circles/:circleRef", { circleRef: circle.ref })}
           onClick={onSelect}
-          className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-neutral-800"
+          className="flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-muted/60"
         >
           <CircleMark mark={circle.mark} color={circle.color} />
           <span className="min-w-0">
@@ -145,7 +148,7 @@ function CircleItems({
                 Circle Color, so color-as-text is what lets screen-reader AND
                 color-blind users tell two same-named rows apart — Circle Color must
                 never be the sole identifier (CONTEXT: Circle Color). */}
-            <span className="block truncate text-xs text-neutral-500">
+            <span className="block truncate text-xs text-muted-foreground">
               {circle.kind === "personal" ? "Personal" : "Circle"} · {circle.currency} ·{" "}
               {colorLabel(circle.color)}
             </span>

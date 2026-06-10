@@ -342,7 +342,7 @@ export function TransactionForm({
         void form.handleSubmit();
       }}
       aria-label={isEdit ? "Edit transaction" : `Add ${TYPE_LABEL[activeType].toLowerCase()}`}
-      className="space-y-4 rounded-lg border border-neutral-800 p-4"
+      className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
     >
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">
@@ -368,8 +368,8 @@ export function TransactionForm({
                   className={cn(
                     "rounded-md border px-3 py-1 text-sm transition-colors",
                     pressed
-                      ? "border-neutral-100 bg-neutral-100 text-neutral-900"
-                      : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {TYPE_LABEL[option]}
@@ -508,11 +508,11 @@ export function TransactionForm({
               <FieldSet>
                 <FieldLegend>Categories</FieldLegend>
                 {activeCategories.length === 0 && archivedSelected.length === 0 ? (
-                  <p className="text-xs text-neutral-500">
+                  <p className="text-xs text-muted-foreground">
                     No {activeType} categories yet. Create one first to record a {activeType}.
                   </p>
                 ) : (
-                  <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto rounded-md border border-neutral-800 p-2">
+                  <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto rounded-md border border-border p-2">
                     {activeCategories.map((category) => {
                       const selected = field.state.value.includes(category.id);
                       return (
@@ -528,8 +528,8 @@ export function TransactionForm({
                           className={cn(
                             "max-w-full whitespace-normal break-words rounded-full border px-3 py-1 text-left text-sm transition-colors",
                             selected
-                              ? "border-neutral-100 bg-neutral-100 text-neutral-900"
-                              : "border-neutral-700 text-neutral-300 hover:text-neutral-100",
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-border text-muted-foreground hover:text-foreground",
                           )}
                         >
                           {category.name}
@@ -573,7 +573,7 @@ export function TransactionForm({
                 id="txn-paid-by"
                 value={field.state.value || selfMemberId}
                 onChange={(event) => field.handleChange(event.target.value)}
-                className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none transition-colors focus:border-neutral-400"
+                className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
               >
                 {!isEdit && selfMemberId === "" ? <option value="">Loading…</option> : null}
                 {paidByOptions.map((option) => (
@@ -594,7 +594,7 @@ export function TransactionForm({
             return (
               <Field>
                 <FieldLabel htmlFor="txn-note">
-                  Note <span className="text-neutral-500">(optional)</span>
+                  Note <span className="text-muted-foreground">(optional)</span>
                 </FieldLabel>
                 <Textarea
                   id="txn-note"

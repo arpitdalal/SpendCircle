@@ -43,7 +43,7 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
     <SnackbarContext.Provider value={contextValue}>
       {children}
       {message ? (
-        <output className="fixed inset-x-0 bottom-4 z-50 mx-auto block w-fit max-w-[90vw] rounded-md bg-neutral-800 px-4 py-2 text-center text-sm text-neutral-100 shadow-lg">
+        <output className="fixed inset-x-0 bottom-4 z-50 mx-auto block w-fit max-w-[90vw] animate-slide-up rounded-lg border border-border bg-popover px-4 py-2.5 text-center text-sm text-popover-foreground shadow-lg">
           {message}
         </output>
       ) : null}
