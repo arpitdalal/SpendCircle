@@ -80,13 +80,16 @@
     @apply antialiased;
   }
 
+  /* Must out-cascade Tailwind's animation/transition utilities, which live in the
+     later `utilities` layer (later layers win regardless of specificity) — hence
+     `!important`, the standard global reduced-motion reset. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
-      animation-duration: 0.01ms;
-      animation-iteration-count: 1;
-      transition-duration: 0.01ms;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
     }
   }
 }
