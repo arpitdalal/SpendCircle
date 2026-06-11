@@ -22,7 +22,7 @@
     "@spend-circle/convex": "workspace:*",
     "@spend-circle/domain": "workspace:*",
     "@tanstack/react-form": "^1.33.0",
-    "better-auth": "1.6.14",
+    "better-auth": "1.6.16",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.40.0",
