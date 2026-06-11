@@ -7,6 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "prepare": "lefthook install",
     "dev": "pnpm --filter @spend-circle/web-app dev",
     "dev:mocks": "pnpm --filter @spend-circle/web-app dev:mocks",
     "convex:dev": "pnpm --filter @spend-circle/convex dev",
@@ -26,6 +27,7 @@
     "@total-typescript/ts-reset": "^0.6.1",
     "@types/node": "^25.9.1",
     "kysely": "0.28.17",
+    "lefthook": "^2.1.9",
     "typescript": "^5.9.3",
     "vitest": "^4.1.8"
   }

@@ -8,4 +8,5 @@ overrides:
 allowBuilds:
   '@biomejs/biome': true
   esbuild: true
+  lefthook: true
   msw: true
