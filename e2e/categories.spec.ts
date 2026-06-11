@@ -51,3 +51,57 @@ test("the server rejects a duplicate name inline", async ({ page }) => {
   await addButton.click();
   await expect(page.getByRole("alert")).toHaveText(/already exists/i);
 });
+
+/**
+ * CAT-2 critical flow: edit → history → archive → restore through the real
+ * frontend → Convex mutations → reactive `listCategories` / `listCategoryHistory`
+ * render paths. The injected User owns the Personal Circle, so they are both the
+ * Category creator (field edits) and the Owner (moderation) — the permission
+ * matrix itself lives in the convex-test suite.
+ */
+test("a member edits, archives, and restores a category and sees its history", async ({ page }) => {
+  const name = `E2E Lifecycle ${Date.now()}`;
+  const renamed = `${name} v2`;
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: "Categories" }).click();
+
+  await page.getByLabel(/New expense category/).fill(name);
+  await page.getByRole("button", { name: "Add category" }).click();
+  const row = page.getByRole("listitem").filter({ hasText: name });
+  await expect(row).toBeVisible();
+
+  // Rename through the inline edit form; the reactive list updates in place.
+  await page.getByRole("button", { name: `Edit ${name}` }).click();
+  const editForm = page.getByRole("form", { name: `Edit ${name}` });
+  await editForm.getByLabel("Name").fill(renamed);
+  await editForm.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: renamed })).toBeVisible();
+
+  // The history panel shows the edit over the create, newest first.
+  const historyButton = page.getByRole("button", { name: `History of ${renamed}` });
+  await historyButton.click();
+  const history = page.getByRole("region", { name: `${renamed} history` });
+  await expect(history.getByText("edited")).toBeVisible();
+  await expect(history.getByText("created")).toBeVisible();
+  // Collapse before archiving so later list assertions see only category rows
+  // (the panel renders its own list items inside the row).
+  await historyButton.click();
+  await expect(history).toHaveCount(0);
+
+  // Archive: the row leaves the default (active-only) list.
+  await page.getByRole("button", { name: `Archive ${renamed}` }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: renamed })).toHaveCount(0);
+
+  // The widened list surfaces it with the badge; restore brings it back active.
+  await page.getByRole("switch", { name: "Show archived" }).click();
+  const archivedRow = page.getByRole("listitem").filter({ hasText: renamed });
+  await expect(archivedRow.getByText("Archived")).toBeVisible();
+  await page.getByRole("button", { name: `Restore ${renamed}` }).click();
+  await expect(archivedRow.getByText("Archived")).toHaveCount(0);
+
+  // Back on the active-only view the restored category is present again.
+  await page.getByRole("switch", { name: "Hide archived" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: renamed })).toBeVisible();
+});

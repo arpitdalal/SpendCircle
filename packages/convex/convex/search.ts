@@ -511,8 +511,11 @@ export const getLedgerFilterOptions = query({
     }
     memberDocs.sort(orderMembers);
 
+    const viewer = { userId: access.user._id, isOwner: access.isOwner };
     return {
-      categories: await Promise.all(categoryDocs.map((category) => toCategoryView(ctx, category))),
+      categories: await Promise.all(
+        categoryDocs.map((category) => toCategoryView(ctx, category, viewer)),
+      ),
       members: memberDocs.map((member) => toMemberView(member, access.membership._id)),
     };
   },
@@ -546,8 +549,11 @@ export const getTransactionSearchOptions = query({
       .collect();
     members.sort(orderMembers);
 
+    const viewer = { userId: access.user._id, isOwner: access.isOwner };
     return {
-      categories: await Promise.all(categories.map((category) => toCategoryView(ctx, category))),
+      categories: await Promise.all(
+        categories.map((category) => toCategoryView(ctx, category, viewer)),
+      ),
       members: members.map((member) => toMemberView(member, access.membership._id)),
     };
   },

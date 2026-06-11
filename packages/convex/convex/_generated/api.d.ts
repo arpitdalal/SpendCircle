@@ -14,6 +14,7 @@ import type * as circles from "../circles.js";
 import type * as dashboard from "../dashboard.js";
 import type * as guard from "../guard.js";
 import type * as history from "../history.js";
+import type * as historyView from "../historyView.js";
 import type * as http from "../http.js";
 import type * as ledger from "../ledger.js";
 import type * as members from "../members.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   dashboard: typeof dashboard;
   guard: typeof guard;
   history: typeof history;
+  historyView: typeof historyView;
   http: typeof http;
   ledger: typeof ledger;
   members: typeof members;

@@ -5,6 +5,7 @@ import {
 } from "@spend-circle/domain";
 import type {
   Category,
+  CategoryHistoryEvent,
   Circle,
   Dashboard,
   Member,
@@ -51,6 +52,8 @@ export const MOCK_CATEGORIES: Category[] = [
     color: "green",
     status: "active",
     creator: { displayName: "You", image: undefined },
+    canEditFields: true,
+    canArchive: true,
   },
   {
     id: "mock-cat-rent" as Category["id"],
@@ -59,6 +62,8 @@ export const MOCK_CATEGORIES: Category[] = [
     color: "amber",
     status: "active",
     creator: { displayName: "You", image: undefined },
+    canEditFields: true,
+    canArchive: true,
   },
   {
     id: "mock-cat-salary" as Category["id"],
@@ -67,6 +72,8 @@ export const MOCK_CATEGORIES: Category[] = [
     color: "teal",
     status: "active",
     creator: { displayName: "You", image: undefined },
+    canEditFields: true,
+    canArchive: true,
   },
 ];
 
@@ -262,6 +269,36 @@ export function mockTransactionDetail(id: string): TransactionDetail {
  * offline detail surface renders a populated, ID-free history with both a text and a typed
  * money change.
  */
+/**
+ * Mock Category History (CAT-2), typed against the derived {@link CategoryHistoryEvent}
+ * contract so a shape change to the shared history event view fails typecheck here
+ * (ADR 0003). Newest-first (the query's order): a rename/recolor edit over the original
+ * create, so the offline panel renders a populated, ID-free history.
+ */
+export const MOCK_CATEGORY_HISTORY: CategoryHistoryEvent[] = [
+  {
+    id: "mock-cat-hist-edit" as CategoryHistoryEvent["id"],
+    action: "edited",
+    createdAt: Date.UTC(2026, 4, 20, 11, 15),
+    actor: { displayName: "You", image: undefined },
+    changes: [
+      { field: "name", from: "Food", to: "Groceries" },
+      { field: "color", from: "Teal", to: "Green" },
+    ],
+  },
+  {
+    id: "mock-cat-hist-create" as CategoryHistoryEvent["id"],
+    action: "created",
+    createdAt: Date.UTC(2026, 4, 12, 8, 0),
+    actor: { displayName: "You", image: undefined },
+    changes: [
+      { field: "name", to: "Food" },
+      { field: "color", to: "Teal" },
+      { field: "type", to: "expense" },
+    ],
+  },
+];
+
 export const MOCK_TRANSACTION_HISTORY: TransactionHistoryEvent[] = [
   {
     id: "mock-hist-edit" as TransactionHistoryEvent["id"],

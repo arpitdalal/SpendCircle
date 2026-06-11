@@ -20,6 +20,7 @@ import {
   recordEvent,
   transactionEntity,
 } from "./history.js";
+import { newActorCache, toHistoryEventView } from "./historyView.js";
 import { monthDateRange } from "./monthActivity.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
@@ -415,36 +416,15 @@ export const listTransactionHistory = query({
       transactionEntity(transactionId),
       args.paginationOpts,
     );
-    const caches = newViewCaches();
+    // The event view is the shared, entity-agnostic one (historyView.ts) — the same
+    // shape Category History (CAT-2) and Circle History (CS-4) page through.
+    const cache = newActorCache();
     const page = await Promise.all(
-      result.page.map((event) => toHistoryEventView(ctx, event, caches)),
+      result.page.map((event) => toHistoryEventView(ctx, event, cache)),
     );
     return { ...result, page };
   },
 });
-
-/**
- * One history event shaped for the client (TXN-4). The acting Member resolves to their
- * frozen Display Name + image (memoized through `caches` so a page of events touching
- * the same actor reads the row once — no N+1); a system event (no actor) surfaces
- * `actor: null`. The `changes` array passes straight through: it already holds frozen
- * display-safe values (text `from`/`to`, typed `fromMoney`/`toMoney`) and NEVER a raw
- * id (ADR 0018/0021). The Member id is deliberately dropped from the event — the UI
- * needs only the display identity, keeping raw IDs off the surface entirely (PRD 80).
- */
-async function toHistoryEventView(ctx: QueryCtx, event: Doc<"histories">, caches: ViewCaches) {
-  const actor =
-    event.actorMemberId != null ? await memberRef(ctx, event.actorMemberId, caches) : null;
-  return {
-    id: event._id,
-    action: event.action,
-    createdAt: event.createdAt,
-    actor: actor ? { displayName: actor.displayName, image: actor.image } : null,
-    changes: event.changes,
-  };
-}
-
-export type TransactionHistoryEventView = Awaited<ReturnType<typeof toHistoryEventView>>;
 
 /**
  * Asserts a Member id names a CURRENT active Member of `circleId`, returning the

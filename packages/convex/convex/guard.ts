@@ -188,3 +188,49 @@ export async function requireTransactionAccess(
   const isRecorder = transaction.recordedByMemberId === access.membership._id;
   return { ...access, transaction, isRecorder, canArchive: isRecorder || access.isOwner };
 }
+
+/**
+ * Circle access for an existing Category, with the entity-level capabilities
+ * composed OVER {@link requireCircleAccess} — the same shape as
+ * {@link requireTransactionAccess}, because Category permissions deliberately
+ * mirror Transaction permissions (CAT-2; PRD stories 55, 56):
+ *
+ *   - `isCreator` — the caller IS the creating Member. Categories store
+ *     `creatorUserId` (a User id, unlike a Transaction's Member id) because a
+ *     Category is Circle-scoped data the creator owns across membership churn;
+ *     comparing to the caller's resolved `user._id` means a Removed→rejoined
+ *     creator naturally matches again and regains field-edit rights with no
+ *     rejoin special-case (PRD 44 applied to Categories). Only the creator may
+ *     rename or recolor — the Owner is NOT allowed here.
+ *   - `canArchive` — creator OR the Owner. The Owner moderates lifecycle
+ *     (archive/restore) but may not rewrite another Member's Category fields,
+ *     so the two capabilities are deliberately distinct.
+ *
+ * Anti-enumeration (ADR 0016): a missing Category and one whose Circle the
+ * caller can't access collapse to the SAME "Category not found" throw.
+ */
+export interface AuthorizedCategory extends AuthorizedCircle {
+  category: Doc<"categories">;
+  /** The caller created the Category (may edit name/color — CAT-2). */
+  isCreator: boolean;
+  /** The caller may archive/restore: the creator or the Owner (CAT-2). */
+  canArchive: boolean;
+}
+
+export async function requireCategoryAccess(
+  ctx: QueryCtx | MutationCtx,
+  categoryId: Id<"categories">,
+): Promise<AuthorizedCategory> {
+  const category = await ctx.db.get(categoryId);
+  if (!category) {
+    throw new Error("Category not found");
+  }
+  // resolve (not require) so an inaccessible Circle throws the SAME entity-named
+  // message as a missing Category (ADR 0016).
+  const access = await resolveCircleAccess(ctx, category.circleId);
+  if (!access) {
+    throw new Error("Category not found");
+  }
+  const isCreator = category.creatorUserId === access.user._id;
+  return { ...access, category, isCreator, canArchive: isCreator || access.isOwner };
+}

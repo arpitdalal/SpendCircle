@@ -39,6 +39,20 @@ export const categoryInputSchema = z.object({
 export type CategoryInput = z.infer<typeof categoryInputSchema>;
 
 /**
+ * Server-facing edit-Category input (ADR 0010), the CAT-2 counterpart to
+ * {@link categoryInputSchema}. Both fields are optional: an absent field means
+ * "leave it unchanged", and each present field is validated by the SAME rule as on
+ * create so the two entry points can't drift. `type` is deliberately absent — a
+ * Category's type is immutable (Expense and Income Categories never convert; a
+ * Transaction Type Change clears Categories instead).
+ */
+export const categoryUpdateSchema = z.object({
+  name: categoryInputSchema.shape.name.optional(),
+  color: colorId.optional(),
+});
+export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
+
+/**
  * The Transaction fields shared by the form schema and the server-facing create
  * schema. Factoring them here keeps the two entry points (form: amount as a
  * string; backend: amount already parsed to minor units) from drifting on title

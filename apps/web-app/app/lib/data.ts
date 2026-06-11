@@ -5,6 +5,7 @@ import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "./env.js";
 import {
   MOCK_CATEGORIES,
+  MOCK_CATEGORY_HISTORY,
   MOCK_CIRCLES,
   MOCK_DASHBOARD,
   MOCK_MEMBERS,
@@ -92,6 +93,31 @@ export function useCategories(
  */
 export function useCreateCategory() {
   return useMutation(api.categories.createCategory);
+}
+
+/**
+ * The Edit-Category mutation (CAT-2), behind the same seam as create. The form
+ * sends only the fields it manages; the server diffs against the stored Category,
+ * records only what changed, and owns every invariant (creator-only field edits,
+ * rename uniqueness incl. archived names, archived-frozen — ADR 0015).
+ */
+export function useUpdateCategory() {
+  return useMutation(api.categories.updateCategory);
+}
+
+/**
+ * The Archive-Category mutation (CAT-2), behind the same seam. The server enforces
+ * the permission (creator or Owner — moderation, never a field-edit backdoor) and
+ * that the Circle is writable; this hook just exposes the call the row awaits.
+ * Restoring is its mirror.
+ */
+export function useArchiveCategory() {
+  return useMutation(api.categories.archiveCategory);
+}
+
+/** The Restore-Category mutation (CAT-2): the mirror of {@link useArchiveCategory}. */
+export function useRestoreCategory() {
+  return useMutation(api.categories.restoreCategory);
 }
 
 /**
@@ -481,8 +507,11 @@ export function useRestoreTransaction() {
  * "load more"). History is unbounded-growth, so the detail surface pages it (README §4). */
 export const HISTORY_PAGE_SIZE = 20;
 
-export interface PaginatedHistory {
-  events: TransactionHistoryEvent[];
+/** One paginated entity-History surface (Transaction History — TXN-4; Category
+ * History — CAT-2). Both event views come from the same shared backend shape
+ * (`historyView.ts`), so the parameter only pins which query the events derive from. */
+export interface PaginatedHistory<Event = TransactionHistoryEvent> {
+  events: Event[];
   status: PaginationStatus;
   /** Loads the next page; a no-op unless `status` is "CanLoadMore". */
   loadMore: () => void;
@@ -508,6 +537,43 @@ export function useTransactionHistory(
   );
   if (MOCKS) {
     return { events: MOCK_TRANSACTION_HISTORY, status: "Exhausted", loadMore: () => {} };
+  }
+  return {
+    events: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(HISTORY_PAGE_SIZE),
+  };
+}
+
+/**
+ * One Category History event (CAT-2), derived from `listCategoryHistory` so it
+ * cannot drift from the shared `toHistoryEventView` (ADR 0003) — the same frozen,
+ * ID-free shape Transaction History pages through. It is one element of the
+ * query's paginated `page`.
+ */
+export type CategoryHistoryEvent = FunctionReturnType<
+  typeof api.categories.listCategoryHistory
+>["page"][number];
+
+/**
+ * A Category's History, newest first, paginated at the source so the panel never
+ * holds an unbounded audit (CAT-2; README §4). The mirror of
+ * {@link useTransactionHistory}: the categories route already gated entry through
+ * the Circle guard, and the backend still returns an empty page for an
+ * inaccessible Circle (anti-enumeration parity). Mock mode returns fixtures and
+ * skips the backend so E2E/offline render without a live deployment (ADR 0006).
+ */
+export function useCategoryHistory(
+  circleId: Circle["id"],
+  categoryId: Category["id"],
+): PaginatedHistory<CategoryHistoryEvent> {
+  const paginated = usePaginatedQuery(
+    api.categories.listCategoryHistory,
+    MOCKS ? "skip" : { circleId, categoryId },
+    { initialNumItems: HISTORY_PAGE_SIZE },
+  );
+  if (MOCKS) {
+    return { events: MOCK_CATEGORY_HISTORY, status: "Exhausted", loadMore: () => {} };
   }
   return {
     events: paginated.results,
