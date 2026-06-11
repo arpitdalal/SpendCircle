@@ -110,6 +110,8 @@ graph TD
   RPT3 --> RPT5[RPT-5 · Category analytics]
   RPT1 --> RPT6[RPT-6 · Dashboard drilldowns]
   RPT3 --> RPT6
+  RPT2 --> RPT7[RPT-7 · Fix multi-paginate crash in Search]
+  CAT4 --> RPT7
 
   %% Notifications & Email
   F0 --> NTF1[NTF-1 · Notification Center]
@@ -321,6 +323,7 @@ Each slice file in this directory uses this structure:
 - [RPT-4 · Dashboard charts + comparison ranges](RPT-4-dashboard-charts.md)
 - [RPT-5 · Category analytics](RPT-5-category-analytics.md)
 - [RPT-6 · Dashboard drilldowns](RPT-6-dashboard-drilldowns.md)
+- [RPT-7 · Fix multi-paginate crash in Search / Ledger Filter](RPT-7-search-multi-paginate-fix.md)
 
 ### Notifications & Email
 - [NTF-1 · Notification Center](NTF-1-notification-center.md)
