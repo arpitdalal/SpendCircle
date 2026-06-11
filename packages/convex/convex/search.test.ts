@@ -135,7 +135,7 @@ describe("filterLedgerTransactions", () => {
     expect(result.page.map((txn) => txn.title)).toEqual(["Dining Alex", "Groceries Alex"]);
   });
 
-  it("fills a page past newer rows dropped by post filters", async () => {
+  it("uses the text index instead of scanning past text misses", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
@@ -154,21 +154,10 @@ describe("filterLedgerTransactions", () => {
       ...firstPage(1),
     });
     expect(page.page.map((txn) => txn.title)).toEqual(["Needle match"]);
-    expect(page.isDone).toBe(false);
-
-    const done = await t.query(api.search.filterLedgerTransactions, {
-      circleId: f.circleId,
-      month: "2026-06",
-      type: "all",
-      status: "active",
-      query: "needle",
-      paginationOpts: { numItems: 1, cursor: page.continueCursor },
-    });
-    expect(done.page).toEqual([]);
-    expect(done.isDone).toBe(true);
+    expect(page.isDone).toBe(true);
   });
 
-  it("fills sparse filtered pages and continues on the status index", async () => {
+  it("paginates sparse text matches through the search index", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
@@ -194,11 +183,18 @@ describe("filterLedgerTransactions", () => {
       query: "needle",
       paginationOpts: { numItems: 5, cursor: first.continueCursor },
     });
-    expect(second.page.map((txn) => txn.title)).toEqual(["needle 0"]);
+    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
+      "needle 0",
+      "needle 10",
+      "needle 2",
+      "needle 4",
+      "needle 6",
+      "needle 8",
+    ]);
     expect(second.isDone).toBe(true);
   });
 
-  it("fills sparse filtered pages on the single Paid By status index", async () => {
+  it("pushes a single Paid By selection into indexed text search", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
@@ -224,7 +220,7 @@ describe("filterLedgerTransactions", () => {
     expect(page.isDone).toBe(false);
   });
 
-  it("fills sparse filtered pages on the single Recorded By status index", async () => {
+  it("pushes a single Recorded By selection into indexed text search", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     const sam = await t.run((ctx) => addMember(ctx, f.circleId, "sam@example.com", "Sam"));
@@ -311,6 +307,35 @@ describe("searchTransactions", () => {
     expect(result.page.map((txn) => txn.title)).toEqual(["End archived", "Start"]);
   });
 
+  it("uses indexed whole-word text search with final-term prefix matching", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { title: "Coffee beans", note: "local roaster" });
+      await seedTransaction(ctx, f, { title: "Office supplies", note: "paper" });
+      await seedTransaction(ctx, f, { title: "Cafe", note: "coffee filters" });
+    });
+
+    const substring = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      query: "off",
+      ...firstPage(25),
+    });
+    expect(substring.page.map((txn) => txn.title)).toEqual(["Office supplies"]);
+
+    const prefix = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      query: "coffee fi",
+      ...firstPage(25),
+    });
+    expect(prefix.page.map((txn) => txn.title).sort()).toEqual(["Cafe", "Coffee beans"]);
+  });
+
   it("returns an empty page for reversed date or amount ranges", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
@@ -338,7 +363,7 @@ describe("searchTransactions", () => {
     expect(reversedAmount.page).toEqual([]);
   });
 
-  it("fills sparse filtered pages and continues on the unscoped date-window index", async () => {
+  it("paginates sparse text matches across an unscoped date window", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
@@ -371,7 +396,14 @@ describe("searchTransactions", () => {
       query: "global",
       paginationOpts: { numItems: 5, cursor: first.continueCursor },
     });
-    expect(second.page.map((txn) => txn.title)).toEqual(["global 0"]);
+    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
+      "global 0",
+      "global 10",
+      "global 2",
+      "global 4",
+      "global 6",
+      "global 8",
+    ]);
     expect(second.isDone).toBe(true);
   });
 });

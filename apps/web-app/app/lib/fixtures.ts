@@ -4,6 +4,8 @@ import {
   type PlainMonth,
   type TransactionType,
   textIncludes,
+  transactionSearchText,
+  transactionTextMatches,
 } from "@spend-circle/domain";
 import type {
   Category,
@@ -144,6 +146,70 @@ export const MOCK_MEMBERS: Member[] = [
  * a created Transaction is reflected optimistically by the form in mock mode.
  */
 export const MOCK_TRANSACTIONS: Transaction[] = [];
+
+function includesAny<T>(selected: T[] | undefined, value: T) {
+  return !selected || selected.length === 0 || selected.includes(value);
+}
+
+function transactionHasCategory(transaction: Transaction, categoryIds: string[] | undefined) {
+  return (
+    !categoryIds ||
+    categoryIds.length === 0 ||
+    transaction.categories.some((category) => categoryIds.includes(category.id))
+  );
+}
+
+function inInclusiveDateRange(
+  transaction: Transaction,
+  filters: { dateFrom?: string; dateTo?: string },
+) {
+  return (
+    (!filters.dateFrom || transaction.date >= filters.dateFrom) &&
+    (!filters.dateTo || transaction.date <= filters.dateTo)
+  );
+}
+
+function inAmountRange(
+  transaction: Transaction,
+  filters: { amountMin?: number; amountMax?: number },
+) {
+  return (
+    (filters.amountMin === undefined || transaction.amountMinorUnits >= filters.amountMin) &&
+    (filters.amountMax === undefined || transaction.amountMinorUnits <= filters.amountMax)
+  );
+}
+
+export function mockFilterTransactions(
+  filters: {
+    query?: string;
+    type: "all" | TransactionType;
+    status: "active" | "archived" | "all";
+    categoryIds?: string[];
+    recordedByMemberIds?: string[];
+    paidByMemberIds?: string[];
+    month?: PlainMonth;
+    dateFrom?: string;
+    dateTo?: string;
+    amountMin?: number;
+    amountMax?: number;
+  },
+  rows: Transaction[] = MOCK_TRANSACTIONS,
+) {
+  return rows.filter((transaction) => {
+    const searchText = transactionSearchText({ title: transaction.title, note: transaction.note });
+    return (
+      (filters.type === "all" || transaction.type === filters.type) &&
+      (filters.status === "all" || transaction.status === filters.status) &&
+      (!filters.month || transaction.month === filters.month) &&
+      inInclusiveDateRange(transaction, filters) &&
+      inAmountRange(transaction, filters) &&
+      transactionHasCategory(transaction, filters.categoryIds) &&
+      includesAny(filters.recordedByMemberIds, transaction.recordedBy.id) &&
+      includesAny(filters.paidByMemberIds, transaction.paidBy.id) &&
+      transactionTextMatches(searchText, filters.query ?? "")
+    );
+  });
+}
 
 /**
  * Mock Monthly Ledger summary, typed against the derived {@link MonthlySummary}

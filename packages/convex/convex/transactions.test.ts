@@ -1,4 +1,4 @@
-import { buildRef } from "@spend-circle/domain";
+import { buildRef, transactionSearchText } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
@@ -68,6 +68,13 @@ async function categoryIdsOf(
   return links.map((link) => link.categoryId);
 }
 
+async function searchDocumentOf(ctx: MutationCtx, id: Id<"transactions">) {
+  return await ctx.db
+    .query("transactionSearchDocuments")
+    .withIndex("by_transaction", (q) => q.eq("transactionId", id))
+    .unique();
+}
+
 describe("createTransaction — happy path", () => {
   it("persists minor units, plain date, month bucket, recordedBy/paidBy = creator", async () => {
     const t = convexTest(schema, modules);
@@ -90,6 +97,10 @@ describe("createTransaction — happy path", () => {
       expect(txn?.paidByMemberId).toBe(f.ownerMemberId); // defaults to recorded-by
       expect(txn?.note).toBeUndefined();
       expect(txn?.createdAt).toBe(txn?.updatedAt);
+      const searchDoc = await searchDocumentOf(ctx, id);
+      expect(searchDoc?.searchText).toBe(transactionSearchText({ title: "Weekly shop" }));
+      expect(searchDoc?.circleId).toBe(f.circleId);
+      expect(searchDoc?.status).toBe("active");
 
       const links = await ctx.db
         .query("transactionCategories")
@@ -862,6 +873,9 @@ describe("updateTransaction — field edits", () => {
       expect(txn?.date).toBe("2026-06-02");
       expect(txn?.month).toBe("2026-06"); // bucket kept in sync
       expect(txn?.updatedAt).toBeGreaterThan(1); // bumped off the sentinel
+      const searchDoc = await searchDocumentOf(ctx, id);
+      expect(searchDoc?.searchText).toBe(transactionSearchText({ title: "Big shop" }));
+      expect(searchDoc?.date).toBe("2026-06-02");
 
       const events = await historyOf(ctx, id);
       expect(events).toHaveLength(1);
@@ -926,7 +940,11 @@ describe("updateTransaction — field edits", () => {
     const id = await t.run((ctx) => seedTransaction(ctx, f));
     await t.mutation(api.transactions.updateTransaction, { transactionId: id, note: "  eggs  " });
     await t.run(async (ctx) => {
-      expect((await ctx.db.get(id))?.note).toBe("eggs");
+      const txn = await ctx.db.get(id);
+      expect(txn?.note).toBe("eggs");
+      expect((await searchDocumentOf(ctx, id))?.searchText).toBe(
+        transactionSearchText({ title: "Weekly shop", note: "eggs" }),
+      );
       expect((await historyOf(ctx, id))[0]?.changes).toEqual([{ field: "note", to: "eggs" }]);
     });
 

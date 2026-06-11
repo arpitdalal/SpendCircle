@@ -4,7 +4,6 @@ import {
   isValidPlainMonth,
   MAX_AMOUNT_MINOR,
   normalizeSearchText,
-  textIncludes,
 } from "@spend-circle/domain";
 import { type IndexRange, paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
@@ -161,10 +160,7 @@ async function matchesFilters(
       return false;
     }
   }
-  if (!filters.queryText) {
-    return true;
-  }
-  return textIncludes(txn.title, filters.queryText) || textIncludes(txn.note, filters.queryText);
+  return true;
 }
 
 function applyDateRange<
@@ -270,6 +266,10 @@ async function collectTransactionViews(
   const viewCaches = newViewCaches();
   const searchCaches = newSearchCaches();
 
+  if (args.filters.queryText) {
+    return await collectSearchTransactionViews(ctx, args, viewCaches, searchCaches);
+  }
+
   const source = streamByWindow(ctx, {
     circleId: args.circleId,
     status: args.status,
@@ -302,6 +302,90 @@ async function collectTransactionViews(
         toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
       ),
     ),
+    isDone: result.isDone,
+    continueCursor: result.continueCursor,
+  };
+}
+
+function onlySelectedId<T>(ids: Set<T>) {
+  if (ids.size !== 1) return undefined;
+  return ids.values().next().value;
+}
+
+async function collectSearchTransactionViews(
+  ctx: QueryCtx,
+  args: Parameters<typeof collectTransactionViews>[1],
+  viewCaches: ReturnType<typeof newViewCaches>,
+  searchCaches: SearchCaches,
+) {
+  const paidByMemberId = onlySelectedId(args.paidByMemberIds);
+  const recordedByMemberId = onlySelectedId(args.recordedByMemberIds);
+
+  let source = ctx.db.query("transactionSearchDocuments").withSearchIndex("search_text", (q) => {
+    let scoped = q.search("searchText", args.filters.queryText).eq("circleId", args.circleId);
+    if (args.status) {
+      scoped = scoped.eq("status", args.status);
+    }
+    if (args.filters.type) {
+      scoped = scoped.eq("type", args.filters.type);
+    }
+    if (paidByMemberId) {
+      scoped = scoped.eq("paidByMemberId", paidByMemberId);
+    }
+    if (recordedByMemberId) {
+      scoped = scoped.eq("recordedByMemberId", recordedByMemberId);
+    }
+    return scoped;
+  });
+
+  if (args.start) {
+    const start = args.start;
+    source = source.filter((q) => q.gte(q.field("date"), start));
+  }
+  if (args.endExclusive) {
+    const endExclusive = args.endExclusive;
+    source = source.filter((q) => q.lt(q.field("date"), endExclusive));
+  }
+  if (args.filters.amountMin !== undefined) {
+    const amountMin = args.filters.amountMin;
+    source = source.filter((q) => q.gte(q.field("amountMinorUnits"), amountMin));
+  }
+  if (args.filters.amountMax !== undefined) {
+    const amountMax = args.filters.amountMax;
+    source = source.filter((q) => q.lte(q.field("amountMinorUnits"), amountMax));
+  }
+
+  const result = await source.paginate(args.paginationOpts);
+  const page = [];
+  for (const searchDoc of result.page) {
+    const txn = await ctx.db.get(searchDoc.transactionId);
+    if (!txn) {
+      continue;
+    }
+    const matches = await matchesFilters(
+      ctx,
+      txn,
+      {
+        type: args.filters.type,
+        status: args.status,
+        categoryIds: args.filters.categoryIds,
+        recordedByMemberIds: args.recordedByMemberIds,
+        paidByMemberIds: args.paidByMemberIds,
+        amountMin: args.filters.amountMin,
+        amountMax: args.filters.amountMax,
+        queryText: "",
+      },
+      searchCaches,
+    );
+    if (matches) {
+      page.push(
+        await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
+      );
+    }
+  }
+
+  return {
+    page,
     isDone: result.isDone,
     continueCursor: result.continueCursor,
   };

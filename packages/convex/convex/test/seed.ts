@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel.js";
 import type { MutationCtx } from "../_generated/server.js";
+import { syncTransactionSearchDocument } from "../transactionSearchDocuments.js";
 
 /**
  * Shared convex-test seeding (CLAUDE.md: one helper, not copy-pasted scaffolding
@@ -202,5 +203,10 @@ export async function seedTransaction(
       categoryId,
     });
   }
+  const txn = await ctx.db.get(transactionId);
+  if (!txn) {
+    throw new Error("seed failed");
+  }
+  await syncTransactionSearchDocument(ctx, txn);
   return transactionId;
 }

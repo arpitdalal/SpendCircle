@@ -21,6 +21,7 @@ import {
   MOCK_TRANSACTION_HISTORY,
   MOCK_TRANSACTIONS,
   mockFilterCategories,
+  mockFilterTransactions,
   mockMonthlyComparison,
 } from "./fixtures.js";
 
@@ -375,7 +376,7 @@ export function useLedgerTransactionFilter(
   if (MOCKS || !enabled) {
     const status: PaginationStatus = "Exhausted";
     return {
-      transactions: MOCKS && enabled ? MOCK_TRANSACTIONS : [],
+      transactions: MOCKS && enabled ? mockFilterTransactions(filters) : [],
       status,
       loadMore: () => {},
     };
@@ -396,7 +397,7 @@ export function useTransactionSearch(circleId: Circle["id"], filters: Transactio
   if (MOCKS) {
     const status: PaginationStatus = "Exhausted";
     return {
-      transactions: MOCK_TRANSACTIONS,
+      transactions: mockFilterTransactions(filters),
       status,
       loadMore: () => {},
     };
