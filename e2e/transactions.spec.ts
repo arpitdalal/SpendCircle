@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 /**
  * Select a Ledger month through the native month input the way the UI commits it:
@@ -28,10 +29,9 @@ async function applyLedgerStatus(page: Page, status: "active" | "archived") {
  *
  * Transactions need ≥1 active Category of the matching type, so the test first
  * creates one (CAT-1's flow) in the Personal Circle every bootstrapped User
- * already has — no Circle-creation UI (CS-0) required. Names are unique per run
- * AND per project: the suite shares one signed-in User (so one Personal Circle)
- * across the parallel desktop/mobile projects, and a bare `Date.now()` can collide
- * across the two workers — the project name keeps each test's rows distinct.
+ * already has — no Circle-creation UI (CS-0) required. Names stay unique per run
+ * and per project (`Date.now()` + project name) so rows stay distinct within a
+ * worker's desktop/mobile runs.
  */
 test("a member records an expense and sees it in the live list", async ({ page }, testInfo) => {
   const stamp = `${Date.now()}-${testInfo.project.name}`;
@@ -92,13 +92,11 @@ test("the expense form blocks submit and explains a missing category", async ({
  * (computed server-side by `getMonthlyLedger`) and that month's Transactions — with
  * month navigation, all against the real backend.
  *
- * Totals are asserted EXACTLY, which the shared current month can't support: the suite
- * runs `fullyParallel` and both projects share one Personal Circle (global-setup mints a
- * single User per run), and another spec records income there, so the current month's net
- * is nondeterministic. Instead each project records into its OWN far-future month — empty
- * at run start (the User is fresh) and never written by any other spec — so the month's
- * totals are exactly this test's one expense. Navigating the create into that month relies
- * on the form defaulting its date to the selected month.
+ * Totals are asserted EXACTLY, which the shared current month can't support: other
+ * specs may record income in the current month on this User. Each project uses its own
+ * far-future month — empty at run start for that month (fresh User) and not written by
+ * other specs — so the month's totals are exactly this test's one expense. Navigating the
+ * create into that month relies on the form defaulting its date to the selected month.
  */
 test("the monthly ledger totals a month and navigates between months", async ({
   page,
@@ -106,8 +104,8 @@ test("the monthly ledger totals a month and navigates between months", async ({
   const stamp = `${Date.now()}-${testInfo.project.name}`;
   const categoryName = `E2E L ${stamp}`; // keep ≤ 40 chars (categoryNameMax)
   const title = `E2E Ledger ${stamp}`;
-  // A private month per project (see playwright.config projects) so the two parallel
-  // runs against the shared Personal Circle never share a month's totals.
+  // A private month per project so parallel desktop vs mobile ledger assertions never
+  // share a month's totals when both run (sequential on one worker or concurrent across workers).
   const ledger =
     testInfo.project.name === "mobile-chromium"
       ? { month: "2999-11", label: "November 2999" }

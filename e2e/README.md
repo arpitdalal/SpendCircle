@@ -6,15 +6,20 @@ self-hosted Convex backend** (the OSS `convex-backend` Docker image), not fixtur
 not a cloud deployment. The only fakes are Google OAuth (replaced by a flag-gated
 email+password bypass) and outbound vendors (MSW).
 
+## Auth: one User per Playwright worker
+
+Specs import `test` / `expect` from [`fixtures.ts`](fixtures.ts), not `@playwright/test`
+directly. A **worker-scoped** fixture signs up a fresh User (via `window.__scE2E`) once
+per parallel worker and saves `storageState` to `e2e/.auth/worker-<index>.json`
+(gitignored). That isolates Personal Circles across workers so list/total assertions do
+not race; a stray `@playwright/test` import would drop back to an unsigned-in context
+and is easy to miss in review.
+
 ## Running locally
 
 `pnpm test:e2e` on its own only boots the **frontend** — it does **not** start the
-Convex backend. With no backend on `127.0.0.1:3210`, sign-in in
-[`global-setup.ts`](global-setup.ts) fails with:
-
-```
-Error: E2E sign-in failed: error: Failed to fetch
-```
+Convex backend. With no backend on `127.0.0.1:3210`, the worker auth fixture fails with a
+fetch / sign-in error.
 
 Use the wrapper instead — it boots the backend, deploys, runs the suite, and tears
 the backend down:

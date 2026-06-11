@@ -7,6 +7,10 @@ import { defineConfig, devices } from "@playwright/test";
  * app); outbound vendors are MSW-mocked once they exist. There is no mock-mode
  * E2E suite — fast UI checks live in the Vitest render tests (e.g. home.test.tsx).
  *
+ * Auth: each Playwright worker gets its own User + Personal Circle via
+ * `e2e/fixtures.ts` (per-worker `storageState` under `e2e/.auth/worker-*.json`), so
+ * parallel desktop/mobile projects do not share one Circle.
+ *
  * The CI workflow sets VITE_CONVEX_URL / VITE_CONVEX_SITE_URL to the self-hosted
  * backend's origins; locally they default to the docker-compose ports.
  */
@@ -15,9 +19,6 @@ const baseURL = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  // global-setup mints a session via the gated helper and saves storageState, so
-  // every test starts already authenticated against the real backend.
-  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -26,7 +27,6 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL,
-    storageState: "e2e/.auth/state.json",
     trace: "on-first-retry",
   },
   projects: [

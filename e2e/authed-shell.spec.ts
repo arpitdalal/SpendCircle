@@ -1,8 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 /**
- * TRUE-E2E smoke (ADR 0019): with storageState from global-setup, the app loads
- * already authenticated against the REAL self-hosted backend. This exercises the
+ * TRUE-E2E smoke (ADR 0019): per-worker `storageState` from `fixtures.ts` loads the
+ * app already authenticated against the REAL self-hosted backend. This exercises the
  * real session → real `listMyCircles` query → render path (no fixtures), proving
  * the frontend↔backend contract end to end.
  */

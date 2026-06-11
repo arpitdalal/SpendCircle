@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 test("transaction search finds circle transactions across months and opens detail", async ({
   page,
