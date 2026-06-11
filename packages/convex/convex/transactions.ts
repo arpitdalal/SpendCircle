@@ -593,7 +593,9 @@ export const createTransaction = mutation({
     if (!createdTransaction) {
       throw new Error("Transaction not found");
     }
-    await syncTransactionSearchDocument(ctx, createdTransaction);
+    await syncTransactionSearchDocument(ctx, createdTransaction, {
+      categoryIds: categories.map((category) => category._id),
+    });
 
     // Currency locks once a Circle has any Transaction (PRD story 9). CS-3 owns
     // the enforcement + UI; creating a Transaction is the trigger, so we flip the
@@ -818,7 +820,6 @@ export const updateTransaction = mutation({
     if (!updatedTransaction) {
       throw new Error("Transaction not found");
     }
-    await syncTransactionSearchDocument(ctx, updatedTransaction);
 
     if (categoriesChanged) {
       await rewriteTransactionCategories(
@@ -828,6 +829,11 @@ export const updateTransaction = mutation({
         newCategories.map((category) => category._id),
       );
     }
+    await syncTransactionSearchDocument(ctx, updatedTransaction, {
+      categoryIds: categoriesChanged
+        ? newCategories.map((category) => category._id)
+        : oldCategoryIds,
+    });
 
     await recordEvent(ctx, {
       entity: transactionEntity(txn._id),

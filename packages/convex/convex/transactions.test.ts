@@ -101,6 +101,8 @@ describe("createTransaction — happy path", () => {
       expect(searchDoc?.searchText).toBe(transactionSearchText({ title: "Weekly shop" }));
       expect(searchDoc?.circleId).toBe(f.circleId);
       expect(searchDoc?.status).toBe("active");
+      expect(searchDoc?.categoryId0).toBe(f.groceriesId);
+      expect(searchDoc?.categoryId1).toBeUndefined();
 
       const links = await ctx.db
         .query("transactionCategories")
@@ -136,6 +138,10 @@ describe("createTransaction — happy path", () => {
       const txn = await ctx.db.get(id);
       expect(txn?.type).toBe("income");
       expect(txn?.note).toBe("May salary"); // trimmed
+      const searchDoc = await searchDocumentOf(ctx, id);
+      expect(searchDoc?.categoryId0).toBe(f.salaryId);
+      expect(searchDoc?.categoryId1).toBe(secondIncome);
+      expect(searchDoc?.categoryId2).toBeUndefined();
       const links = await ctx.db
         .query("transactionCategories")
         .withIndex("by_transaction", (q) => q.eq("transactionId", id))
@@ -1091,6 +1097,10 @@ describe("updateTransaction — categories (same type)", () => {
     });
     await t.run(async (ctx) => {
       expect(await categoryIdsOf(ctx, id)).toEqual([f.groceriesId, f.diningId]);
+      const searchDoc = await searchDocumentOf(ctx, id);
+      expect(searchDoc?.categoryId0).toBe(f.groceriesId);
+      expect(searchDoc?.categoryId1).toBe(f.diningId);
+      expect(searchDoc?.categoryId2).toBeUndefined();
       expect((await historyOf(ctx, id))[0]?.changes).toEqual([
         { field: "categories", from: "Groceries", to: "Groceries, Dining" },
       ]);

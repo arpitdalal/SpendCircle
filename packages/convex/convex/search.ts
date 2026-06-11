@@ -267,7 +267,7 @@ async function collectTransactionViews(
   const searchCaches = newSearchCaches();
 
   if (args.filters.queryText) {
-    return await collectSearchTransactionViews(ctx, args, viewCaches, searchCaches);
+    return await collectSearchTransactionViews(ctx, args, viewCaches);
   }
 
   const source = streamByWindow(ctx, {
@@ -312,162 +312,93 @@ function onlySelectedId<T>(ids: Set<T>) {
   return ids.values().next().value;
 }
 
-const searchCursorKind = "transactionSearch";
-
-function rawSearchPageSize(requested: number) {
-  return Math.min(Math.max(requested, 10), 50);
-}
-
-function objectFields(value: unknown) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-  return new Map(Object.entries(value));
-}
-
-function searchCursorFrom(value: string | null) {
-  if (!value) return { searchCursor: null, offset: 0 };
-  try {
-    const decoded: unknown = JSON.parse(value);
-    const fields = objectFields(decoded);
-    if (!fields || fields.get("kind") !== searchCursorKind) {
-      return { searchCursor: value, offset: 0 };
-    }
-    const searchCursor = fields.get("searchCursor");
-    const offset = fields.get("offset");
-    if (
-      (searchCursor === null || typeof searchCursor === "string") &&
-      typeof offset === "number" &&
-      Number.isInteger(offset) &&
-      offset >= 0
-    ) {
-      return { searchCursor, offset };
-    }
-  } catch {
-    return { searchCursor: value, offset: 0 };
-  }
-  return { searchCursor: value, offset: 0 };
-}
-
-function encodeSearchCursor(searchCursor: string | null, offset: number) {
-  return JSON.stringify({ kind: searchCursorKind, searchCursor, offset });
-}
-
 async function collectSearchTransactionViews(
   ctx: QueryCtx,
   args: Parameters<typeof collectTransactionViews>[1],
   viewCaches: ReturnType<typeof newViewCaches>,
-  searchCaches: SearchCaches,
 ) {
   const paidByMemberId = onlySelectedId(args.paidByMemberIds);
   const recordedByMemberId = onlySelectedId(args.recordedByMemberIds);
 
-  function searchSource() {
-    let source = ctx.db.query("transactionSearchDocuments").withSearchIndex("search_text", (q) => {
-      let scoped = q.search("searchText", args.filters.queryText).eq("circleId", args.circleId);
-      if (args.status) {
-        scoped = scoped.eq("status", args.status);
-      }
-      if (args.filters.type) {
-        scoped = scoped.eq("type", args.filters.type);
-      }
-      if (paidByMemberId) {
-        scoped = scoped.eq("paidByMemberId", paidByMemberId);
-      }
-      if (recordedByMemberId) {
-        scoped = scoped.eq("recordedByMemberId", recordedByMemberId);
-      }
-      return scoped;
-    });
+  let source = ctx.db.query("transactionSearchDocuments").withSearchIndex("search_text", (q) => {
+    let scoped = q.search("searchText", args.filters.queryText).eq("circleId", args.circleId);
+    if (args.status) {
+      scoped = scoped.eq("status", args.status);
+    }
+    if (args.filters.type) {
+      scoped = scoped.eq("type", args.filters.type);
+    }
+    if (paidByMemberId) {
+      scoped = scoped.eq("paidByMemberId", paidByMemberId);
+    }
+    if (recordedByMemberId) {
+      scoped = scoped.eq("recordedByMemberId", recordedByMemberId);
+    }
+    return scoped;
+  });
 
-    if (args.start) {
-      const start = args.start;
-      source = source.filter((q) => q.gte(q.field("date"), start));
-    }
-    if (args.endExclusive) {
-      const endExclusive = args.endExclusive;
-      source = source.filter((q) => q.lt(q.field("date"), endExclusive));
-    }
-    if (args.filters.amountMin !== undefined) {
-      const amountMin = args.filters.amountMin;
-      source = source.filter((q) => q.gte(q.field("amountMinorUnits"), amountMin));
-    }
-    if (args.filters.amountMax !== undefined) {
-      const amountMax = args.filters.amountMax;
-      source = source.filter((q) => q.lte(q.field("amountMinorUnits"), amountMax));
-    }
-    return source;
+  if (args.start) {
+    const start = args.start;
+    source = source.filter((q) => q.gte(q.field("date"), start));
+  }
+  if (args.endExclusive) {
+    const endExclusive = args.endExclusive;
+    source = source.filter((q) => q.lt(q.field("date"), endExclusive));
+  }
+  if (args.filters.amountMin !== undefined) {
+    const amountMin = args.filters.amountMin;
+    source = source.filter((q) => q.gte(q.field("amountMinorUnits"), amountMin));
+  }
+  if (args.filters.amountMax !== undefined) {
+    const amountMax = args.filters.amountMax;
+    source = source.filter((q) => q.lte(q.field("amountMinorUnits"), amountMax));
   }
 
+  if (args.paidByMemberIds.size > 1) {
+    const ids = [...args.paidByMemberIds];
+    source = source.filter((q) => q.or(...ids.map((id) => q.eq(q.field("paidByMemberId"), id))));
+  }
+  if (args.recordedByMemberIds.size > 1) {
+    const ids = [...args.recordedByMemberIds];
+    source = source.filter((q) =>
+      q.or(...ids.map((id) => q.eq(q.field("recordedByMemberId"), id))),
+    );
+  }
+  if (args.filters.categoryIds.size > 0) {
+    const ids = [...args.filters.categoryIds];
+    source = source.filter((q) =>
+      q.or(
+        ...ids.flatMap((id) => [
+          q.eq(q.field("categoryId0"), id),
+          q.eq(q.field("categoryId1"), id),
+          q.eq(q.field("categoryId2"), id),
+          q.eq(q.field("categoryId3"), id),
+          q.eq(q.field("categoryId4"), id),
+          q.eq(q.field("categoryId5"), id),
+          q.eq(q.field("categoryId6"), id),
+          q.eq(q.field("categoryId7"), id),
+          q.eq(q.field("categoryId8"), id),
+          q.eq(q.field("categoryId9"), id),
+        ]),
+      ),
+    );
+  }
+
+  const result = await source.paginate(args.paginationOpts);
   const page = [];
-  const initialCursor = searchCursorFrom(args.paginationOpts.cursor);
-  let cursor = initialCursor.searchCursor;
-  let offset = initialCursor.offset;
-  let isDone = false;
-  const rawPageSize = rawSearchPageSize(args.paginationOpts.numItems);
-
-  while (page.length < args.paginationOpts.numItems && !isDone) {
-    const result = await searchSource().paginate({
-      numItems: rawPageSize,
-      cursor,
-    });
-    const pageOffset = offset;
-    let index = pageOffset;
-    offset = 0;
-
-    for (const searchDoc of result.page.slice(pageOffset)) {
-      index += 1;
-      const txn = await ctx.db.get(searchDoc.transactionId);
-      if (!txn) {
-        continue;
-      }
-      const matches = await matchesFilters(
-        ctx,
-        txn,
-        {
-          type: args.filters.type,
-          status: args.status,
-          categoryIds: args.filters.categoryIds,
-          recordedByMemberIds: args.recordedByMemberIds,
-          paidByMemberIds: args.paidByMemberIds,
-          amountMin: args.filters.amountMin,
-          amountMax: args.filters.amountMax,
-          queryText: "",
-        },
-        searchCaches,
+  for (const searchDoc of result.page) {
+    const txn = await ctx.db.get(searchDoc.transactionId);
+    if (txn) {
+      page.push(
+        await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
       );
-      if (matches) {
-        page.push(
-          await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
-        );
-        if (page.length === args.paginationOpts.numItems) {
-          if (index < result.page.length) {
-            return {
-              page,
-              isDone: false,
-              continueCursor: encodeSearchCursor(cursor, index),
-            };
-          }
-          return {
-            page,
-            isDone: result.isDone,
-            continueCursor: result.continueCursor,
-          };
-        }
-      }
-    }
-
-    cursor = result.continueCursor;
-    isDone = result.isDone;
-    if (result.page.length === 0) {
-      break;
     }
   }
 
   return {
     page,
-    isDone,
-    continueCursor: cursor ?? "",
+    isDone: result.isDone,
+    continueCursor: result.continueCursor,
   };
 }
 

@@ -207,6 +207,8 @@ export async function seedTransaction(
   if (!txn) {
     throw new Error("seed failed");
   }
-  await syncTransactionSearchDocument(ctx, txn);
+  await syncTransactionSearchDocument(ctx, txn, {
+    categoryIds: opts.categoryIds ?? [f.groceriesId],
+  });
   return transactionId;
 }
