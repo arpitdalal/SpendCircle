@@ -6,7 +6,7 @@
  */
 
 /** Single source of truth for lifecycle clamping; type derives from this array. */
-export const LIFECYCLE_STATUSES = ["active", "archived", "all"] as const;
+export const LIFECYCLE_STATUSES = ["active", "archived", "all"] as const; // This use of `as` is fine because it's a const array
 export type LifecycleFilterStatus = (typeof LIFECYCLE_STATUSES)[number];
 
 export function cleanText(value: string | null) {
