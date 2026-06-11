@@ -60,7 +60,10 @@ export const backfillTransactionSearchText = mutation({
       };
     }
 
-    const result = await ctx.db.query("transactions").paginate(args.paginationOpts);
+    const paginationOpts = args.reset
+      ? { ...args.paginationOpts, cursor: null }
+      : args.paginationOpts;
+    const result = await ctx.db.query("transactions").paginate(paginationOpts);
     let synced = 0;
     for (const txn of result.page) {
       synced += 1;

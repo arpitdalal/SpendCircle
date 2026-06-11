@@ -200,6 +200,46 @@ describe("filterLedgerTransactions", () => {
     expect(result.page.map((txn) => txn.title)).toEqual(["Manual backfill vendor"]);
   });
 
+  it("starts reset backfills from the first transaction even when given a stale cursor", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    vi.stubEnv("TRANSACTION_SEARCH_BACKFILL_KEY", "test-key");
+    const staleCursor = await t.run(async (ctx) => {
+      await seedUnprojectedTransaction(ctx, f, {
+        title: "Cursor skipped vendor",
+        note: "older corpus",
+        date: "2026-06-10",
+      });
+      await seedUnprojectedTransaction(ctx, f, {
+        title: "Cursor scanned vendor",
+        note: "older corpus",
+        date: "2026-06-11",
+      });
+      const page = await ctx.db.query("transactions").paginate({ numItems: 1, cursor: null });
+      expect(page.isDone).toBe(false);
+      return page.continueCursor;
+    });
+
+    const backfill = await t.mutation(api.maintenance.backfillTransactionSearchText, {
+      operatorKey: "test-key",
+      paginationOpts: { numItems: 100, cursor: staleCursor },
+      reset: true,
+    });
+    expect(backfill.isDone).toBe(true);
+    expect(backfill.totalSynced).toBe(2);
+
+    const result = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "skipped",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["Cursor skipped vendor"]);
+  });
+
   it("keeps fallback search active while a manual backfill is incomplete", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
