@@ -7,7 +7,7 @@ import {
   LIMITS,
   type TransactionType,
 } from "@spend-circle/domain";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { HistoryList } from "~/components/history-list.js";
 import { Button } from "~/components/ui/button.js";
 import {
@@ -289,9 +289,23 @@ function CategoryRow({
   const swatch = COLOR_PALETTE.find((c) => c.id === category.color);
   const isArchived = category.status === "archived";
 
+  // Whether this row may edit is SERVER-derived data (the capability flag, the
+  // row's status, the Circle's status) — `editing` alone is just UI state, so the
+  // open editor must keep answering to it. If the capability disappears mid-edit
+  // (the Owner archives the Category reactively, or the Circle archives), the
+  // editor closes rather than offering a form every save would reject.
+  const canEdit = writable && category.canEditFields && !isArchived;
+  // Also clear the stale `editingId` upstream, so the row doesn't silently hold
+  // edit mode and resurrect the editor if the Category is later restored.
+  useEffect(() => {
+    if (editing && !canEdit) {
+      onEditToggle(false);
+    }
+  }, [editing, canEdit, onEditToggle]);
+
   return (
     <li className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
-      {editing ? (
+      {editing && canEdit ? (
         <EditCategoryForm category={category} onClose={() => onEditToggle(false)} />
       ) : (
         <div className="flex flex-wrap items-center gap-3">
@@ -311,7 +325,7 @@ function CategoryRow({
           <span className="ml-auto text-xs text-muted-foreground">
             {category.creator.displayName}
           </span>
-          {writable && category.canEditFields && !isArchived ? (
+          {canEdit ? (
             <Button
               type="button"
               variant="outline"

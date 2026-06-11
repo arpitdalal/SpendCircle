@@ -312,6 +312,75 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
   });
 });
 
+describe("CircleCategories — edit mode answers to server capability (regression, PR #88 review)", () => {
+  /** Reconfigures the doubled backend mid-test (the reactive query flipping) while
+   * keeping this file's mutation spies installed. */
+  function reconfigure(categories: Category[]) {
+    configureConvex({
+      categories,
+      createCategory,
+      updateCategory,
+      archiveCategory,
+      restoreCategory,
+    });
+  }
+
+  it("closes the open editor when the category is archived reactively (Show archived on)", async () => {
+    const user = userEvent.setup();
+    const view = setup({ categories: [makeCategoryView()] });
+
+    await user.click(screen.getByRole("switch", { name: "Show archived" }));
+    await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
+    expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
+
+    // Another Member (the Owner) archives it; the reactive list flips the row.
+    reconfigure([makeCategoryView({ status: "archived" })]);
+    view.rerenderInCircle(<CircleCategories />);
+
+    expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore Groceries" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit Groceries" })).not.toBeInTheDocument();
+  });
+
+  it("never resurrects a stale editor: archived while hidden, re-shown, then restored", async () => {
+    const user = userEvent.setup();
+    const view = setup({ categories: [makeCategoryView()] });
+
+    await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
+    expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
+
+    // Archived reactively while Show archived is OFF: the row leaves the list,
+    // stranding the edit-mode state upstream.
+    reconfigure([makeCategoryView({ status: "archived" })]);
+    view.rerenderInCircle(<CircleCategories />);
+    expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
+
+    // The re-mounted archived row must NOT render the stranded editor.
+    await user.click(screen.getByRole("switch", { name: "Show archived" }));
+    expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore Groceries" })).toBeInTheDocument();
+
+    // Nor may a later restore pop the forgotten editor back open.
+    reconfigure([makeCategoryView()]);
+    view.rerenderInCircle(<CircleCategories />);
+    expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Groceries" })).toBeInTheDocument();
+  });
+
+  it("closes the open editor when the Circle archives mid-edit (read-only)", async () => {
+    const user = userEvent.setup();
+    const view = setup({ categories: [makeCategoryView()] });
+
+    await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
+    expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
+
+    view.rerenderInCircle(<CircleCategories />, makeCircleView({ status: "archived" }));
+
+    expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit Groceries" })).not.toBeInTheDocument();
+  });
+});
+
 describe("CircleCategories — archive / restore (CAT-2)", () => {
   it("archives a row through the mutation", async () => {
     const user = userEvent.setup();
