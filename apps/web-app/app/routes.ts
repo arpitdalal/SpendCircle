@@ -35,6 +35,7 @@ export default [
       route("new", "routes/circle-new.tsx"),
       route(":circleRef", "routes/layouts/circle-layout.tsx", [
         index("routes/circle/dashboard.tsx"),
+        route("setup", "routes/circle/setup.tsx"),
         route("transactions", "routes/circle/transactions.tsx"),
         route("search", "routes/circle/search.tsx"),
         // The Transaction DETAIL object route (ADR 0016/0017) — the REFERENCE object

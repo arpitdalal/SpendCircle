@@ -68,6 +68,7 @@ const NAME = {
   getMonthlyComparison: getFunctionName(api.dashboard.getMonthlyComparison),
   getPaidByFilterOptions: getFunctionName(api.dashboard.getPaidByFilterOptions),
   createCircle: getFunctionName(api.circles.createCircle),
+  completeCircleSetup: getFunctionName(api.circles.completeCircleSetup),
   createTransaction: getFunctionName(api.transactions.createTransaction),
   updateTransaction: getFunctionName(api.transactions.updateTransaction),
   archiveTransaction: getFunctionName(api.transactions.archiveTransaction),
@@ -209,6 +210,7 @@ interface ConvexState {
    * so a test configures `vi.fn().mockResolvedValue(testId("c-new"))` to drive the
    * create flow's navigation to the canonical ref. */
   createCircle?: Mock;
+  completeCircleSetup?: Mock;
   createTransaction?: Mock;
   updateTransaction?: Mock;
   archiveTransaction?: Mock;
@@ -245,6 +247,7 @@ export function configureConvex(state: ConvexState = {}) {
     historyStatus = "Exhausted",
     historyLoadMore = () => {},
     createCircle,
+    completeCircleSetup,
     createTransaction,
     updateTransaction,
     archiveTransaction,
@@ -329,6 +332,8 @@ export function configureConvex(state: ConvexState = {}) {
     switch (getFunctionName(fn)) {
       case NAME.createCircle:
         return createCircle ?? noop;
+      case NAME.completeCircleSetup:
+        return completeCircleSetup ?? noop;
       case NAME.createTransaction:
         return createTransaction ?? noop;
       case NAME.updateTransaction:
@@ -394,6 +399,7 @@ export function makeCircleView(over: Partial<Circle> = {}): Circle {
     color: "blue",
     mark: "T",
     status: "active",
+    setupAnswers: undefined,
     currencyLocked: false,
     ...over,
   };

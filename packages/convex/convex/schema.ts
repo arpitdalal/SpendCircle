@@ -11,6 +11,20 @@ import { v } from "convex/values";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
 const lifecycleStatus = v.union(v.literal("active"), v.literal("archived"));
+const circleSetupAnswers = v.object({
+  purpose: v.optional(
+    v.union(
+      v.literal("residence"),
+      v.literal("trip"),
+      v.literal("family"),
+      v.literal("roommates"),
+      v.literal("project"),
+      v.literal("personal"),
+      v.literal("other"),
+    ),
+  ),
+  residenceType: v.optional(v.union(v.literal("leased"), v.literal("owned"))),
+});
 
 export default defineSchema({
   // Spend Circle User profile. The Better Auth component owns the auth user and
@@ -37,6 +51,7 @@ export default defineSchema({
     mark: v.string(),
     ownerUserId: v.id("users"),
     status: lifecycleStatus,
+    setupAnswers: v.optional(circleSetupAnswers),
     // Currency is locked once any Transaction exists (PRD story 9).
     currencyLocked: v.boolean(),
     createdAt: v.number(),

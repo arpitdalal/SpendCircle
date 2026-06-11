@@ -30,6 +30,7 @@ function renderCreate() {
       <Route path="/" element={<div>home</div>} />
       <Route path="/circles/new" element={<CreateCircle />} />
       <Route path="/circles/:circleRef" element={<div>circle page</div>} />
+      <Route path="/circles/:circleRef/setup" element={<div>setup page</div>} />
     </>,
     { initialEntries: ["/circles/new"] },
   );
@@ -59,10 +60,9 @@ describe("Create Circle", () => {
 
     // Canonical-ref navigation (ADR 0016) — id-authoritative from first load.
     await waitFor(() => {
-      expect(view.location()).toBe(`/circles/${buildRef("My Home", newId)}`);
+      expect(view.location()).toBe(`/circles/${buildRef("My Home", newId)}/setup`);
     });
-    // Offers to set the Circle up next (CS-1).
-    expect(await screen.findByText(/created\. Add categories to set it up\./)).toBeInTheDocument();
+    expect(await screen.findByText(/"My Home" created\./)).toBeInTheDocument();
   });
 
   it("defaults the Currency from the viewer's locale (not a hardcoded USD)", () => {

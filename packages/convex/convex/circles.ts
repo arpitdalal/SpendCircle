@@ -1,10 +1,33 @@
-import { buildRef, circleInputSchema, DEFAULT_COLOR_ID } from "@spend-circle/domain";
+import {
+  buildRef,
+  circleInputSchema,
+  circleSetupAnswersSchema,
+  DEFAULT_COLOR_ID,
+  starterCategories,
+} from "@spend-circle/domain";
 import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel.js";
+import type { Doc, Id } from "./_generated/dataModel.js";
 import { mutation, query } from "./_generated/server.js";
 import { requireCurrentUser } from "./auth.js";
+import { createCategoryForMember } from "./categories.js";
 import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
+import type { HistoryChange } from "./history.js";
 import { circleEntity, recordEvent } from "./history.js";
+
+const circleSetupAnswers = v.object({
+  purpose: v.optional(
+    v.union(
+      v.literal("residence"),
+      v.literal("trip"),
+      v.literal("family"),
+      v.literal("roommates"),
+      v.literal("project"),
+      v.literal("personal"),
+      v.literal("other"),
+    ),
+  ),
+  residenceType: v.optional(v.union(v.literal("leased"), v.literal("owned"))),
+});
 
 /** A Circle plus its canonical ref, shaped for the client. */
 function toCircleView(circle: Doc<"circles">) {
@@ -17,6 +40,7 @@ function toCircleView(circle: Doc<"circles">) {
     color: circle.color,
     mark: circle.mark,
     status: circle.status,
+    setupAnswers: circle.setupAnswers,
     currencyLocked: circle.currencyLocked,
   };
 }
@@ -147,3 +171,74 @@ export const renameCircle = mutation({
     });
   },
 });
+
+/** Completes Circle Setup once: persisted answers + starter Categories. */
+export const completeCircleSetup = mutation({
+  args: {
+    circleId: v.id("circles"),
+    answers: circleSetupAnswers,
+  },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+    if (!access.isOwner) {
+      throw new Error("Only the owner can complete circle setup");
+    }
+    access.assertWritable();
+    if (access.circle.setupAnswers !== undefined) {
+      throw new Error("Circle setup is already complete");
+    }
+
+    const answers = circleSetupAnswersSchema.parse(args.answers);
+    const circleChanges: HistoryChange[] = setupAnswerChanges(access.circle.setupAnswers, answers);
+    const patch: Partial<Doc<"circles">> = { setupAnswers: answers };
+
+    await ctx.db.patch(args.circleId, patch);
+
+    if (circleChanges.length > 0) {
+      await recordEvent(ctx, {
+        entity: circleEntity(args.circleId),
+        actor: access.membership,
+        action: "setup_completed",
+        changes: circleChanges,
+      });
+    }
+
+    const createdCategoryIds: Id<"categories">[] = [];
+    for (const category of starterCategories(answers)) {
+      const result = await createCategoryForMember(ctx, {
+        access,
+        name: category.name,
+        type: category.type,
+        color: category.color,
+        duplicate: "skip",
+      });
+      if (result.categoryId) {
+        createdCategoryIds.push(result.categoryId);
+      }
+    }
+
+    return { createdCategoryIds };
+  },
+});
+
+function setupAnswerChanges(
+  before: Doc<"circles">["setupAnswers"],
+  after: NonNullable<Doc<"circles">["setupAnswers"]>,
+) {
+  const changes: HistoryChange[] = [];
+  if (before?.purpose !== after.purpose) {
+    changes.push({
+      field: "setup.purpose",
+      ...(before?.purpose ? { from: before.purpose } : {}),
+      ...(after.purpose ? { to: after.purpose } : {}),
+    });
+  }
+  if (before?.residenceType !== after.residenceType) {
+    changes.push({
+      field: "setup.residenceType",
+      ...(before?.residenceType ? { from: before.residenceType } : {}),
+      ...(after.residenceType ? { to: after.residenceType } : {}),
+    });
+  }
+  return changes;
+}

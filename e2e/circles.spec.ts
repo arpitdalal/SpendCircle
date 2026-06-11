@@ -5,12 +5,12 @@ import { expect, test } from "@playwright/test";
  * `createCircle` mutation → DB → canonical-ref navigation, with the injected backend
  * session (no OAuth). Exercises CS-0's critical flow end to end against the self-hosted
  * backend: open the Circle switcher in the shell, create from it, and land on the new
- * Circle's canonical URL.
+ * Circle's setup URL, with skip returning to the usable Circle dashboard.
  *
  * The name is unique per run because the self-hosted backend persists across specs;
  * names may duplicate by design (PRD 10), so this is only to keep assertions specific.
  */
-test("a user creates a regular circle from the shell and lands on it", async ({ page }) => {
+test("a user creates a regular circle from the shell and can skip setup", async ({ page }) => {
   const name = `E2E Circle ${Date.now()}`;
 
   await page.goto("/");
@@ -26,9 +26,13 @@ test("a user creates a regular circle from the shell and lands on it", async ({ 
   await page.getByRole("button", { name: "Teal" }).click();
   await page.getByRole("button", { name: "Create circle" }).click();
 
-  // Lands on the new Circle's canonical `slug-id` ref (ADR 0016): the Circle header
-  // shows the name, and the URL is under /circles/<slug-id>.
+  // Lands on the new Circle's canonical setup route (ADR 0016 + CS-1).
   await expect(page.getByRole("heading", { name })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Circle setup" })).toBeVisible();
+  expect(page.url()).toMatch(/\/circles\/[^/]+-[^/]+\/setup$/);
+
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
   expect(page.url()).toMatch(/\/circles\/[^/]+-[^/]+$/);
   await expect(page.getByRole("link", { name: "Transactions" })).toBeVisible();
 });
