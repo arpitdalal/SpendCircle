@@ -7,6 +7,8 @@ import {
   type TransactionType,
 } from "@spend-circle/domain";
 
+import { cleanText, readIds, readLifecycleStatus, writeIds } from "./url-codec.js";
+
 export type TypeFilter = "all" | TransactionType;
 export type LifecycleFilter = "active" | "archived" | "all";
 
@@ -46,36 +48,12 @@ export const SEARCH_FILTER_PARAMS = [
   "max",
 ];
 
-function cleanText(value: string | null) {
-  return (value ?? "").trim().replace(/\s+/g, " ");
-}
-
 function readType(value: string | null): TypeFilter {
   return value === "expense" || value === "income" || value === "all" ? value : DEFAULT_TYPE;
 }
 
-function readStatus(value: string | null): LifecycleFilter {
-  return value === "active" || value === "archived" || value === "all" ? value : DEFAULT_STATUS;
-}
-
-function readIds(value: string | null) {
-  const ids = new Set<string>();
-  for (const part of (value ?? "").split(",")) {
-    const id = part.trim();
-    if (id) {
-      ids.add(id);
-    }
-  }
-  return [...ids].sort();
-}
-
-function writeIds(params: URLSearchParams, key: string, ids: string[]) {
-  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].sort();
-  if (unique.length > 0) {
-    params.set(key, unique.join(","));
-  } else {
-    params.delete(key);
-  }
+function readStatus(value: string | null) {
+  return readLifecycleStatus(value, DEFAULT_STATUS);
 }
 
 function writeBase(params: URLSearchParams, filters: BaseTransactionFilters) {
