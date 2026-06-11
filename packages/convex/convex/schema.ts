@@ -150,6 +150,45 @@ export default defineSchema({
       "date",
     ]),
 
+  // Search-index projection for Transactions (GH-91). Kept in its own table so
+  // adding full-text search does not require a breaking required-field migration
+  // on existing Transaction rows. All write paths sync this row transactionally.
+  transactionSearchDocuments: defineTable({
+    transactionId: v.id("transactions"),
+    circleId: v.id("circles"),
+    searchText: v.string(),
+    type: transactionType,
+    status: lifecycleStatus,
+    recordedByMemberId: v.id("members"),
+    paidByMemberId: v.id("members"),
+    categoryId0: v.optional(v.id("categories")),
+    categoryId1: v.optional(v.id("categories")),
+    categoryId2: v.optional(v.id("categories")),
+    categoryId3: v.optional(v.id("categories")),
+    categoryId4: v.optional(v.id("categories")),
+    categoryId5: v.optional(v.id("categories")),
+    categoryId6: v.optional(v.id("categories")),
+    categoryId7: v.optional(v.id("categories")),
+    categoryId8: v.optional(v.id("categories")),
+    categoryId9: v.optional(v.id("categories")),
+    date: v.string(),
+    amountMinorUnits: v.number(),
+  })
+    .index("by_transaction", ["transactionId"])
+    .searchIndex("search_text", {
+      searchField: "searchText",
+      filterFields: ["circleId", "status", "type", "paidByMemberId", "recordedByMemberId"],
+    }),
+
+  transactionSearchBackfills: defineTable({
+    key: v.literal("transactionSearchDocuments"),
+    status: v.union(v.literal("pending"), v.literal("complete")),
+    scanned: v.number(),
+    synced: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }).index("by_key", ["key"]),
+
   // Many-to-many between Transactions and Categories (PRD story 50).
   transactionCategories: defineTable({
     circleId: v.id("circles"),

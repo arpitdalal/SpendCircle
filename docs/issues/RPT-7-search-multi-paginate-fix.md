@@ -81,8 +81,8 @@ this slice applies the same fix to the Transaction reads.
   dedicated Circle — see the CAT-4 spec's isolation note — and mind the per-month source
   windows when seeding the ledger path).
 - **No-change contract:** the existing `search.test.ts` suite passes untouched (same pages,
-  same order, same anti-enumeration empty page for an inaccessible Circle, same
-  `hasOnlyUnknownIds` and invalid-filter behavior).
+  same order for the pre-GH-91 non-text path, same anti-enumeration empty page for an
+  inaccessible Circle, same `hasOnlyUnknownIds` and invalid-filter behavior).
 - **Pagination invariants (README §5.10):** first page bounded, `continueCursor` continues
   without gaps or duplicates across the boundary, exhaustion reports `isDone` (a trailing
   empty done page when the page fills exactly at the source's last row is acceptable —
@@ -99,6 +99,7 @@ queries and the main index paths; gates pass.
 
 ## Out of scope
 
-Any change to filter semantics, search args, ranking, or the search/ledger UI. The
-Category Filter (CAT-4) already uses streams. Performance work beyond removing the crash
-(e.g. `maximumRowsRead` tuning) — note it in the PR if it becomes relevant, don't bundle it.
+Any change to filter semantics, search args, or the search/ledger UI. The Category Filter
+(CAT-4) already uses streams. Performance work beyond removing the crash (e.g.
+`maximumRowsRead` tuning) — note it in the PR if it becomes relevant, don't bundle it. GH-91
+later moves non-empty Transaction text queries to Convex full-text relevance order.

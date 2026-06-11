@@ -7,6 +7,7 @@ import {
   firstPage,
   makeCategory,
   makeUser,
+  markTransactionSearchBackfillComplete,
   seedFixture,
   seedTransaction,
 } from "./test/seed.js";
@@ -27,6 +28,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 beforeEach(() => {
   mockCurrentUser.mockReset();
+  vi.unstubAllEnvs();
 });
 
 async function seedSparseSearchRows(
@@ -51,6 +53,38 @@ async function seedSparseSearchRows(
   }
 }
 
+async function seedUnprojectedTransaction(
+  ctx: Parameters<typeof seedTransaction>[0],
+  f: Parameters<typeof seedTransaction>[1],
+  opts: NonNullable<Parameters<typeof seedTransaction>[2]>,
+) {
+  const now = Date.now();
+  const recordedByMemberId = opts.recordedByMemberId ?? f.ownerMemberId;
+  const date = opts.date ?? "2026-06-15";
+  const transactionId = await ctx.db.insert("transactions", {
+    circleId: f.circleId,
+    type: opts.type ?? "expense",
+    title: opts.title ?? "Legacy row",
+    ...(opts.note ? { note: opts.note } : {}),
+    amountMinorUnits: opts.amountMinorUnits ?? 1250,
+    date,
+    month: date.slice(0, 7),
+    recordedByMemberId,
+    paidByMemberId: opts.paidByMemberId ?? recordedByMemberId,
+    status: opts.status ?? "active",
+    createdAt: now,
+    updatedAt: now,
+  });
+  for (const categoryId of opts.categoryIds ?? [f.groceriesId]) {
+    await ctx.db.insert("transactionCategories", {
+      circleId: f.circleId,
+      transactionId,
+      categoryId,
+    });
+  }
+  return transactionId;
+}
+
 describe("filterLedgerTransactions", () => {
   it("filters the selected month by title/note only", async () => {
     const t = convexTest(schema, modules);
@@ -73,6 +107,7 @@ describe("filterLedgerTransactions", () => {
         note: "Weekly groceries",
         date: "2026-05-10",
       });
+      await markTransactionSearchBackfillComplete(ctx);
     });
 
     const title = await t.query(api.search.filterLedgerTransactions, {
@@ -94,6 +129,180 @@ describe("filterLedgerTransactions", () => {
       ...firstPage(25),
     });
     expect(categoryName.page).toEqual([]);
+  });
+
+  it("does not omit old transactions before the search projection backfill completes", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) =>
+      seedUnprojectedTransaction(ctx, f, {
+        title: "Legacy vendor",
+        note: "pre deploy row",
+        date: "2026-06-10",
+      }),
+    );
+
+    const result = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "legacy",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["Legacy vendor"]);
+  });
+
+  it("manually backfills old transactions and enables indexed text search", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    vi.stubEnv("TRANSACTION_SEARCH_BACKFILL_KEY", "test-key");
+    const id = await t.run((ctx) =>
+      seedUnprojectedTransaction(ctx, f, {
+        title: "Manual backfill vendor",
+        note: "older corpus",
+        date: "2026-06-10",
+      }),
+    );
+
+    const backfill = await t.mutation(api.maintenance.backfillTransactionSearchText, {
+      operatorKey: "test-key",
+      paginationOpts: { numItems: 100, cursor: null },
+      reset: true,
+    });
+    expect(backfill.isDone).toBe(true);
+    expect(backfill.totalSynced).toBe(1);
+
+    await t.run(async (ctx) => {
+      const searchDoc = await ctx.db
+        .query("transactionSearchDocuments")
+        .withIndex("by_transaction", (q) => q.eq("transactionId", id))
+        .unique();
+      expect(searchDoc?.searchText).toBe("manual backfill vendor older corpus");
+      expect(searchDoc?.categoryId0).toBe(f.groceriesId);
+      const state = await ctx.db
+        .query("transactionSearchBackfills")
+        .withIndex("by_key", (q) => q.eq("key", "transactionSearchDocuments"))
+        .unique();
+      expect(state?.status).toBe("complete");
+    });
+
+    const result = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "manual",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["Manual backfill vendor"]);
+  });
+
+  it("starts reset backfills from the first transaction even when given a stale cursor", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    vi.stubEnv("TRANSACTION_SEARCH_BACKFILL_KEY", "test-key");
+    const staleCursor = await t.run(async (ctx) => {
+      await seedUnprojectedTransaction(ctx, f, {
+        title: "Cursor skipped vendor",
+        note: "older corpus",
+        date: "2026-06-10",
+      });
+      await seedUnprojectedTransaction(ctx, f, {
+        title: "Cursor scanned vendor",
+        note: "older corpus",
+        date: "2026-06-11",
+      });
+      const page = await ctx.db.query("transactions").paginate({ numItems: 1, cursor: null });
+      expect(page.isDone).toBe(false);
+      return page.continueCursor;
+    });
+
+    const backfill = await t.mutation(api.maintenance.backfillTransactionSearchText, {
+      operatorKey: "test-key",
+      paginationOpts: { numItems: 100, cursor: staleCursor },
+      reset: true,
+    });
+    expect(backfill.isDone).toBe(true);
+    expect(backfill.totalSynced).toBe(2);
+
+    const result = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "skipped",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["Cursor skipped vendor"]);
+  });
+
+  it("keeps fallback search active while a manual backfill is incomplete", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    vi.stubEnv("TRANSACTION_SEARCH_BACKFILL_KEY", "test-key");
+    await t.run(async (ctx) => {
+      await seedUnprojectedTransaction(ctx, f, {
+        title: "Partial backfill first",
+        note: "older corpus",
+        date: "2026-06-10",
+      });
+      await seedUnprojectedTransaction(ctx, f, {
+        title: "Partial backfill second",
+        note: "older corpus",
+        date: "2026-06-11",
+      });
+    });
+
+    const backfill = await t.mutation(api.maintenance.backfillTransactionSearchText, {
+      operatorKey: "test-key",
+      paginationOpts: { numItems: 1, cursor: null },
+      reset: true,
+    });
+    expect(backfill.isDone).toBe(false);
+
+    const result = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "partial",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title).sort()).toEqual([
+      "Partial backfill first",
+      "Partial backfill second",
+    ]);
+  });
+
+  it("finds transactions created after the search projection backfill completes", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) => markTransactionSearchBackfillComplete(ctx));
+
+    await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      type: "expense",
+      title: "Post backfill vendor",
+      amountMinorUnits: 4200,
+      date: "2026-06-12",
+      categoryIds: [f.groceriesId],
+    });
+
+    const result = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "post backfill",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["Post backfill vendor"]);
   });
 
   it("ORs values within category/member fields and ANDs fields together", async () => {
@@ -135,7 +344,7 @@ describe("filterLedgerTransactions", () => {
     expect(result.page.map((txn) => txn.title)).toEqual(["Dining Alex", "Groceries Alex"]);
   });
 
-  it("fills a page past newer rows dropped by post filters", async () => {
+  it("uses the text index instead of scanning past text misses", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
@@ -143,6 +352,7 @@ describe("filterLedgerTransactions", () => {
       await seedTransaction(ctx, f, { title: "Newest miss", date: "2026-06-03" });
       await seedTransaction(ctx, f, { title: "Middle miss", date: "2026-06-02" });
       await seedTransaction(ctx, f, { title: "Needle match", date: "2026-06-01" });
+      await markTransactionSearchBackfillComplete(ctx);
     });
 
     const page = await t.query(api.search.filterLedgerTransactions, {
@@ -154,25 +364,17 @@ describe("filterLedgerTransactions", () => {
       ...firstPage(1),
     });
     expect(page.page.map((txn) => txn.title)).toEqual(["Needle match"]);
-    expect(page.isDone).toBe(false);
-
-    const done = await t.query(api.search.filterLedgerTransactions, {
-      circleId: f.circleId,
-      month: "2026-06",
-      type: "all",
-      status: "active",
-      query: "needle",
-      paginationOpts: { numItems: 1, cursor: page.continueCursor },
-    });
-    expect(done.page).toEqual([]);
-    expect(done.isDone).toBe(true);
+    expect(page.isDone).toBe(true);
   });
 
-  it("fills sparse filtered pages and continues on the status index", async () => {
+  it("paginates sparse text matches through the search index", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run((ctx) => seedSparseSearchRows(ctx, f, { needle: "needle" }));
+    await t.run(async (ctx) => {
+      await seedSparseSearchRows(ctx, f, { needle: "needle" });
+      await markTransactionSearchBackfillComplete(ctx);
+    });
 
     const first = await t.query(api.search.filterLedgerTransactions, {
       circleId: f.circleId,
@@ -194,21 +396,29 @@ describe("filterLedgerTransactions", () => {
       query: "needle",
       paginationOpts: { numItems: 5, cursor: first.continueCursor },
     });
-    expect(second.page.map((txn) => txn.title)).toEqual(["needle 0"]);
+    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
+      "needle 0",
+      "needle 10",
+      "needle 2",
+      "needle 4",
+      "needle 6",
+      "needle 8",
+    ]);
     expect(second.isDone).toBe(true);
   });
 
-  it("fills sparse filtered pages on the single Paid By status index", async () => {
+  it("pushes a single Paid By selection into indexed text search", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
     mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run((ctx) =>
-      seedSparseSearchRows(ctx, f, {
+    await t.run(async (ctx) => {
+      await seedSparseSearchRows(ctx, f, {
         needle: "payer",
         row: () => ({ paidByMemberId: alex.memberId }),
-      }),
-    );
+      });
+      await markTransactionSearchBackfillComplete(ctx);
+    });
 
     const page = await t.query(api.search.filterLedgerTransactions, {
       circleId: f.circleId,
@@ -224,17 +434,18 @@ describe("filterLedgerTransactions", () => {
     expect(page.isDone).toBe(false);
   });
 
-  it("fills sparse filtered pages on the single Recorded By status index", async () => {
+  it("pushes a single Recorded By selection into indexed text search", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     const sam = await t.run((ctx) => addMember(ctx, f.circleId, "sam@example.com", "Sam"));
     mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run((ctx) =>
-      seedSparseSearchRows(ctx, f, {
+    await t.run(async (ctx) => {
+      await seedSparseSearchRows(ctx, f, {
         needle: "recorder",
         row: () => ({ recordedByMemberId: sam.memberId }),
-      }),
-    );
+      });
+      await markTransactionSearchBackfillComplete(ctx);
+    });
 
     const page = await t.query(api.search.filterLedgerTransactions, {
       circleId: f.circleId,
@@ -248,6 +459,116 @@ describe("filterLedgerTransactions", () => {
     expect(page.page).toHaveLength(5);
     expect(page.page.every((txn) => txn.recordedBy.displayName === "Sam")).toBe(true);
     expect(page.isDone).toBe(false);
+  });
+
+  it("fills text-search pages after category post-filters", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 6; index += 1) {
+        await seedTransaction(ctx, f, {
+          title: `receipt receipt receipt filtered ${index}`,
+          date: `2026-06-${(index + 1).toString().padStart(2, "0")}`,
+          categoryIds: [f.diningId],
+        });
+      }
+      for (let index = 0; index < 4; index += 1) {
+        await seedTransaction(ctx, f, {
+          title: `receipt kept ${index}`,
+          date: `2026-06-${(index + 10).toString().padStart(2, "0")}`,
+          categoryIds: [f.groceriesId],
+        });
+      }
+      await markTransactionSearchBackfillComplete(ctx);
+    });
+
+    const first = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+      status: "active",
+      query: "receipt",
+      categoryIds: [f.groceriesId],
+      ...firstPage(3),
+    });
+    expect(first.page).toHaveLength(3);
+    expect(
+      first.page.every((txn) => txn.categories.some((category) => category.name === "Groceries")),
+    ).toBe(true);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+      status: "active",
+      query: "receipt",
+      categoryIds: [f.groceriesId],
+      paginationOpts: { numItems: 3, cursor: first.continueCursor },
+    });
+    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
+      "receipt kept 0",
+      "receipt kept 1",
+      "receipt kept 2",
+      "receipt kept 3",
+    ]);
+    expect(second.isDone).toBe(true);
+  });
+
+  it("fills text-search pages after multi-member post-filters", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
+    const sam = await t.run((ctx) => addMember(ctx, f.circleId, "sam@example.com", "Sam"));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 6; index += 1) {
+        await seedTransaction(ctx, f, {
+          title: `split split split filtered ${index}`,
+          date: `2026-06-${(index + 1).toString().padStart(2, "0")}`,
+          paidByMemberId: f.ownerMemberId,
+        });
+      }
+      for (let index = 0; index < 4; index += 1) {
+        await seedTransaction(ctx, f, {
+          title: `split kept ${index}`,
+          date: `2026-06-${(index + 10).toString().padStart(2, "0")}`,
+          paidByMemberId: index % 2 === 0 ? alex.memberId : sam.memberId,
+        });
+      }
+      await markTransactionSearchBackfillComplete(ctx);
+    });
+
+    const first = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+      status: "active",
+      query: "split",
+      paidByMemberIds: [alex.memberId, sam.memberId],
+      ...firstPage(3),
+    });
+    expect(first.page).toHaveLength(3);
+    expect(first.page.every((txn) => ["Alex", "Sam"].includes(txn.paidBy.displayName))).toBe(true);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+      status: "active",
+      query: "split",
+      paidByMemberIds: [alex.memberId, sam.memberId],
+      paginationOpts: { numItems: 3, cursor: first.continueCursor },
+    });
+    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
+      "split kept 0",
+      "split kept 1",
+      "split kept 2",
+      "split kept 3",
+    ]);
+    expect(second.isDone).toBe(true);
   });
 });
 
@@ -311,6 +632,36 @@ describe("searchTransactions", () => {
     expect(result.page.map((txn) => txn.title)).toEqual(["End archived", "Start"]);
   });
 
+  it("uses indexed whole-word text search with final-term prefix matching", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      await seedTransaction(ctx, f, { title: "Coffee beans", note: "local roaster" });
+      await seedTransaction(ctx, f, { title: "Office supplies", note: "paper" });
+      await seedTransaction(ctx, f, { title: "Cafe", note: "coffee filters" });
+      await markTransactionSearchBackfillComplete(ctx);
+    });
+
+    const substring = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      query: "off",
+      ...firstPage(25),
+    });
+    expect(substring.page.map((txn) => txn.title)).toEqual(["Office supplies"]);
+
+    const prefix = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      query: "coffee fi",
+      ...firstPage(25),
+    });
+    expect(prefix.page.map((txn) => txn.title).sort()).toEqual(["Cafe", "Coffee beans"]);
+  });
+
   it("returns an empty page for reversed date or amount ranges", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
@@ -338,16 +689,17 @@ describe("searchTransactions", () => {
     expect(reversedAmount.page).toEqual([]);
   });
 
-  it("fills sparse filtered pages and continues on the unscoped date-window index", async () => {
+  it("paginates sparse text matches across an unscoped date window", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run((ctx) =>
-      seedSparseSearchRows(ctx, f, {
+    await t.run(async (ctx) => {
+      await seedSparseSearchRows(ctx, f, {
         needle: "global",
         row: (index) => (index % 3 === 0 ? { status: "archived" } : {}),
-      }),
-    );
+      });
+      await markTransactionSearchBackfillComplete(ctx);
+    });
 
     const first = await t.query(api.search.searchTransactions, {
       circleId: f.circleId,
@@ -371,7 +723,14 @@ describe("searchTransactions", () => {
       query: "global",
       paginationOpts: { numItems: 5, cursor: first.continueCursor },
     });
-    expect(second.page.map((txn) => txn.title)).toEqual(["global 0"]);
+    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
+      "global 0",
+      "global 10",
+      "global 2",
+      "global 4",
+      "global 6",
+      "global 8",
+    ]);
     expect(second.isDone).toBe(true);
   });
 });

@@ -30,8 +30,9 @@ easy to tell apart. Users can narrow to active-only or archived-only via the sta
   - Keep Transaction Search as a Circle-scoped paginated query. Args include `{ circleId, query?,
     type: "all"|"expense"|"income", categoryIds?, recordedByMemberIds?, paidByMemberIds?,
     dateFrom?, dateTo?, amountMin?, amountMax?, status: "active"|"archived"|"all" }`. Empty date
-    range means all-time. Query the best source index, filter in-handler, and collect until the
-    returned page is full or exhausted.
+    range means all-time. Query the best source index for non-text filters. For non-empty text,
+    use the Transaction search projection once its backfill is complete; before completion, scan
+    the canonical Transaction rows so the pre-deploy corpus is not omitted.
   - Text predicates match Title and Note only, case-insensitively with whitespace runs normalized.
     Category matching happens only through category IDs.
   - Multi-select filters use OR within a field and AND across fields. Category multi-select is OR;
@@ -69,6 +70,13 @@ easy to tell apart. Users can narrow to active-only or archived-only via the sta
 - **URL defaults are explicit for tri-state controls** so shared links reproduce lifecycle/type
   scope without hidden defaults.
 - Amounts are compared in minor units.
+- **Text query order follows full-text relevance.** Default/no-text results stay Transaction Date
+  desc, but once `q` is non-empty Convex's search index owns pagination order; do not promise
+  date-desc ordering for text results.
+- The Transaction search projection is an operational index: public create/edit/archive/restore
+  mutations sync it transactionally, and `maintenance:backfillTransactionSearchText` marks it
+  complete only after a full scan. If projection integrity is suspect, rerun that mutation with
+  `reset: true` until `isDone: true`.
 
 ## Carry Forward from PR #79
 
@@ -91,9 +99,9 @@ easy to tell apart. Users can narrow to active-only or archived-only via the sta
   month’s Transactions only; archived rows show a visual badge and muted title.
 - **Transaction Search:** canonical URL includes `status=all` and `type=all`; default URL
   searches all Circle Transactions (active and archived) newest-first, with archived rows
-  visually distinguished; exact
-  date range narrows inclusively; empty date range means all-time; text matches Title/Note; type,
-  Category, Recorded By, Paid By, lifecycle status, and amount range combine.
+  visually distinguished; exact date range narrows inclusively; empty date range means all-time;
+  text matches Title/Note and is ordered by full-text relevance; type, Category, Recorded By, Paid
+  By, lifecycle status, and amount range combine.
 - **URL encoding:** `q`, `type`, `status`, comma-separated `categories`, comma-separated `paidBy`,
   comma-separated `recordedBy`; Transaction Search only also owns `from`, `to`, `min`, `max`.
   Multi-select IDs are written in stable sorted order; trimmed empty `q` is omitted.

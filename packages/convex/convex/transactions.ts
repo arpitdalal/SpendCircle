@@ -22,6 +22,7 @@ import {
 } from "./history.js";
 import { newActorCache, toHistoryEventView } from "./historyView.js";
 import { monthDateRange } from "./monthActivity.js";
+import { syncTransactionSearchDocument } from "./transactionSearchDocuments.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
 const lifecycleStatus = v.union(v.literal("active"), v.literal("archived"));
@@ -588,6 +589,13 @@ export const createTransaction = mutation({
         categoryId: category._id,
       });
     }
+    const createdTransaction = await ctx.db.get(transactionId);
+    if (!createdTransaction) {
+      throw new Error("Transaction not found");
+    }
+    await syncTransactionSearchDocument(ctx, createdTransaction, {
+      categoryIds: categories.map((category) => category._id),
+    });
 
     // Currency locks once a Circle has any Transaction (PRD story 9). CS-3 owns
     // the enforcement + UI; creating a Transaction is the trigger, so we flip the
@@ -808,6 +816,10 @@ export const updateTransaction = mutation({
 
     patch.updatedAt = Date.now();
     await ctx.db.patch(args.transactionId, patch);
+    const updatedTransaction = await ctx.db.get(args.transactionId);
+    if (!updatedTransaction) {
+      throw new Error("Transaction not found");
+    }
 
     if (categoriesChanged) {
       await rewriteTransactionCategories(
@@ -817,6 +829,11 @@ export const updateTransaction = mutation({
         newCategories.map((category) => category._id),
       );
     }
+    await syncTransactionSearchDocument(ctx, updatedTransaction, {
+      categoryIds: categoriesChanged
+        ? newCategories.map((category) => category._id)
+        : oldCategoryIds,
+    });
 
     await recordEvent(ctx, {
       entity: transactionEntity(txn._id),
@@ -873,6 +890,11 @@ export const archiveTransaction = mutation({
     }
 
     await ctx.db.patch(txn._id, { status: "archived", archivedAt: Date.now() });
+    const archivedTransaction = await ctx.db.get(txn._id);
+    if (!archivedTransaction) {
+      throw new Error("Transaction not found");
+    }
+    await syncTransactionSearchDocument(ctx, archivedTransaction);
 
     await recordEvent(ctx, {
       entity: transactionEntity(txn._id),
@@ -914,6 +936,11 @@ export const restoreTransaction = mutation({
 
     // Setting `archivedAt` to undefined removes the field (it is schema-optional).
     await ctx.db.patch(txn._id, { status: "active", archivedAt: undefined });
+    const restoredTransaction = await ctx.db.get(txn._id);
+    if (!restoredTransaction) {
+      throw new Error("Transaction not found");
+    }
+    await syncTransactionSearchDocument(ctx, restoredTransaction);
 
     await recordEvent(ctx, {
       entity: transactionEntity(txn._id),

@@ -70,8 +70,10 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
   const circleName = `E2E Sparse ${nonce}`;
   const categoryName = `E2E SpCat ${nonce}`;
   const month = projectCode === "m" ? "2994-06" : "2994-05";
+  const queryText = "Sparse Needle";
   const matchingTitle = (index: number) => `E2E Sparse Needle ${index} ${nonce}`;
-  const missTitle = (index: number) => `E2E Sparse Miss ${index} ${nonce}`;
+  // Convex full-text matches any query term, so filler rows must share no query token.
+  const missTitle = (index: number) => `E2E Filler Row ${index} ${nonce}`;
 
   await page.goto("/");
   await page.getByRole("button", { name: "Circles" }).click();
@@ -105,14 +107,14 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
 
   await page.getByRole("button", { name: /Filters/ }).click();
   const ledgerDialog = page.getByRole("dialog", { name: "Filters" });
-  await ledgerDialog.getByRole("searchbox", { name: "Search title or note" }).fill("Sparse Needle");
+  await ledgerDialog.getByRole("searchbox", { name: "Search title or note" }).fill(queryText);
   await ledgerDialog.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(/q=Sparse\+Needle/);
   await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toBeVisible();
   await expect(page.getByText("Something went wrong")).toHaveCount(0);
 
   await page.getByRole("link", { name: "Search", exact: true }).click();
-  await page.getByRole("searchbox", { name: "Search title or note" }).fill("Sparse Needle");
+  await page.getByRole("searchbox", { name: "Search title or note" }).fill(queryText);
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page).toHaveURL(/q=Sparse\+Needle/);
   await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toBeVisible();
