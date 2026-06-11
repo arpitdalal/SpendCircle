@@ -200,6 +200,71 @@ describe("filterLedgerTransactions", () => {
     expect(result.page.map((txn) => txn.title)).toEqual(["Manual backfill vendor"]);
   });
 
+  it("keeps fallback search active while a manual backfill is incomplete", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    vi.stubEnv("TRANSACTION_SEARCH_BACKFILL_KEY", "test-key");
+    await t.run(async (ctx) => {
+      await seedUnprojectedTransaction(ctx, f, {
+        title: "Partial backfill first",
+        note: "older corpus",
+        date: "2026-06-10",
+      });
+      await seedUnprojectedTransaction(ctx, f, {
+        title: "Partial backfill second",
+        note: "older corpus",
+        date: "2026-06-11",
+      });
+    });
+
+    const backfill = await t.mutation(api.maintenance.backfillTransactionSearchText, {
+      operatorKey: "test-key",
+      paginationOpts: { numItems: 1, cursor: null },
+      reset: true,
+    });
+    expect(backfill.isDone).toBe(false);
+
+    const result = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "partial",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title).sort()).toEqual([
+      "Partial backfill first",
+      "Partial backfill second",
+    ]);
+  });
+
+  it("finds transactions created after the search projection backfill completes", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) => markTransactionSearchBackfillComplete(ctx));
+
+    await t.mutation(api.transactions.createTransaction, {
+      circleId: f.circleId,
+      type: "expense",
+      title: "Post backfill vendor",
+      amountMinorUnits: 4200,
+      date: "2026-06-12",
+      categoryIds: [f.groceriesId],
+    });
+
+    const result = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "post backfill",
+      ...firstPage(25),
+    });
+    expect(result.page.map((txn) => txn.title)).toEqual(["Post backfill vendor"]);
+  });
+
   it("ORs values within category/member fields and ANDs fields together", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
