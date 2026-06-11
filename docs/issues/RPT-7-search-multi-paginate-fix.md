@@ -48,8 +48,15 @@ this slice applies the same fix to the Transaction reads.
   - The per-row caches (`newViewCaches`, `newSearchCaches`) stay: `filterWith` runs the
     same predicate the loop ran, including the Category-link lookups.
 - **No schema change.** The indexes already carry the sort keys.
-- **No client change.** Both queries keep their args and page shape; stream cursors are
-  opaque to `usePaginatedQuery` like Convex's own.
+- **Client** (`data.ts`): point `useLedgerTransactionFilter` and `useTransactionSearch`
+  at `usePaginatedQuery` from **`convex-helpers/react`** (drop-in signature). Stream
+  pagination has no journal, so the native `convex/react` hook cannot pin page ends —
+  reactive changes after a `loadMore` can skip or duplicate boundary rows; the helper
+  hook passes `endCursor` back to keep pages contiguous. CAT-4's `useCategoriesPage`
+  (PR #93 review fix) is the reference, including the `convex-helpers/react` test double
+  in `apps/web-app/app/test/convex-react.tsx`. Args and page shape are otherwise
+  unchanged — `paginationOptsValidator` already carries `endCursor` into
+  `stream.paginate()`.
 
 ## Why this way
 
