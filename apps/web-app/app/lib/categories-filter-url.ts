@@ -1,5 +1,7 @@
 import type { TransactionType } from "@spend-circle/domain";
 
+import { cleanText, readLifecycleStatus } from "./url-codec.js";
+
 /**
  * URL codec for the Categories page's **Category Filter** (CAT-4) — a small
  * sibling of `transaction-filter-url.ts`, not an overload of it: the Categories
@@ -31,7 +33,7 @@ const FILTER_PARAMS = ["type", "status", "q"];
  * the backend match is case-insensitive, but the URL shows what was typed). The
  * route's debounce compares against this to avoid writing no-op history entries. */
 export function cleanQueryText(value: string | null) {
-  return (value ?? "").trim().replace(/\s+/g, " ");
+  return cleanText(value);
 }
 
 function readType(value: string | null): TransactionType {
@@ -39,9 +41,7 @@ function readType(value: string | null): TransactionType {
 }
 
 function readStatus(value: string | null): CategoryLifecycleFilter {
-  return value === "active" || value === "archived" || value === "all"
-    ? value
-    : DEFAULT_CATEGORIES_STATUS;
+  return readLifecycleStatus(value, DEFAULT_CATEGORIES_STATUS);
 }
 
 export function readCategoriesFilters(searchParams: URLSearchParams): CategoriesFilters {
