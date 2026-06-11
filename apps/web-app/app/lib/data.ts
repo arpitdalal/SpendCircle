@@ -2,12 +2,13 @@ import { api } from "@spend-circle/convex";
 import type { ComparisonRangeMonths, PlainMonth, TransactionType } from "@spend-circle/domain";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-// The stream-pagination variant of usePaginatedQuery. A query that paginates a
-// convex-helpers STREAM (filterCategories) has no journal to pin page bounds, so
-// the reactive client must pass `endCursor` back itself or pages develop holes /
-// duplicates at their boundaries once the underlying rows change after a
-// loadMore. This hook does exactly that; convex/react's version is only correct
-// for queries that call ctx.db's own .paginate().
+// The stream-pagination variant of usePaginatedQuery. Queries that paginate a
+// convex-helpers STREAM (Category Filter, Ledger Filter, Transaction Search) have
+// no journal to pin page bounds, so the reactive client must pass `endCursor`
+// back itself or pages develop holes / duplicates at their boundaries once the
+// underlying rows change after a loadMore. This hook does exactly that;
+// convex/react's version is only correct for queries that call ctx.db's own
+// .paginate().
 import { usePaginatedQuery as useStreamPaginatedQuery } from "convex-helpers/react";
 import { MOCKS } from "./env.js";
 import {
@@ -366,7 +367,7 @@ export function useLedgerTransactionFilter(
   options?: { enabled?: boolean },
 ): PaginatedTransactions {
   const enabled = options?.enabled ?? true;
-  const paginated = usePaginatedQuery(
+  const paginated = useStreamPaginatedQuery(
     api.search.filterLedgerTransactions,
     MOCKS || !enabled ? "skip" : { circleId, ...filters },
     { initialNumItems: TRANSACTIONS_PAGE_SIZE },
@@ -387,7 +388,7 @@ export function useLedgerTransactionFilter(
 }
 
 export function useTransactionSearch(circleId: Circle["id"], filters: TransactionSearchFilters) {
-  const paginated = usePaginatedQuery(
+  const paginated = useStreamPaginatedQuery(
     api.search.searchTransactions,
     MOCKS ? "skip" : { circleId, ...filters },
     { initialNumItems: TRANSACTIONS_PAGE_SIZE },

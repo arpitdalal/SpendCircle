@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done · [PR #95](https://github.com/arpitdalal/SpendCircle/pull/95) |
 | **Labels** | `area:reporting`, `backend`, `bug` |
 | **Depends on** | RPT-2, CAT-4 |
 | **PRD stories** | 41, 65, 66, 67 (keeps the RPT-2 surfaces working at scale; no new story) |
