@@ -20,7 +20,7 @@ function renderSetup(circle = makeCircleView()) {
 }
 
 describe("Circle setup", () => {
-  it("submits optional answers and currency, then returns to the circle dashboard", async () => {
+  it("submits optional answers, then returns to the circle dashboard", async () => {
     const user = userEvent.setup();
     const completeCircleSetup = vi.fn().mockResolvedValue({ createdCategoryIds: ["cat-rent"] });
     const circle = makeCircleView({ ref: "home-c1", currency: "USD" });
@@ -29,18 +29,30 @@ describe("Circle setup", () => {
 
     await user.selectOptions(screen.getByLabelText("Circle use"), "residence");
     await user.selectOptions(screen.getByLabelText("Residence type"), "leased");
-    await user.selectOptions(screen.getByLabelText("Currency"), "CAD");
     await user.click(screen.getByRole("button", { name: "Finish setup" }));
 
     expect(completeCircleSetup).toHaveBeenCalledWith({
       circleId: circle.id,
       answers: { purpose: "residence", residenceType: "leased" },
-      currency: "CAD",
     });
     await waitFor(() => {
       expect(view.location()).toBe(`/circles/${circle.ref}`);
     });
     expect(await screen.findByText("Circle setup complete.")).toBeInTheDocument();
+  });
+
+  it("keeps placeholder choices non-selectable", async () => {
+    const user = userEvent.setup();
+    configureConvex({ completeCircleSetup: vi.fn() });
+    renderSetup();
+
+    expect(screen.getByRole("option", { name: "Not sure yet" })).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText("Circle use"), "residence");
+
+    for (const option of screen.getAllByRole("option", { name: "Not sure yet" })) {
+      expect(option).toBeDisabled();
+    }
   });
 
   it("skips setup without creating starter categories", async () => {
@@ -54,23 +66,6 @@ describe("Circle setup", () => {
 
     expect(completeCircleSetup).not.toHaveBeenCalled();
     expect(view.location()).toBe(`/circles/${circle.ref}`);
-  });
-
-  it("omits currency when the circle currency is locked", async () => {
-    const user = userEvent.setup();
-    const completeCircleSetup = vi.fn().mockResolvedValue({ createdCategoryIds: [] });
-    const circle = makeCircleView({ currencyLocked: true, currency: "USD" });
-    configureConvex({ completeCircleSetup });
-    renderSetup(circle);
-
-    expect(screen.getByLabelText("Currency")).toBeDisabled();
-    await user.selectOptions(screen.getByLabelText("Circle use"), "trip");
-    await user.click(screen.getByRole("button", { name: "Finish setup" }));
-
-    expect(completeCircleSetup).toHaveBeenCalledWith({
-      circleId: circle.id,
-      answers: { purpose: "trip" },
-    });
   });
 
   it("surfaces setup failure and keeps the form enabled for retry", async () => {

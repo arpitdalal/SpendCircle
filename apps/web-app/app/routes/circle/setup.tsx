@@ -1,9 +1,4 @@
-import {
-  CIRCLE_PURPOSES,
-  type CircleSetupAnswers,
-  RESIDENCE_TYPES,
-  SUPPORTED_CURRENCIES,
-} from "@spend-circle/domain";
+import { CIRCLE_PURPOSES, type CircleSetupAnswers, RESIDENCE_TYPES } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
 import { href, useNavigate } from "react-router";
 import { Button } from "~/components/ui/button.js";
@@ -38,7 +33,6 @@ export default function CircleSetup() {
   const [residenceType, setResidenceType] = useState<ResidenceChoice>(
     circle.setupAnswers?.residenceType ?? "",
   );
-  const [currency, setCurrency] = useState(circle.currency);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -61,7 +55,6 @@ export default function CircleSetup() {
       await completeSetup({
         circleId: circle.id,
         answers: setupAnswers(purpose, residenceType),
-        ...(circle.currencyLocked ? {} : { currency }),
       });
       show("Circle setup complete.");
       await finish();
@@ -77,7 +70,7 @@ export default function CircleSetup() {
       <div>
         <h2 className="font-display text-lg font-semibold tracking-tight">Circle setup</h2>
         <p className="text-sm text-muted-foreground">
-          Pick starter context and confirm the circle currency.
+          Pick starter context for category suggestions.
         </p>
       </div>
 
@@ -101,7 +94,9 @@ export default function CircleSetup() {
             }}
             className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
           >
-            <option value="">Not sure yet</option>
+            <option value="" disabled>
+              Not sure yet
+            </option>
             {CIRCLE_PURPOSES.map((option) => (
               <option key={option} value={option}>
                 {PURPOSE_LABELS[option]}
@@ -121,7 +116,9 @@ export default function CircleSetup() {
               onChange={(event) => setResidenceType(normalizeResidenceType(event.target.value))}
               className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
             >
-              <option value="">Not sure yet</option>
+              <option value="" disabled>
+                Not sure yet
+              </option>
               {RESIDENCE_TYPES.map((option) => (
                 <option key={option} value={option}>
                   {RESIDENCE_LABELS[option]}
@@ -130,25 +127,6 @@ export default function CircleSetup() {
             </select>
           </div>
         ) : null}
-
-        <div className="space-y-1.5">
-          <label htmlFor="setup-currency" className="block text-sm font-medium">
-            Currency
-          </label>
-          <select
-            id="setup-currency"
-            value={currency}
-            disabled={circle.currencyLocked}
-            onChange={(event) => setCurrency(event.target.value)}
-            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:opacity-60"
-          >
-            {SUPPORTED_CURRENCIES.map((option) => (
-              <option key={option.code} value={option.code}>
-                {option.code} · {option.name}
-              </option>
-            ))}
-          </select>
-        </div>
 
         {error ? (
           <p id="setup-error" role="alert" className="text-sm text-destructive">

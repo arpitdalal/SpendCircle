@@ -45,7 +45,7 @@ export function useCreateCircle() {
   return useMutation(api.circles.createCircle);
 }
 
-/** Completes Circle Setup: answers + optional Currency confirm + starter Categories. */
+/** Completes Circle Setup: answers + starter Categories. */
 export function useCompleteCircleSetup() {
   return useMutation(api.circles.completeCircleSetup);
 }

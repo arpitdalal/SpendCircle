@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe("completeCircleSetup", () => {
-  it("lets the owner persist setup answers, confirm currency, and create starter categories", async () => {
+  it("lets the owner persist setup answers and create starter categories", async () => {
     const t = convexTest(schema, modules);
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     mockCurrentUser.mockResolvedValue(owner);
@@ -31,13 +31,12 @@ describe("completeCircleSetup", () => {
     const result = await t.mutation(api.circles.completeCircleSetup, {
       circleId,
       answers: { purpose: "residence", residenceType: "leased" },
-      currency: "CAD",
     });
 
     expect(result.createdCategoryIds).toHaveLength(10);
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(circleId);
-      expect(circle?.currency).toBe("CAD");
+      expect(circle?.currency).toBe("USD");
       expect(circle?.setupAnswers).toEqual({ purpose: "residence", residenceType: "leased" });
 
       const categories = await ctx.db
@@ -66,7 +65,6 @@ describe("completeCircleSetup", () => {
       expect(circleEvents[0]?.changes).toEqual([
         { field: "setup.purpose", to: "residence" },
         { field: "setup.residenceType", to: "leased" },
-        { field: "currency", from: "USD", to: "CAD" },
       ]);
 
       const rent = categories.find((category) => category.name === "Rent");
@@ -93,7 +91,6 @@ describe("completeCircleSetup", () => {
       t.mutation(api.circles.completeCircleSetup, {
         circleId,
         answers: { purpose: "trip" },
-        currency: "USD",
       }),
     ).rejects.toThrow(/Only the owner/);
   });
@@ -107,7 +104,6 @@ describe("completeCircleSetup", () => {
       t.mutation(api.circles.completeCircleSetup, {
         circleId,
         answers: { purpose: "residence", residenceType: "owned" },
-        currency: "CAD",
       }),
     ).rejects.toThrow(/archived/);
 
@@ -138,7 +134,6 @@ describe("completeCircleSetup", () => {
     const result = await t.mutation(api.circles.completeCircleSetup, {
       circleId,
       answers: { purpose: "trip" },
-      currency: "USD",
     });
 
     expect(result.createdCategoryIds).toHaveLength(8);
@@ -153,7 +148,7 @@ describe("completeCircleSetup", () => {
     });
   });
 
-  it("leaves locked currency unchanged while still deriving non-colliding categories", async () => {
+  it("still derives non-colliding categories after the currency is locked", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run(async (ctx) => {
       const seeded = await seedFixture(ctx);
@@ -166,7 +161,6 @@ describe("completeCircleSetup", () => {
     const result = await t.mutation(api.circles.completeCircleSetup, {
       circleId: f.circleId,
       answers: { purpose: "residence", residenceType: "owned" },
-      currency: "CAD",
     });
 
     expect(result.createdCategoryIds).toHaveLength(8);
@@ -190,12 +184,10 @@ describe("completeCircleSetup", () => {
     await t.mutation(api.circles.completeCircleSetup, {
       circleId,
       answers: { purpose: "residence", residenceType: "leased" },
-      currency: "USD",
     });
     const second = await t.mutation(api.circles.completeCircleSetup, {
       circleId,
       answers: { purpose: "residence", residenceType: "owned" },
-      currency: "USD",
     });
 
     expect(second.createdCategoryIds).toHaveLength(1);

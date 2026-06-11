@@ -3,7 +3,6 @@ import {
   circleInputSchema,
   circleSetupAnswersSchema,
   DEFAULT_COLOR_ID,
-  isSupportedCurrency,
   starterCategories,
 } from "@spend-circle/domain";
 import { v } from "convex/values";
@@ -173,12 +172,11 @@ export const renameCircle = mutation({
   },
 });
 
-/** Completes or edits Circle Setup: persisted answers + starter Categories + Currency confirm. */
+/** Completes or edits Circle Setup: persisted answers + starter Categories. */
 export const completeCircleSetup = mutation({
   args: {
     circleId: v.id("circles"),
     answers: circleSetupAnswers,
-    currency: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const access = await requireCircleAccess(ctx, args.circleId);
@@ -190,20 +188,6 @@ export const completeCircleSetup = mutation({
     const answers = circleSetupAnswersSchema.parse(args.answers);
     const circleChanges: HistoryChange[] = setupAnswerChanges(access.circle.setupAnswers, answers);
     const patch: Partial<Doc<"circles">> = { setupAnswers: answers };
-
-    if (args.currency !== undefined) {
-      if (!isSupportedCurrency(args.currency)) {
-        throw new Error("Unsupported currency");
-      }
-      if (!access.circle.currencyLocked) {
-        patch.currency = args.currency;
-        circleChanges.push({
-          field: "currency",
-          ...(access.circle.currency !== args.currency ? { from: access.circle.currency } : {}),
-          to: args.currency,
-        });
-      }
-    }
 
     await ctx.db.patch(args.circleId, patch);
 
