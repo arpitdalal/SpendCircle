@@ -4,6 +4,8 @@ import {
   isValidPlainMonth,
   MAX_AMOUNT_MINOR,
   normalizeSearchText,
+  transactionSearchText,
+  transactionTextMatches,
 } from "@spend-circle/domain";
 import { type IndexRange, paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
@@ -16,6 +18,7 @@ import { resolveCircleAccess } from "./guard.js";
 import { toMemberView } from "./members.js";
 import { monthDateRange } from "./monthActivity.js";
 import schema from "./schema.js";
+import { transactionSearchBackfillComplete } from "./transactionSearchDocuments.js";
 import { newViewCaches, toTransactionView } from "./transactions.js";
 
 const filterType = v.union(v.literal("all"), v.literal("expense"), v.literal("income"));
@@ -160,6 +163,15 @@ async function matchesFilters(
       return false;
     }
   }
+  if (
+    filters.queryText &&
+    !transactionTextMatches(
+      transactionSearchText({ title: txn.title, note: txn.note }),
+      filters.queryText,
+    )
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -266,7 +278,7 @@ async function collectTransactionViews(
   const viewCaches = newViewCaches();
   const searchCaches = newSearchCaches();
 
-  if (args.filters.queryText) {
+  if (args.filters.queryText && (await transactionSearchBackfillComplete(ctx))) {
     return await collectSearchTransactionViews(ctx, args, viewCaches);
   }
 

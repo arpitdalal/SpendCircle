@@ -1,6 +1,9 @@
 import type { Doc, Id } from "../_generated/dataModel.js";
 import type { MutationCtx } from "../_generated/server.js";
-import { syncTransactionSearchDocument } from "../transactionSearchDocuments.js";
+import {
+  syncTransactionSearchDocument,
+  transactionSearchBackfillKey,
+} from "../transactionSearchDocuments.js";
 
 /**
  * Shared convex-test seeding (CLAUDE.md: one helper, not copy-pasted scaffolding
@@ -211,4 +214,28 @@ export async function seedTransaction(
     categoryIds: opts.categoryIds ?? [f.groceriesId],
   });
   return transactionId;
+}
+
+export async function markTransactionSearchBackfillComplete(ctx: MutationCtx) {
+  const existing = await ctx.db
+    .query("transactionSearchBackfills")
+    .withIndex("by_key", (q) => q.eq("key", transactionSearchBackfillKey))
+    .unique();
+  const now = Date.now();
+  const status: Doc<"transactionSearchBackfills">["status"] = "complete";
+  const fields = {
+    status,
+    scanned: 0,
+    synced: 0,
+    updatedAt: now,
+    completedAt: now,
+  };
+  if (existing) {
+    await ctx.db.patch(existing._id, fields);
+    return;
+  }
+  await ctx.db.insert("transactionSearchBackfills", {
+    key: transactionSearchBackfillKey,
+    ...fields,
+  });
 }
