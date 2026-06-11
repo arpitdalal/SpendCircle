@@ -1,0 +1,164 @@
+import { api } from "@spend-circle/convex";
+import type { PlainMonth, TransactionType } from "@spend-circle/domain";
+import { useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
+// The stream-pagination variant of usePaginatedQuery. Queries that paginate a
+// convex-helpers STREAM (Category Filter, Ledger Filter, Transaction Search) have
+// no journal to pin page bounds, so the reactive client must pass `endCursor`
+// back itself or pages develop holes / duplicates at their boundaries once the
+// underlying rows change after a loadMore. This hook does exactly that;
+// convex/react's version is only correct for queries that call ctx.db's own
+// .paginate().
+import { usePaginatedQuery as useStreamPaginatedQuery } from "convex-helpers/react";
+import { MOCKS } from "../env.js";
+import {
+  MOCK_CATEGORIES,
+  MOCK_MEMBERS,
+  MOCK_MONTHLY_SUMMARY,
+  mockFilterTransactions,
+} from "../fixtures.js";
+import type { Circle } from "./circles.js";
+import {
+  type PaginatedTransactions,
+  type PaginationStatus,
+  TRANSACTIONS_PAGE_SIZE,
+  type TransactionStatus,
+  useTransactions,
+} from "./transactions.js";
+
+/**
+ * The Monthly Ledger's per-month financial summary, derived from `getMonthlyLedger`
+ * so it can't drift from the backend (ADR 0003): that month's Income / Expense / Net
+ * in minor units plus the Circle Currency. `null` ≡ inaccessible Circle (ADR 0016);
+ * `undefined` while loading.
+ */
+export type MonthlySummary = NonNullable<FunctionReturnType<typeof api.ledger.getMonthlyLedger>>;
+export type MonthlyTotals = MonthlySummary["totals"];
+
+export function useMonthlySummary(circleId: Circle["id"], month: PlainMonth) {
+  const queried = useQuery(api.ledger.getMonthlyLedger, MOCKS ? "skip" : { circleId, month });
+  return MOCKS ? MOCK_MONTHLY_SUMMARY : queried;
+}
+
+/**
+ * The Monthly Ledger surface for one Circle-month (RPT-1): the `summary` (totals +
+ * Currency, computed server-side over the whole month) fused with the month-scoped,
+ * paginated `transactions` list. They are two backend reads (a `usePaginatedQuery`
+ * can't carry totals next to a page, and the totals must sum the entire month while
+ * the list only resolves the visible page), recombined here into the one hook the
+ * route consumes. Mock mode returns fixtures and skips both backend reads (ADR 0006).
+ *
+ * `status` selects the month's active list (default) or its archived list (TXN-3 — the
+ * surface the Restore affordance reads). The `summary` totals are always the month's
+ * ACTIVE Income/Expense/Net (archived Transactions never count — Dashboard contract),
+ * independent of which list the toggle shows.
+ */
+export function useMonthlyLedger(
+  circleId: Circle["id"],
+  month: PlainMonth,
+  options?: { status?: TransactionStatus },
+) {
+  const queried = useMonthlySummary(circleId, month);
+  const transactions = useTransactions(circleId, month, { status: options?.status ?? "active" });
+  return {
+    summary: MOCKS ? MOCK_MONTHLY_SUMMARY : queried,
+    transactions,
+  };
+}
+
+export type FilterType = "all" | TransactionType;
+export type LifecycleFilter = "active" | "archived" | "all";
+
+export type TransactionFilterOptions = NonNullable<
+  FunctionReturnType<typeof api.search.getTransactionSearchOptions>
+>;
+
+interface BaseTransactionFilters {
+  query?: string;
+  type: FilterType;
+  status: LifecycleFilter;
+  categoryIds?: string[];
+  recordedByMemberIds?: string[];
+  paidByMemberIds?: string[];
+}
+
+export interface LedgerTransactionFilters extends BaseTransactionFilters {
+  month: PlainMonth;
+}
+
+export interface TransactionSearchFilters extends BaseTransactionFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  amountMin?: number;
+  amountMax?: number;
+}
+
+export function useLedgerTransactionFilter(
+  circleId: Circle["id"],
+  filters: LedgerTransactionFilters,
+  options?: { enabled?: boolean },
+): PaginatedTransactions {
+  const enabled = options?.enabled ?? true;
+  const paginated = useStreamPaginatedQuery(
+    api.search.filterLedgerTransactions,
+    MOCKS || !enabled ? "skip" : { circleId, ...filters },
+    { initialNumItems: TRANSACTIONS_PAGE_SIZE },
+  );
+  if (MOCKS || !enabled) {
+    const status: PaginationStatus = "Exhausted";
+    return {
+      transactions: MOCKS && enabled ? mockFilterTransactions(filters) : [],
+      status,
+      loadMore: () => {},
+    };
+  }
+  return {
+    transactions: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(TRANSACTIONS_PAGE_SIZE),
+  };
+}
+
+export function useTransactionSearch(circleId: Circle["id"], filters: TransactionSearchFilters) {
+  const paginated = useStreamPaginatedQuery(
+    api.search.searchTransactions,
+    MOCKS ? "skip" : { circleId, ...filters },
+    { initialNumItems: TRANSACTIONS_PAGE_SIZE },
+  );
+  if (MOCKS) {
+    const status: PaginationStatus = "Exhausted";
+    return {
+      transactions: mockFilterTransactions(filters),
+      status,
+      loadMore: () => {},
+    };
+  }
+  return {
+    transactions: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(TRANSACTIONS_PAGE_SIZE),
+  };
+}
+
+export function useLedgerFilterOptions(
+  circleId: Circle["id"],
+  month: PlainMonth,
+  type: FilterType,
+): TransactionFilterOptions | null | undefined {
+  const queried = useQuery(
+    api.search.getLedgerFilterOptions,
+    MOCKS ? "skip" : { circleId, month, type },
+  );
+  return MOCKS ? { categories: MOCK_CATEGORIES, members: MOCK_MEMBERS } : queried;
+}
+
+export function useTransactionSearchOptions(
+  circleId: Circle["id"],
+  type: FilterType,
+): TransactionFilterOptions | null | undefined {
+  const queried = useQuery(
+    api.search.getTransactionSearchOptions,
+    MOCKS ? "skip" : { circleId, type },
+  );
+  return MOCKS ? { categories: MOCK_CATEGORIES, members: MOCK_MEMBERS } : queried;
+}

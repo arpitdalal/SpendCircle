@@ -1,0 +1,25 @@
+import { api } from "@spend-circle/convex";
+import { useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
+import { MOCKS } from "../env.js";
+import { MOCK_MEMBERS } from "../fixtures.js";
+import type { Circle } from "./circles.js";
+
+/**
+ * The single Member view contract, derived from `listMembers` so it cannot drift
+ * from `toMemberView` in `packages/convex/convex/members.ts` (ADR 0003). The query
+ * returns `MemberView[] | null` (null ≡ inaccessible Circle — ADR 0016); this is
+ * one element of that array.
+ */
+export type Member = NonNullable<FunctionReturnType<typeof api.members.listMembers>>[number];
+
+/**
+ * A Circle's active Members, Owner first. `undefined` while loading; `null` when
+ * the Circle is inaccessible (ADR 0016). Feeds the Transaction form's Paid By
+ * selector; MEM-1 layers the full Member List UI on the same query. Mock mode
+ * returns fixtures and skips the backend (ADR 0006).
+ */
+export function useMembers(circleId: Circle["id"]): Member[] | null | undefined {
+  const queried = useQuery(api.members.listMembers, MOCKS ? "skip" : { circleId });
+  return MOCKS ? MOCK_MEMBERS : queried;
+}
