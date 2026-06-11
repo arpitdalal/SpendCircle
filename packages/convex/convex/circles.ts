@@ -172,7 +172,7 @@ export const renameCircle = mutation({
   },
 });
 
-/** Completes or edits Circle Setup: persisted answers + starter Categories. */
+/** Completes Circle Setup once: persisted answers + starter Categories. */
 export const completeCircleSetup = mutation({
   args: {
     circleId: v.id("circles"),
@@ -184,6 +184,9 @@ export const completeCircleSetup = mutation({
       throw new Error("Only the owner can complete circle setup");
     }
     access.assertWritable();
+    if (access.circle.setupAnswers !== undefined) {
+      throw new Error("Circle setup is already complete");
+    }
 
     const answers = circleSetupAnswersSchema.parse(args.answers);
     const circleChanges: HistoryChange[] = setupAnswerChanges(access.circle.setupAnswers, answers);

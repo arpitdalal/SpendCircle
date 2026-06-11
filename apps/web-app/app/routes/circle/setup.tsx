@@ -1,6 +1,6 @@
 import { CIRCLE_PURPOSES, type CircleSetupAnswers, RESIDENCE_TYPES } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
-import { href, useNavigate } from "react-router";
+import { href, Navigate, useNavigate } from "react-router";
 import { Button } from "~/components/ui/button.js";
 import { useCompleteCircleSetup } from "~/lib/data.js";
 import { useSnackbar } from "~/lib/snackbar.js";
@@ -37,6 +37,10 @@ export default function CircleSetup() {
   const [submitting, setSubmitting] = useState(false);
 
   const dashboardPath = href("/circles/:circleRef", { circleRef: circle.ref });
+
+  if (circle.setupAnswers !== undefined) {
+    return <Navigate to={dashboardPath} replace />;
+  }
 
   async function finish() {
     await navigate(dashboardPath);

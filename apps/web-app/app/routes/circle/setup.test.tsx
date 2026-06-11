@@ -68,6 +68,22 @@ describe("Circle setup", () => {
     expect(view.location()).toBe(`/circles/${circle.ref}`);
   });
 
+  it("redirects completed setup away from the setup route", async () => {
+    const completeCircleSetup = vi.fn();
+    const circle = makeCircleView({
+      ref: "home-c1",
+      setupAnswers: { purpose: "residence", residenceType: "leased" },
+    });
+    configureConvex({ completeCircleSetup });
+    const view = renderSetup(circle);
+
+    await waitFor(() => {
+      expect(view.location()).toBe(`/circles/${circle.ref}`);
+    });
+    expect(completeCircleSetup).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Finish setup" })).not.toBeInTheDocument();
+  });
+
   it("surfaces setup failure and keeps the form enabled for retry", async () => {
     const user = userEvent.setup();
     const completeCircleSetup = vi.fn().mockRejectedValue(new Error("network"));

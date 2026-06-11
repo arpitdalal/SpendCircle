@@ -176,7 +176,7 @@ describe("completeCircleSetup", () => {
     });
   });
 
-  it("can be rerun without deleting existing categories or duplicating starters", async () => {
+  it("rejects reruns so setup-derived category sets cannot be mixed", async () => {
     const t = convexTest(schema, modules);
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     mockCurrentUser.mockResolvedValue(owner);
@@ -185,22 +185,24 @@ describe("completeCircleSetup", () => {
       circleId,
       answers: { purpose: "residence", residenceType: "leased" },
     });
-    const second = await t.mutation(api.circles.completeCircleSetup, {
-      circleId,
-      answers: { purpose: "residence", residenceType: "owned" },
-    });
 
-    expect(second.createdCategoryIds).toHaveLength(1);
+    await expect(
+      t.mutation(api.circles.completeCircleSetup, {
+        circleId,
+        answers: { purpose: "residence", residenceType: "owned" },
+      }),
+    ).rejects.toThrow(/already complete/);
+
     await t.run(async (ctx) => {
       const categories = await ctx.db
         .query("categories")
         .withIndex("by_circle_and_type", (q) => q.eq("circleId", circleId).eq("type", "expense"))
         .collect();
       expect(categories.map((category) => category.name).sort()).toContain("Rent");
-      expect(categories.map((category) => category.name).sort()).toContain("Mortgage");
+      expect(categories.map((category) => category.name).sort()).not.toContain("Mortgage");
       expect((await ctx.db.get(circleId))?.setupAnswers).toEqual({
         purpose: "residence",
-        residenceType: "owned",
+        residenceType: "leased",
       });
     });
   });

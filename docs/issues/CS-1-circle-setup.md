@@ -29,8 +29,8 @@ A Personal Circle can be used before completing setup (glossary).
     path as CAT-1** (skip any that would collide) → persist setup answers on the Circle (add a
     `setupAnswers` field — needs a schema addition; record an ADR only if the shape is
     surprising) → `recordEvent` for setup completion + each derived Category create.
-  - Setup answers can be re-edited later (CS-2) and **changing them does not remove existing
-    Categories** (glossary: Circle Settings).
+  - Setup is one-shot: once answers are persisted, `/setup` redirects to the Circle dashboard
+    and the mutation rejects reruns so derived Category sets cannot be mixed.
 - **Domain:** `starterCategories(answers)` — pure, fully unit-tested mapping from answers to
   the category list (residence leased→Rent, owned→Mortgage, plus shared defaults).
 - **Web:** a skippable setup step after CS-0 create; optional questions; "skip" leaves the
@@ -49,17 +49,17 @@ A Personal Circle can be used before completing setup (glossary).
 - **Domain:** `starterCategories` — leased residence includes Rent not Mortgage; owned
   includes Mortgage not Rent; non-residence excludes both; shared defaults always present;
   no duplicate names within the derived set.
-- **Mutation:** Owner completes setup → categories created and events recorded;
+- **Mutation:** Owner completes setup → categories created and events recorded; rerun ✗;
   non-owner ✗; archived Circle ✗; deriving a Category whose name already exists → skipped, no
   error; setup on a Circle with a Transaction → categories still derivable (non-colliding).
-- **Idempotency/edit:** re-running setup / editing answers does not delete existing Categories.
+- **One-shot:** completed setup cannot be run again and cannot mix Trip/Residence starter sets.
 - **Skip:** skipping creates no Categories and leaves the Circle usable.
 
 ## Done when
 
 - Owner can run skippable setup that derives
-  non-colliding starter Categories via the CAT-1 path; answers persist and are editable
-  without dropping Categories; pure derivation tested; gates pass.
+  non-colliding starter Categories via the CAT-1 path; answers persist; completed setup
+  cannot run again; pure derivation tested; gates pass.
 
 ## Out of scope
 
