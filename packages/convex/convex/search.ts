@@ -312,6 +312,47 @@ function onlySelectedId<T>(ids: Set<T>) {
   return ids.values().next().value;
 }
 
+const searchCursorKind = "transactionSearch";
+
+function rawSearchPageSize(requested: number) {
+  return Math.min(Math.max(requested, 10), 50);
+}
+
+function objectFields(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return new Map(Object.entries(value));
+}
+
+function searchCursorFrom(value: string | null) {
+  if (!value) return { searchCursor: null, offset: 0 };
+  try {
+    const decoded: unknown = JSON.parse(value);
+    const fields = objectFields(decoded);
+    if (!fields || fields.get("kind") !== searchCursorKind) {
+      return { searchCursor: value, offset: 0 };
+    }
+    const searchCursor = fields.get("searchCursor");
+    const offset = fields.get("offset");
+    if (
+      (searchCursor === null || typeof searchCursor === "string") &&
+      typeof offset === "number" &&
+      Number.isInteger(offset) &&
+      offset >= 0
+    ) {
+      return { searchCursor, offset };
+    }
+  } catch {
+    return { searchCursor: value, offset: 0 };
+  }
+  return { searchCursor: value, offset: 0 };
+}
+
+function encodeSearchCursor(searchCursor: string | null, offset: number) {
+  return JSON.stringify({ kind: searchCursorKind, searchCursor, offset });
+}
+
 async function collectSearchTransactionViews(
   ctx: QueryCtx,
   args: Parameters<typeof collectTransactionViews>[1],
@@ -321,73 +362,112 @@ async function collectSearchTransactionViews(
   const paidByMemberId = onlySelectedId(args.paidByMemberIds);
   const recordedByMemberId = onlySelectedId(args.recordedByMemberIds);
 
-  let source = ctx.db.query("transactionSearchDocuments").withSearchIndex("search_text", (q) => {
-    let scoped = q.search("searchText", args.filters.queryText).eq("circleId", args.circleId);
-    if (args.status) {
-      scoped = scoped.eq("status", args.status);
-    }
-    if (args.filters.type) {
-      scoped = scoped.eq("type", args.filters.type);
-    }
-    if (paidByMemberId) {
-      scoped = scoped.eq("paidByMemberId", paidByMemberId);
-    }
-    if (recordedByMemberId) {
-      scoped = scoped.eq("recordedByMemberId", recordedByMemberId);
-    }
-    return scoped;
-  });
+  function searchSource() {
+    let source = ctx.db.query("transactionSearchDocuments").withSearchIndex("search_text", (q) => {
+      let scoped = q.search("searchText", args.filters.queryText).eq("circleId", args.circleId);
+      if (args.status) {
+        scoped = scoped.eq("status", args.status);
+      }
+      if (args.filters.type) {
+        scoped = scoped.eq("type", args.filters.type);
+      }
+      if (paidByMemberId) {
+        scoped = scoped.eq("paidByMemberId", paidByMemberId);
+      }
+      if (recordedByMemberId) {
+        scoped = scoped.eq("recordedByMemberId", recordedByMemberId);
+      }
+      return scoped;
+    });
 
-  if (args.start) {
-    const start = args.start;
-    source = source.filter((q) => q.gte(q.field("date"), start));
-  }
-  if (args.endExclusive) {
-    const endExclusive = args.endExclusive;
-    source = source.filter((q) => q.lt(q.field("date"), endExclusive));
-  }
-  if (args.filters.amountMin !== undefined) {
-    const amountMin = args.filters.amountMin;
-    source = source.filter((q) => q.gte(q.field("amountMinorUnits"), amountMin));
-  }
-  if (args.filters.amountMax !== undefined) {
-    const amountMax = args.filters.amountMax;
-    source = source.filter((q) => q.lte(q.field("amountMinorUnits"), amountMax));
+    if (args.start) {
+      const start = args.start;
+      source = source.filter((q) => q.gte(q.field("date"), start));
+    }
+    if (args.endExclusive) {
+      const endExclusive = args.endExclusive;
+      source = source.filter((q) => q.lt(q.field("date"), endExclusive));
+    }
+    if (args.filters.amountMin !== undefined) {
+      const amountMin = args.filters.amountMin;
+      source = source.filter((q) => q.gte(q.field("amountMinorUnits"), amountMin));
+    }
+    if (args.filters.amountMax !== undefined) {
+      const amountMax = args.filters.amountMax;
+      source = source.filter((q) => q.lte(q.field("amountMinorUnits"), amountMax));
+    }
+    return source;
   }
 
-  const result = await source.paginate(args.paginationOpts);
   const page = [];
-  for (const searchDoc of result.page) {
-    const txn = await ctx.db.get(searchDoc.transactionId);
-    if (!txn) {
-      continue;
-    }
-    const matches = await matchesFilters(
-      ctx,
-      txn,
-      {
-        type: args.filters.type,
-        status: args.status,
-        categoryIds: args.filters.categoryIds,
-        recordedByMemberIds: args.recordedByMemberIds,
-        paidByMemberIds: args.paidByMemberIds,
-        amountMin: args.filters.amountMin,
-        amountMax: args.filters.amountMax,
-        queryText: "",
-      },
-      searchCaches,
-    );
-    if (matches) {
-      page.push(
-        await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
+  const initialCursor = searchCursorFrom(args.paginationOpts.cursor);
+  let cursor = initialCursor.searchCursor;
+  let offset = initialCursor.offset;
+  let isDone = false;
+  const rawPageSize = rawSearchPageSize(args.paginationOpts.numItems);
+
+  while (page.length < args.paginationOpts.numItems && !isDone) {
+    const result = await searchSource().paginate({
+      numItems: rawPageSize,
+      cursor,
+    });
+    const pageOffset = offset;
+    let index = pageOffset;
+    offset = 0;
+
+    for (const searchDoc of result.page.slice(pageOffset)) {
+      index += 1;
+      const txn = await ctx.db.get(searchDoc.transactionId);
+      if (!txn) {
+        continue;
+      }
+      const matches = await matchesFilters(
+        ctx,
+        txn,
+        {
+          type: args.filters.type,
+          status: args.status,
+          categoryIds: args.filters.categoryIds,
+          recordedByMemberIds: args.recordedByMemberIds,
+          paidByMemberIds: args.paidByMemberIds,
+          amountMin: args.filters.amountMin,
+          amountMax: args.filters.amountMax,
+          queryText: "",
+        },
+        searchCaches,
       );
+      if (matches) {
+        page.push(
+          await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
+        );
+        if (page.length === args.paginationOpts.numItems) {
+          if (index < result.page.length) {
+            return {
+              page,
+              isDone: false,
+              continueCursor: encodeSearchCursor(cursor, index),
+            };
+          }
+          return {
+            page,
+            isDone: result.isDone,
+            continueCursor: result.continueCursor,
+          };
+        }
+      }
+    }
+
+    cursor = result.continueCursor;
+    isDone = result.isDone;
+    if (result.page.length === 0) {
+      break;
     }
   }
 
   return {
     page,
-    isDone: result.isDone,
-    continueCursor: result.continueCursor,
+    isDone,
+    continueCursor: cursor ?? "",
   };
 }
 

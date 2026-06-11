@@ -245,6 +245,114 @@ describe("filterLedgerTransactions", () => {
     expect(page.page.every((txn) => txn.recordedBy.displayName === "Sam")).toBe(true);
     expect(page.isDone).toBe(false);
   });
+
+  it("fills text-search pages after category post-filters", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 6; index += 1) {
+        await seedTransaction(ctx, f, {
+          title: `receipt receipt receipt filtered ${index}`,
+          date: `2026-06-${(index + 1).toString().padStart(2, "0")}`,
+          categoryIds: [f.diningId],
+        });
+      }
+      for (let index = 0; index < 4; index += 1) {
+        await seedTransaction(ctx, f, {
+          title: `receipt kept ${index}`,
+          date: `2026-06-${(index + 10).toString().padStart(2, "0")}`,
+          categoryIds: [f.groceriesId],
+        });
+      }
+    });
+
+    const first = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+      status: "active",
+      query: "receipt",
+      categoryIds: [f.groceriesId],
+      ...firstPage(3),
+    });
+    expect(first.page).toHaveLength(3);
+    expect(
+      first.page.every((txn) => txn.categories.some((category) => category.name === "Groceries")),
+    ).toBe(true);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+      status: "active",
+      query: "receipt",
+      categoryIds: [f.groceriesId],
+      paginationOpts: { numItems: 3, cursor: first.continueCursor },
+    });
+    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
+      "receipt kept 0",
+      "receipt kept 1",
+      "receipt kept 2",
+      "receipt kept 3",
+    ]);
+    expect(second.isDone).toBe(true);
+  });
+
+  it("fills text-search pages after multi-member post-filters", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
+    const sam = await t.run((ctx) => addMember(ctx, f.circleId, "sam@example.com", "Sam"));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 6; index += 1) {
+        await seedTransaction(ctx, f, {
+          title: `split split split filtered ${index}`,
+          date: `2026-06-${(index + 1).toString().padStart(2, "0")}`,
+          paidByMemberId: f.ownerMemberId,
+        });
+      }
+      for (let index = 0; index < 4; index += 1) {
+        await seedTransaction(ctx, f, {
+          title: `split kept ${index}`,
+          date: `2026-06-${(index + 10).toString().padStart(2, "0")}`,
+          paidByMemberId: index % 2 === 0 ? alex.memberId : sam.memberId,
+        });
+      }
+    });
+
+    const first = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+      status: "active",
+      query: "split",
+      paidByMemberIds: [alex.memberId, sam.memberId],
+      ...firstPage(3),
+    });
+    expect(first.page).toHaveLength(3);
+    expect(first.page.every((txn) => ["Alex", "Sam"].includes(txn.paidBy.displayName))).toBe(true);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+      status: "active",
+      query: "split",
+      paidByMemberIds: [alex.memberId, sam.memberId],
+      paginationOpts: { numItems: 3, cursor: first.continueCursor },
+    });
+    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
+      "split kept 0",
+      "split kept 1",
+      "split kept 2",
+      "split kept 3",
+    ]);
+    expect(second.isDone).toBe(true);
+  });
 });
 
 describe("searchTransactions", () => {
