@@ -11,6 +11,7 @@ import {
 } from "~/lib/data.js";
 import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
+import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
 
@@ -157,7 +158,7 @@ function LifecycleButton({
       await run({ transactionId: transaction.id });
     } catch (error) {
       console.error(`${action}Transaction failed`, error);
-      show(`${copy.error} Please try again.`);
+      show(mutationErrorMessageForUser(error, `${copy.error} Please try again.`));
     } finally {
       // Always clear the in-flight flag. On success the row stays mounted in a mixed
       // `status=all` list and `action` flips with the new `status`, so leaving `pending`
