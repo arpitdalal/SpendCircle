@@ -9,24 +9,20 @@ Local-first monorepo for the Spend Circle web app, Convex backend, and domain pa
 - Convex account/project
 - Google OAuth web client
 
-This repo uses pnpm workspaces. On this machine, pnpm is available at:
-
-```sh
-/opt/homebrew/bin/pnpm
-```
+This repo uses pnpm workspaces. The `packageManager` field in `package.json` pins
+pnpm; enable Corepack (`corepack enable`) or install pnpm ≥ that version.
 
 ## Install
 
 ```sh
-/opt/homebrew/bin/pnpm install
+pnpm install
 ```
 
 ## Environment
 
-Create `.env.local` at the repo root:
+Copy `.env.example` to `.env.local` at the repo root and fill it in.
 
 ```sh
-CONVEX_DEPLOYMENT=dev:<your-convex-dev-deployment>
 VITE_CONVEX_URL=https://<your-deployment>.convex.cloud
 VITE_CONVEX_SITE_URL=https://<your-deployment>.convex.site
 SITE_URL=http://127.0.0.1:5173
@@ -35,39 +31,43 @@ GOOGLE_CLIENT_ID=<google-oauth-client-id>
 GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
 ```
 
-Add this Google OAuth authorized redirect URI:
+Add this Google OAuth authorized redirect URI (auth runs as a Convex component
+in SPA mode, so the callback lives at the Convex site URL, not the app origin):
 
 ```text
-http://127.0.0.1:5173/api/auth/callback/google
+https://<your-deployment>.convex.site/api/auth/callback/google
 ```
+
+(`<your-deployment>` is the same subdomain as in `VITE_CONVEX_SITE_URL`.)
 
 ## Configure Convex
 
 Push backend code, install the Better Auth component, and generate the typed
-API. Convex lives in `packages/convex` and reads the shared root `.env.local`:
+API. Convex lives in `packages/convex`. The Convex CLI keeps its deployment
+selector in `packages/convex/.env.local` (gitignored) — running the dev command
+below for the first time walks you through login/project setup and writes
+`CONVEX_DEPLOYMENT` there itself. The repo-root `.env.local` is the web app's env
+file (Vite loads it via `envDir`); the Convex CLI does not read it. When switching
+between cloud dev and self-hosted E2E, see [e2e/README.md — The `.env.local` gotcha](e2e/README.md#the-envlocal-gotcha).
 
 ```sh
-/opt/homebrew/bin/pnpm --filter @spend-circle/convex dev
+pnpm --filter @spend-circle/convex dev
 ```
 
 Set the backend auth env vars on the Convex dev deployment (the app origin and
 Google credentials Better Auth needs):
 
 ```sh
-/opt/homebrew/bin/pnpm --filter @spend-circle/convex exec convex env set SITE_URL http://127.0.0.1:5173
-/opt/homebrew/bin/pnpm --filter @spend-circle/convex exec convex env set GOOGLE_CLIENT_ID <id>
-/opt/homebrew/bin/pnpm --filter @spend-circle/convex exec convex env set GOOGLE_CLIENT_SECRET <secret>
-/opt/homebrew/bin/pnpm --filter @spend-circle/convex exec convex env set BETTER_AUTH_SECRET <secret>
+pnpm --filter @spend-circle/convex exec convex env set SITE_URL http://127.0.0.1:5173
+pnpm --filter @spend-circle/convex exec convex env set GOOGLE_CLIENT_ID <id>
+pnpm --filter @spend-circle/convex exec convex env set GOOGLE_CLIENT_SECRET <secret>
+pnpm --filter @spend-circle/convex exec convex env set BETTER_AUTH_SECRET <secret>
 ```
-
-> Auth runs as a Convex component in SPA mode (no app server), so Google's
-> authorized redirect URI must point at the Convex site URL:
-> `<VITE_CONVEX_SITE_URL>/api/auth/callback/google`.
 
 ## Run App
 
 ```sh
-/opt/homebrew/bin/pnpm --filter @spend-circle/web-app dev --host 127.0.0.1
+pnpm --filter @spend-circle/web-app dev --host 127.0.0.1
 ```
 
 Open:
@@ -81,15 +81,15 @@ In normal local dev, `Continue with Google` starts the real Google OAuth flow ag
 To bypass auth and mock third-party vendors (Resend, PostHog, Sentry) via MSW, run mock mode with the `VITE_MOCKS` flag:
 
 ```sh
-/opt/homebrew/bin/pnpm --filter @spend-circle/web-app dev:mocks --host 127.0.0.1
+pnpm --filter @spend-circle/web-app dev:mocks --host 127.0.0.1
 ```
 
 ## Checks
 
 ```sh
-/opt/homebrew/bin/pnpm test
-/opt/homebrew/bin/pnpm typecheck
-/opt/homebrew/bin/pnpm build
+pnpm test
+pnpm typecheck
+pnpm build
 ```
 
 ### End-to-end (Playwright)
@@ -100,7 +100,7 @@ only boots the frontend and fails with `Failed to fetch`; use the wrapper, which
 the backend, deploys, runs the suite, and tears it down (needs Docker):
 
 ```sh
-/opt/homebrew/bin/pnpm test:e2e:local
+pnpm test:e2e:local
 ```
 
 See [`e2e/README.md`](e2e/README.md) for details and how to reproduce a red CI E2E job.
