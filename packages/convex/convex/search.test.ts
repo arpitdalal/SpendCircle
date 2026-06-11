@@ -29,6 +29,28 @@ beforeEach(() => {
   mockCurrentUser.mockReset();
 });
 
+async function seedSparseSearchRows(
+  ctx: Parameters<typeof seedTransaction>[0],
+  f: Parameters<typeof seedTransaction>[1],
+  opts: {
+    needle: string;
+    count?: number;
+    row?: (index: number) => Parameters<typeof seedTransaction>[2];
+  },
+) {
+  const count = opts.count ?? 12;
+  for (let index = 0; index < count; index += 1) {
+    const day = (index + 1).toString().padStart(2, "0");
+    const matches = index % 2 === 0;
+    await seedTransaction(ctx, f, {
+      title: matches ? `${opts.needle} ${index}` : `miss ${index}`,
+      note: matches ? "matched sparse row" : "ordinary row",
+      date: `2026-06-${day}`,
+      ...opts.row?.(index),
+    });
+  }
+}
+
 describe("filterLedgerTransactions", () => {
   it("filters the selected month by title/note only", async () => {
     const t = convexTest(schema, modules);
@@ -132,7 +154,100 @@ describe("filterLedgerTransactions", () => {
       ...firstPage(1),
     });
     expect(page.page.map((txn) => txn.title)).toEqual(["Needle match"]);
-    expect(page.isDone).toBe(true);
+    expect(page.isDone).toBe(false);
+
+    const done = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "needle",
+      paginationOpts: { numItems: 1, cursor: page.continueCursor },
+    });
+    expect(done.page).toEqual([]);
+    expect(done.isDone).toBe(true);
+  });
+
+  it("fills sparse filtered pages and continues on the status index", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) => seedSparseSearchRows(ctx, f, { needle: "needle" }));
+
+    const first = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "needle",
+      ...firstPage(5),
+    });
+    expect(first.page).toHaveLength(5);
+    expect(first.page.every((txn) => txn.title.includes("needle"))).toBe(true);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "needle",
+      paginationOpts: { numItems: 5, cursor: first.continueCursor },
+    });
+    expect(second.page.map((txn) => txn.title)).toEqual(["needle 0"]);
+    expect(second.isDone).toBe(true);
+  });
+
+  it("fills sparse filtered pages on the single Paid By status index", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) =>
+      seedSparseSearchRows(ctx, f, {
+        needle: "payer",
+        row: () => ({ paidByMemberId: alex.memberId }),
+      }),
+    );
+
+    const page = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "payer",
+      paidByMemberIds: [alex.memberId],
+      ...firstPage(5),
+    });
+    expect(page.page).toHaveLength(5);
+    expect(page.page.every((txn) => txn.paidBy.displayName === "Alex")).toBe(true);
+    expect(page.isDone).toBe(false);
+  });
+
+  it("fills sparse filtered pages on the single Recorded By status index", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const sam = await t.run((ctx) => addMember(ctx, f.circleId, "sam@example.com", "Sam"));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) =>
+      seedSparseSearchRows(ctx, f, {
+        needle: "recorder",
+        row: () => ({ recordedByMemberId: sam.memberId }),
+      }),
+    );
+
+    const page = await t.query(api.search.filterLedgerTransactions, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "all",
+      status: "active",
+      query: "recorder",
+      recordedByMemberIds: [sam.memberId],
+      ...firstPage(5),
+    });
+    expect(page.page).toHaveLength(5);
+    expect(page.page.every((txn) => txn.recordedBy.displayName === "Sam")).toBe(true);
+    expect(page.isDone).toBe(false);
   });
 });
 
@@ -221,6 +336,43 @@ describe("searchTransactions", () => {
       ...firstPage(25),
     });
     expect(reversedAmount.page).toEqual([]);
+  });
+
+  it("fills sparse filtered pages and continues on the unscoped date-window index", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run((ctx) =>
+      seedSparseSearchRows(ctx, f, {
+        needle: "global",
+        row: (index) => (index % 3 === 0 ? { status: "archived" } : {}),
+      }),
+    );
+
+    const first = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "all",
+      dateFrom: "2026-06-01",
+      dateTo: "2026-06-30",
+      query: "global",
+      ...firstPage(5),
+    });
+    expect(first.page).toHaveLength(5);
+    expect(first.page.every((txn) => txn.title.includes("global"))).toBe(true);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "all",
+      dateFrom: "2026-06-01",
+      dateTo: "2026-06-30",
+      query: "global",
+      paginationOpts: { numItems: 5, cursor: first.continueCursor },
+    });
+    expect(second.page.map((txn) => txn.title)).toEqual(["global 0"]);
+    expect(second.isDone).toBe(true);
   });
 });
 

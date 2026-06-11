@@ -8,6 +8,7 @@ import {
 } from "@spend-circle/domain";
 import { type IndexRange, paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { stream } from "convex-helpers/server/stream";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { QueryCtx } from "./_generated/server.js";
 import { query } from "./_generated/server.js";
@@ -15,7 +16,8 @@ import { toCategoryView } from "./categories.js";
 import { resolveCircleAccess } from "./guard.js";
 import { toMemberView } from "./members.js";
 import { monthDateRange } from "./monthActivity.js";
-import { newViewCaches, type TransactionView, toTransactionView } from "./transactions.js";
+import schema from "./schema.js";
+import { newViewCaches, toTransactionView } from "./transactions.js";
 
 const filterType = v.union(v.literal("all"), v.literal("expense"), v.literal("income"));
 const lifecycleFilter = v.union(v.literal("active"), v.literal("archived"), v.literal("all"));
@@ -182,7 +184,7 @@ function applyDateRange<
   return scoped;
 }
 
-function pageByWindow(
+function streamByWindow(
   ctx: QueryCtx,
   args: {
     circleId: Id<"circles">;
@@ -191,14 +193,13 @@ function pageByWindow(
     recordedByMemberIds: Set<Id<"members">>;
     start?: string;
     endExclusive?: string;
-    paginationOpts: { numItems: number; cursor: string | null };
   },
 ) {
   if (args.paidByMemberIds.size === 1 && args.status) {
     const paidByMemberId = args.paidByMemberIds.values().next().value;
     if (paidByMemberId) {
       const status = args.status;
-      return ctx.db
+      return stream(ctx.db, schema)
         .query("transactions")
         .withIndex("by_circle_paidby_status_date", (q) => {
           const scoped = q
@@ -207,15 +208,14 @@ function pageByWindow(
             .eq("status", status);
           return applyDateRange(scoped, args);
         })
-        .order("desc")
-        .paginate(args.paginationOpts);
+        .order("desc");
     }
   }
   if (args.recordedByMemberIds.size === 1 && args.status) {
     const recordedByMemberId = args.recordedByMemberIds.values().next().value;
     if (recordedByMemberId) {
       const status = args.status;
-      return ctx.db
+      return stream(ctx.db, schema)
         .query("transactions")
         .withIndex("by_circle_recordedby_status_date", (q) => {
           const scoped = q
@@ -224,29 +224,26 @@ function pageByWindow(
             .eq("status", status);
           return applyDateRange(scoped, args);
         })
-        .order("desc")
-        .paginate(args.paginationOpts);
+        .order("desc");
     }
   }
   if (args.status) {
     const status = args.status;
-    return ctx.db
+    return stream(ctx.db, schema)
       .query("transactions")
       .withIndex("by_circle_status_date", (q) => {
         const scoped = q.eq("circleId", args.circleId).eq("status", status);
         return applyDateRange(scoped, args);
       })
-      .order("desc")
-      .paginate(args.paginationOpts);
+      .order("desc");
   }
-  return ctx.db
+  return stream(ctx.db, schema)
     .query("transactions")
     .withIndex("by_circle_and_date", (q) => {
       const scoped = q.eq("circleId", args.circleId);
       return applyDateRange(scoped, args);
     })
-    .order("desc")
-    .paginate(args.paginationOpts);
+    .order("desc");
 }
 
 async function collectTransactionViews(
@@ -270,57 +267,44 @@ async function collectTransactionViews(
     };
   },
 ) {
-  const page: TransactionView[] = [];
-  let cursor = args.paginationOpts.cursor;
-  let continueCursor = "";
-  let isDone = false;
   const viewCaches = newViewCaches();
   const searchCaches = newSearchCaches();
 
-  while (page.length < args.paginationOpts.numItems && !isDone) {
-    const source = await pageByWindow(ctx, {
-      circleId: args.circleId,
-      status: args.status,
-      paidByMemberIds: args.paidByMemberIds,
-      recordedByMemberIds: args.recordedByMemberIds,
-      start: args.start,
-      endExclusive: args.endExclusive,
-      paginationOpts: { numItems: args.paginationOpts.numItems - page.length, cursor },
-    });
+  const source = streamByWindow(ctx, {
+    circleId: args.circleId,
+    status: args.status,
+    paidByMemberIds: args.paidByMemberIds,
+    recordedByMemberIds: args.recordedByMemberIds,
+    start: args.start,
+    endExclusive: args.endExclusive,
+  }).filterWith((txn) =>
+    matchesFilters(
+      ctx,
+      txn,
+      {
+        type: args.filters.type,
+        status: args.status,
+        categoryIds: args.filters.categoryIds,
+        recordedByMemberIds: args.recordedByMemberIds,
+        paidByMemberIds: args.paidByMemberIds,
+        amountMin: args.filters.amountMin,
+        amountMax: args.filters.amountMax,
+        queryText: args.filters.queryText,
+      },
+      searchCaches,
+    ),
+  );
+  const result = await source.paginate(args.paginationOpts);
 
-    continueCursor = source.continueCursor;
-    isDone = source.isDone;
-    cursor = source.continueCursor;
-    if (source.page.length === 0) {
-      break;
-    }
-
-    for (const txn of source.page) {
-      if (
-        await matchesFilters(
-          ctx,
-          txn,
-          {
-            type: args.filters.type,
-            status: args.status,
-            categoryIds: args.filters.categoryIds,
-            recordedByMemberIds: args.recordedByMemberIds,
-            paidByMemberIds: args.paidByMemberIds,
-            amountMin: args.filters.amountMin,
-            amountMax: args.filters.amountMax,
-            queryText: args.filters.queryText,
-          },
-          searchCaches,
-        )
-      ) {
-        page.push(
-          await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
-        );
-      }
-    }
-  }
-
-  return { page, isDone, continueCursor };
+  return {
+    page: await Promise.all(
+      result.page.map((txn) =>
+        toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
+      ),
+    ),
+    isDone: result.isDone,
+    continueCursor: result.continueCursor,
+  };
 }
 
 function normalizeCommonFilters(

@@ -20,6 +20,10 @@ import {
 } from "~/test/convex-react.js";
 
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+vi.mock(
+  "convex-helpers/react",
+  async () => (await import("~/test/convex-react.js")).convexHelpersReactMock,
+);
 
 import CircleSearch from "./search.js";
 
