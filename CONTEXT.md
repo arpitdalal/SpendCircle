@@ -137,7 +137,7 @@ The optional longer text for a **Transaction**, used for item lists or extra con
 _Avoid_: Memo
 
 **Archived Transaction**:
-A **Transaction** removed from active reporting without being deleted. Archived Transactions are frozen, do not count toward Dashboard metrics, and are excluded from default Ledger Filter and Transaction Search results, but can be found when lifecycle scope is set to archived or all; creator Members can restore their own Archived Transactions, and Owners can restore any Archived Transaction in the Circle.
+A **Transaction** removed from active reporting without being deleted. Archived Transactions are frozen and do not count toward Dashboard metrics. The lifecycle scope of **Ledger Filter** and **Transaction Search** defaults to all, so Archived Transactions appear alongside active ones, marked as archived; narrowing lifecycle scope to active hides them, and archived shows only them. Creator Members can restore their own Archived Transactions, and Owners can restore any Archived Transaction in the Circle.
 _Avoid_: Deleted Transaction
 
 **Transaction Date**:
@@ -179,6 +179,10 @@ _Avoid_: Deleted Category
 **Category History**:
 The immutable change history for a **Category**, including created, edited, archived, and restored events. Current Members can view Category History, including the acting Member, changed field names, and old and new values for name and Category Color; internal IDs are not shown.
 _Avoid_: Hidden Category Audit
+
+**Category Filter**:
+A lightweight way to narrow a **Circle's** **Category** list of one **Transaction** type by Category name text and lifecycle scope: active, archived, or all. The Category Filter is a view over the type-scoped Category list; it does not change which Categories can be attached to Transactions. It parallels **Ledger Filter** and is distinct from **Transaction Search**, which finds Transactions, not Categories.
+_Avoid_: Category Search, Category Lookup
 
 **Dashboard**:
 A per-**Circle** summary of money activity. The v1 Dashboard shows current-month Income, Expenses, Net, recent Transactions, a selected-month Expense breakdown by Category, and month-over-month Income, Expense, and Net comparison; totals include all active Transactions by default and can be filtered by Paid By. Category analytics are non-additive because a Transaction can have multiple Categories, and include Archived Categories when active Transactions in the selected period still use them.

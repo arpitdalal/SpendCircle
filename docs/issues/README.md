@@ -80,6 +80,8 @@ graph TD
   CAT1 --> CAT2[CAT-2 · Edit/Archive/Restore Category + history]
   CAT1 --> CAT3[CAT-3 · Inline Category create in txn form]
   TXN1 --> CAT3
+  CAT2 --> CAT4[CAT-4 · Category Filter: search + status]
+  RPT2 --> CAT4
 
   %% Transactions
   CAT1 --> TXN1[TXN-1 · Create Transaction]
@@ -136,7 +138,7 @@ graph TD
 - **Tier 2 — manage what exists:** `CAT-2`, `CAT-3`, `TXN-2`, `TXN-3`, `TXN-4`, `CS-1`,
   `CS-2`, `CS-3`, `RPT-1`, `RPT-3`, `EXP-1`, `FBK-1`, `OBS-2`.
 - **Tier 3 — collaborate + report:** `MEM-2…9`, `RPT-2`, `RPT-4`, `RPT-5`, `RPT-6`,
-  `EML-2`, `CS-4`.
+  `EML-2`, `CS-4`. Then `CAT-4` (needs `RPT-2`'s filtered-pagination + URL-filter patterns).
 - **Tier 4 — wire the cross-cutting net + validate under load:** `NTF-2` (fans out to every
   event emitted by the slices above) and `QA-1` (concurrency e2e; needs `TXN-2` + `TXN-3` for the
   archive-vs-edit race, and `MEM-5` for the Paid-By-removed-mid-edit race). Both run last.
@@ -293,6 +295,7 @@ Each slice file in this directory uses this structure:
 - [CAT-1 · Create Category](CAT-1-create-category.md)
 - [CAT-2 · Edit / Archive / Restore Category + Category History](CAT-2-category-lifecycle.md)
 - [CAT-3 · Inline Category create in Transaction form](CAT-3-inline-category.md)
+- [CAT-4 · Category Filter: search + lifecycle status](CAT-4-category-filter.md)
 
 ### Transactions
 - [TXN-1 · Create Transaction](TXN-1-create-transaction.md)
