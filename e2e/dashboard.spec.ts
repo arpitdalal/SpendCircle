@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 /**
  * RPT-3 true-E2E (ADR 0019): the per-Circle Dashboard (the Circle index route) shows

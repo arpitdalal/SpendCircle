@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 /**
  * TRUE-E2E (ADR 0019): open the Member List through the real frontend → Convex
