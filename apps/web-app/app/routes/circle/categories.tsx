@@ -366,6 +366,21 @@ function CategoryList({
   const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
   const { categories, status, loadMore } = page;
 
+  // The open-editor / open-history selection is only meaningful while its row is
+  // ON the current page. The Category Filter (search, status, type) and reactive
+  // changes can drop the row — unmounting closes the UI, but the id up here must
+  // not outlive it, or widening the filter would remount the row with a fresh
+  // editor/panel popping open unbidden (and an in-progress edit silently gone).
+  // The list-membership counterpart of CategoryRow's capability effect below.
+  useEffect(() => {
+    if (editingId !== null && !categories.some((category) => category.id === editingId)) {
+      setEditingId(null);
+    }
+    if (historyId !== null && !categories.some((category) => category.id === historyId)) {
+      setHistoryId(null);
+    }
+  }, [categories, editingId, historyId]);
+
   if (status === "LoadingFirstPage") {
     return <p className="text-sm text-muted-foreground">Loading categories…</p>;
   }

@@ -511,6 +511,76 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
   });
 });
 
+describe("CircleCategories — open row state answers to page membership (regression, PR #93 review)", () => {
+  it("does not reopen the editor when a searched-out row returns to the page", async () => {
+    const user = userEvent.setup();
+    const view = setup({
+      categories: [
+        makeCategoryView(),
+        makeCategoryView({ id: testId<Category["id"]>("c2"), name: "Rent" }),
+      ],
+    });
+    const search = screen.getByLabelText("Search categories by name");
+
+    await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
+    expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
+
+    // The search narrows the editing row out of the page (the editor unmounts
+    // with it — but the stale open-editor id upstream must not survive).
+    await user.type(search, "rent");
+    await waitFor(() => expect(view.location()).toContain("q=rent"));
+    expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
+
+    // Widening the filter remounts the row — it must come back CLOSED, not
+    // resurrect a fresh editor (which would silently discard the lost draft).
+    await user.clear(search);
+    await waitFor(() => expect(view.location()).not.toContain("q="));
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Groceries" })).toBeInTheDocument();
+  });
+
+  it("does not reopen the history panel when a status-filtered row returns", async () => {
+    const user = userEvent.setup();
+    setup({ categories: mixedRows() });
+
+    await user.click(screen.getByRole("button", { name: "History of Groceries" }));
+    expect(screen.getByRole("region", { name: "Groceries history" })).toBeInTheDocument();
+
+    // Scope to archived-only: the active row (and its open panel) leaves the page.
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+    expect(screen.queryByRole("region", { name: "Groceries history" })).not.toBeInTheDocument();
+
+    // Back under all, the remounted row's panel stays closed.
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Groceries history" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "History of Groceries" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
+  it("does not carry an open editor across a type-tab switch and back", async () => {
+    const user = userEvent.setup();
+    setup({
+      categories: [
+        makeCategoryView(),
+        makeCategoryView({ id: testId<Category["id"]>("i1"), name: "Salary", type: "income" }),
+      ],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
+    expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Income" }));
+    await user.click(screen.getByRole("tab", { name: "Expense" }));
+
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
+  });
+});
+
 describe("CircleCategories — edit mode answers to server capability (regression, PR #88 review)", () => {
   /** Reconfigures the doubled backend mid-test (the reactive query flipping) while
    * keeping this file's mutation spies installed. */
