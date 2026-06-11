@@ -26,6 +26,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.40.0",
+    "convex-helpers": "0.1.119",
     "isbot": "^5.1.40",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",

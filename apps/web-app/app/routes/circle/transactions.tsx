@@ -15,6 +15,7 @@ import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
 import { FilterPanel } from "~/components/ui/filter-panel.js";
 import { MultiSelect, type MultiSelectOption } from "~/components/ui/multi-select.js";
+import { Segmented } from "~/components/ui/segmented.js";
 import {
   type MonthlySummary,
   useLedgerFilterOptions,
@@ -300,42 +301,6 @@ function LedgerFilterForm({
         onChange={(paidBy) => setDraft({ ...draft, paidBy })}
       />
     </div>
-  );
-}
-
-function Segmented<Value extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: Value;
-  options: { label: string; value: Value }[];
-  onChange: (value: Value) => void;
-}) {
-  return (
-    <fieldset className="space-y-2">
-      <legend className="text-xs text-muted-foreground">{label}</legend>
-      <div className="flex flex-wrap gap-2">
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={value === option.value}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              "rounded-md border px-3 py-1 text-sm transition-colors",
-              value === option.value
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    </fieldset>
   );
 }
 

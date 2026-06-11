@@ -100,7 +100,13 @@ export default defineSchema({
     archivedAt: v.optional(v.number()),
   })
     .index("by_circle", ["circleId"])
-    .index("by_circle_and_type", ["circleId", "type"])
+    // The Category Filter's paginated reads sort on the domain `createdAt` (set
+    // explicitly at create, so it can diverge from `_creationTime`) — the sort
+    // key must live in the index (CAT-4). `by_circle_type_createdAt` supersedes
+    // the old `by_circle_and_type` (same prefix) and serves the status=all page;
+    // the status index serves the active-only / archived-only pages.
+    .index("by_circle_type_createdAt", ["circleId", "type", "createdAt"])
+    .index("by_circle_type_status_createdAt", ["circleId", "type", "status", "createdAt"])
     .index("by_circle_type_name", ["circleId", "type", "nameLower"]),
 
   transactions: defineTable({

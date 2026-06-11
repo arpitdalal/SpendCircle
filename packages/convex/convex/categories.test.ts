@@ -1148,3 +1148,425 @@ describe("listCategoryHistory", () => {
     expect(result.page.map((event) => event.action)).toEqual(["archived", "created"]);
   });
 });
+
+/** Seeds Categories directly (bypassing the mutation) so filterCategories tests
+ * control `createdAt`, status, and volume without dozens of mutation round-trips.
+ * `createdAt` is the domain sort key and may diverge from `_creationTime` (Circle
+ * Setup derives starter Categories with deliberate values) — these tests exploit
+ * that to prove the index sorts on the domain field. */
+async function seedCategories(
+  t: T,
+  circleId: Id<"circles">,
+  creatorUserId: Id<"users">,
+  rows: {
+    name: string;
+    type?: "expense" | "income";
+    status?: "active" | "archived";
+    createdAt: number;
+  }[],
+) {
+  await t.run(async (ctx) => {
+    for (const row of rows) {
+      await ctx.db.insert("categories", {
+        circleId,
+        name: row.name,
+        nameLower: row.name.toLowerCase(),
+        type: row.type ?? "expense",
+        color: "green",
+        creatorUserId,
+        status: row.status ?? "active",
+        createdAt: row.createdAt,
+        ...(row.status === "archived" ? { archivedAt: row.createdAt + 1 } : {}),
+      });
+    }
+  });
+}
+
+/** One filterCategories page as `user`, defaulting to a wide page. */
+async function filterPage(
+  t: T,
+  user: Doc<"users"> | null,
+  args: {
+    circleId: Id<"circles">;
+    type?: "expense" | "income";
+    status?: "active" | "archived" | "all";
+    query?: string;
+    numItems?: number;
+    cursor?: string | null;
+  },
+) {
+  mockCurrentUser.mockResolvedValue(user);
+  return await t.query(api.categories.filterCategories, {
+    circleId: args.circleId,
+    type: args.type ?? "expense",
+    status: args.status ?? "all",
+    ...(args.query !== undefined ? { query: args.query } : {}),
+    paginationOpts: { numItems: args.numItems ?? 50, cursor: args.cursor ?? null },
+  });
+}
+
+describe("filterCategories — name search (CAT-4)", () => {
+  it("matches a substring of the name, case-insensitively, whitespace-normalized", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Groceries", createdAt: 1 },
+      { name: "Weekly   Shop", createdAt: 2 },
+      { name: "Rent", createdAt: 3 },
+    ]);
+
+    // Mid-word substring — a prefix-only scan would miss this (the slice's "ocer" case).
+    const mid = await filterPage(t, owner, { circleId, query: "ocer" });
+    expect(mid.page.map((c) => c.name)).toEqual(["Groceries"]);
+
+    // Case-insensitive, and the QUERY side is normalized too (trim + collapse).
+    const noisy = await filterPage(t, owner, { circleId, query: "  WEEKLY  shop " });
+    expect(noisy.page.map((c) => c.name)).toEqual(["Weekly   Shop"]);
+  });
+
+  it("treats an empty or whitespace-only query as no text narrowing", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Groceries", createdAt: 1 },
+      { name: "Rent", createdAt: 2 },
+    ]);
+
+    for (const query of [undefined, "", "   \t "]) {
+      const result = await filterPage(t, owner, { circleId, query });
+      expect(result.page.map((c) => c.name)).toEqual(["Rent", "Groceries"]);
+    }
+  });
+
+  it("returns an empty page (not an error) when nothing matches", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [{ name: "Groceries", createdAt: 1 }]);
+
+    const result = await filterPage(t, owner, { circleId, query: "zzz-no-such" });
+    expect(result.page).toEqual([]);
+    expect(result.isDone).toBe(true);
+  });
+
+  it("spans active and archived rows under status=all", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Gas Station", createdAt: 1 },
+      { name: "Gas Heating", status: "archived", createdAt: 2 },
+      { name: "Rent", createdAt: 3 },
+    ]);
+
+    const result = await filterPage(t, owner, { circleId, status: "all", query: "gas" });
+    expect(result.page.map((c) => c.name)).toEqual(["Gas Heating", "Gas Station"]);
+    expect(result.page.map((c) => c.status)).toEqual(["archived", "active"]);
+  });
+
+  it("matches the NAME only — never another text field", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx)); // owner "Olive Owner"
+    await seedCategories(t, circleId, owner._id, [{ name: "Groceries", createdAt: 1 }]);
+
+    // The creator's display name is resolvable text on the row's view, but the
+    // search must not consult it.
+    const result = await filterPage(t, owner, { circleId, query: "olive" });
+    expect(result.page).toEqual([]);
+  });
+});
+
+describe("filterCategories — lifecycle status (CAT-4)", () => {
+  async function seedMixed(t: T) {
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Active Old", createdAt: 1 },
+      { name: "Archived Old", status: "archived", createdAt: 2 },
+      { name: "Active New", createdAt: 3 },
+      { name: "Archived New", status: "archived", createdAt: 4 },
+    ]);
+    return { owner, circleId };
+  }
+
+  it("active returns only active rows", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await seedMixed(t);
+    const result = await filterPage(t, owner, { circleId, status: "active" });
+    expect(result.page.map((c) => c.name)).toEqual(["Active New", "Active Old"]);
+  });
+
+  it("archived returns only archived rows", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await seedMixed(t);
+    const result = await filterPage(t, owner, { circleId, status: "archived" });
+    expect(result.page.map((c) => c.name)).toEqual(["Archived New", "Archived Old"]);
+  });
+
+  it("all interleaves both statuses by createdAt", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await seedMixed(t);
+    const result = await filterPage(t, owner, { circleId, status: "all" });
+    expect(result.page.map((c) => c.name)).toEqual([
+      "Archived New",
+      "Active New",
+      "Archived Old",
+      "Active Old",
+    ]);
+  });
+
+  it("scopes to the requested type", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Groceries", type: "expense", createdAt: 1 },
+      { name: "Salary", type: "income", createdAt: 2 },
+    ]);
+    const result = await filterPage(t, owner, { circleId, type: "income" });
+    expect(result.page.map((c) => c.name)).toEqual(["Salary"]);
+  });
+
+  it("reactivity: archiving a row drops it from status=active and flips it under all", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, creator, circleId, categoryId } = await seedCategoryScenario(t);
+
+    expect((await filterPage(t, owner, { circleId, status: "active" })).page).toHaveLength(1);
+
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+
+    expect((await filterPage(t, owner, { circleId, status: "active" })).page).toHaveLength(0);
+    const all = await filterPage(t, owner, { circleId, status: "all" });
+    expect(all.page.map((c) => c.status)).toEqual(["archived"]);
+
+    // Restore is symmetric.
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.restoreCategory, { categoryId });
+    expect((await filterPage(t, owner, { circleId, status: "active" })).page).toHaveLength(1);
+  });
+});
+
+describe("filterCategories — pagination at the source (CAT-4)", () => {
+  it("bounds the first page and continues from the cursor (status=all path)", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(
+      t,
+      circleId,
+      owner._id,
+      Array.from({ length: 7 }, (_, i) => ({
+        name: `Cat ${i}`,
+        status: i % 2 === 0 ? ("active" as const) : ("archived" as const),
+        createdAt: i,
+      })),
+    );
+
+    const first = await filterPage(t, owner, { circleId, status: "all", numItems: 3 });
+    expect(first.page.map((c) => c.name)).toEqual(["Cat 6", "Cat 5", "Cat 4"]);
+    expect(first.isDone).toBe(false);
+
+    const second = await filterPage(t, owner, {
+      circleId,
+      status: "all",
+      numItems: 3,
+      cursor: first.continueCursor,
+    });
+    expect(second.page.map((c) => c.name)).toEqual(["Cat 3", "Cat 2", "Cat 1"]);
+
+    const third = await filterPage(t, owner, {
+      circleId,
+      status: "all",
+      numItems: 3,
+      cursor: second.continueCursor,
+    });
+    expect(third.page.map((c) => c.name)).toEqual(["Cat 0"]);
+    expect(third.isDone).toBe(true);
+  });
+
+  it("bounds and continues on the status-index path too", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    // Archived rows interleaved — the status index must skip them at the source.
+    await seedCategories(
+      t,
+      circleId,
+      owner._id,
+      Array.from({ length: 10 }, (_, i) => ({
+        name: `Cat ${i}`,
+        status: i % 2 === 0 ? ("active" as const) : ("archived" as const),
+        createdAt: i,
+      })),
+    );
+
+    const first = await filterPage(t, owner, { circleId, status: "active", numItems: 3 });
+    expect(first.page.map((c) => c.name)).toEqual(["Cat 8", "Cat 6", "Cat 4"]);
+    expect(first.isDone).toBe(false);
+
+    const second = await filterPage(t, owner, {
+      circleId,
+      status: "active",
+      numItems: 3,
+      cursor: first.continueCursor,
+    });
+    expect(second.page.map((c) => c.name)).toEqual(["Cat 2", "Cat 0"]);
+    expect(second.isDone).toBe(true);
+  });
+
+  it("fills filtered pages — no short page while further matches exist", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    // 12 rows, every other one matches "match": a naive paginate-then-filter
+    // would return ~1–2 matches per 3-row source page.
+    await seedCategories(
+      t,
+      circleId,
+      owner._id,
+      Array.from({ length: 12 }, (_, i) => ({
+        name: i % 2 === 0 ? `Match ${i}` : `Other ${i}`,
+        createdAt: i,
+      })),
+    );
+
+    const first = await filterPage(t, owner, { circleId, query: "match", numItems: 3 });
+    expect(first.page.map((c) => c.name)).toEqual(["Match 10", "Match 8", "Match 6"]);
+    expect(first.isDone).toBe(false);
+
+    const second = await filterPage(t, owner, {
+      circleId,
+      query: "match",
+      numItems: 3,
+      cursor: first.continueCursor,
+    });
+    expect(second.page.map((c) => c.name)).toEqual(["Match 4", "Match 2", "Match 0"]);
+
+    // The page filled exactly at the source's last row, so the stream only
+    // learns it is exhausted on the next read: a final empty, done page —
+    // never an empty page while further MATCHES exist.
+    const third = await filterPage(t, owner, {
+      circleId,
+      query: "match",
+      numItems: 3,
+      cursor: second.continueCursor,
+    });
+    expect(third.page).toEqual([]);
+    expect(third.isDone).toBe(true);
+  });
+});
+
+describe("filterCategories — sort (CAT-4)", () => {
+  it("orders by the domain createdAt desc, not insertion (_creationTime) order", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    // Inserted oldest-last by _creationTime but with REVERSED domain createdAt:
+    // the sort must follow createdAt (Circle Setup sets deliberate values).
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Newest", createdAt: 300 },
+      { name: "Middle", createdAt: 200 },
+      { name: "Oldest", createdAt: 100 },
+    ]);
+
+    const result = await filterPage(t, owner, { circleId });
+    expect(result.page.map((c) => c.name)).toEqual(["Newest", "Middle", "Oldest"]);
+  });
+
+  it("breaks createdAt ties by _creationTime desc, matching listCategories", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    // Same createdAt millisecond — the later insert (higher _creationTime) wins.
+    await seedCategories(t, circleId, owner._id, [
+      { name: "First Insert", createdAt: 100 },
+      { name: "Second Insert", createdAt: 100 },
+    ]);
+
+    const filtered = await filterPage(t, owner, { circleId });
+    expect(filtered.page.map((c) => c.name)).toEqual(["Second Insert", "First Insert"]);
+
+    // Identical to the pre-pagination order the collected picker query keeps.
+    mockCurrentUser.mockResolvedValue(owner);
+    const collected = await t.query(api.categories.listCategories, {
+      circleId,
+      type: "expense",
+      includeArchived: true,
+    });
+    expect(filtered.page.map((c) => c.name)).toEqual(collected?.map((c) => c.name));
+  });
+
+  it("keeps createdAt desc across page boundaries", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(
+      t,
+      circleId,
+      owner._id,
+      // Shuffled insertion order; createdAt is the authority.
+      [40, 10, 50, 20, 30].map((createdAt) => ({ name: `Cat ${createdAt}`, createdAt })),
+    );
+
+    const first = await filterPage(t, owner, { circleId, numItems: 2 });
+    const second = await filterPage(t, owner, {
+      circleId,
+      numItems: 2,
+      cursor: first.continueCursor,
+    });
+    const third = await filterPage(t, owner, {
+      circleId,
+      numItems: 2,
+      cursor: second.continueCursor,
+    });
+    expect([...first.page, ...second.page, ...third.page].map((c) => c.name)).toEqual([
+      "Cat 50",
+      "Cat 40",
+      "Cat 30",
+      "Cat 20",
+      "Cat 10",
+    ]);
+  });
+});
+
+describe("filterCategories — access and anti-enumeration (CAT-4)", () => {
+  const emptyPage = { page: [], isDone: true, continueCursor: "" };
+
+  it("collapses non-member, unauthenticated, and missing Circle to the same empty page", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [{ name: "Groceries", createdAt: 1 }]);
+
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+    expect(await filterPage(t, stranger, { circleId })).toEqual(emptyPage);
+    expect(await filterPage(t, null, { circleId })).toEqual(emptyPage);
+
+    // A Circle that no longer exists is indistinguishable from an inaccessible one.
+    await t.run(async (ctx) => {
+      await ctx.db.delete(circleId);
+    });
+    expect(await filterPage(t, owner, { circleId })).toEqual(emptyPage);
+  });
+
+  it("a removed Member reads the same empty page", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId } = await seedCategoryScenario(t);
+    await setMemberStatus(t, circleId, creator._id, "removed");
+    expect(await filterPage(t, creator, { circleId })).toEqual(emptyPage);
+  });
+
+  it("an archived Circle still lists (read-only view keeps its Category Filter)", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    await seedCategories(t, circleId, owner._id, [{ name: "Groceries", createdAt: 1 }]);
+
+    const result = await filterPage(t, owner, { circleId });
+    expect(result.page.map((c) => c.name)).toEqual(["Groceries"]);
+  });
+
+  it("resolves capability flags per viewer, same contract as listCategories", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, creator, bystander, circleId } = await seedCategoryScenario(t);
+
+    const flagsAs = async (user: Doc<"users">) => {
+      const result = await filterPage(t, user, { circleId });
+      const row = result.page[0];
+      return { canEditFields: row?.canEditFields, canArchive: row?.canArchive };
+    };
+
+    expect(await flagsAs(creator)).toEqual({ canEditFields: true, canArchive: true });
+    expect(await flagsAs(owner)).toEqual({ canEditFields: false, canArchive: true });
+    expect(await flagsAs(bystander)).toEqual({ canEditFields: false, canArchive: false });
+  });
+});

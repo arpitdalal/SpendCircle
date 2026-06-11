@@ -7,14 +7,25 @@ import {
   LIMITS,
   type TransactionType,
 } from "@spend-circle/domain";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { Button } from "~/components/ui/button.js";
+import { Segmented } from "~/components/ui/segmented.js";
 import {
+  type CategoriesFilters,
+  type CategoryLifecycleFilter,
+  canonicalCategoriesParams,
+  cleanQueryText,
+  hasCategoriesNarrowing,
+  readCategoriesFilters,
+} from "~/lib/categories-filter-url.js";
+import {
+  type CategoriesPage,
   type Category,
   type Circle,
   useArchiveCategory,
-  useCategories,
+  useCategoriesPage,
   useCategoryHistory,
   useCreateCategory,
   useRestoreCategory,
@@ -28,32 +39,68 @@ const TYPE_TABS: ReadonlyArray<{ value: TransactionType; label: string }> = [
   { value: "income", label: "Income" },
 ];
 
+const STATUS_OPTIONS: ReadonlyArray<{ value: CategoryLifecycleFilter; label: string }> = [
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+];
+
 /**
  * Circle-scoped Categories surface (PRD stories 47–61; CAT-2 adds edit / archive /
- * restore / history). A type segmented control drives both the visible list and the
- * new-Category form, because Categories are type-specific — an Expense form never
- * shows Income Categories. The server owns the unique-name invariant
- * (case-insensitive, per Circle+type, incl. archived); we surface its rejection
- * inline rather than pre-checking client-side.
+ * restore / history; CAT-4 adds the **Category Filter**). A type tab drives both
+ * the visible list and the new-Category form, because Categories are type-specific
+ * — an Expense form never shows Income Categories. The server owns the unique-name
+ * invariant (case-insensitive, per Circle+type, incl. archived); we surface its
+ * rejection inline rather than pre-checking client-side.
+ *
+ * The Category Filter — the type tab, a tri-state lifecycle status, and a
+ * debounced name search — lives in the **URL** (ADR 0016), so a filtered view is
+ * shareable and reproducible, never trapped in `useState`. Discrete changes
+ * (type, status) PUSH so back walks the filter history; the debounced search
+ * REPLACES so typing a word doesn't bury history. The default scope is `all`
+ * (parity with the ledger's one-picture view): archived rows are distinguished —
+ * muted name + "Archived" badge — not hidden. The list paginates at the source
+ * via `filterCategories` with a Load-more control (README §4).
  *
  * Per-row affordances are gated on the SERVER-returned capability flags
  * (`canEditFields` — the creator only; `canArchive` — creator or Owner) plus a
  * writable Circle. The flags are a courtesy: the server re-checks every mutation
- * (ADR 0015). "Show archived" widens the query (`includeArchived`) so archived
- * Categories surface with a Restore affordance — they stay attached to history and
- * filters but can't be newly added to Transactions (PRD 54, 57).
+ * (ADR 0015).
  */
 export default function CircleCategories() {
   const circle = useCircle();
-  const [type, setType] = useState<TransactionType>("expense");
-  const [showArchived, setShowArchived] = useState(false);
-  const categories = useCategories(circle.id, type, { includeArchived: showArchived });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = readCategoriesFilters(searchParams);
+  const page = useCategoriesPage(circle.id, {
+    type: filters.type,
+    status: filters.status,
+    ...(filters.q ? { query: filters.q } : {}),
+  });
+
+  // Canonicalize the address bar (replace) so a copied URL always carries
+  // type+status — the transactions route's contract applied here.
+  useEffect(() => {
+    const next = canonicalCategoriesParams(filters, searchParams);
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [filters, searchParams, setSearchParams]);
+
+  // Discrete control changes (type tab, status segment) PUSH a history entry.
+  const applyFilters = (next: CategoriesFilters) => {
+    setSearchParams(canonicalCategoriesParams(next, searchParams), { replace: false });
+  };
+
+  // The debounced search REPLACES — typing must not bury the back-stack.
+  const applySearch = (q: string) => {
+    setSearchParams(canonicalCategoriesParams({ ...filters, q }, searchParams), { replace: true });
+  };
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
         <h2 className="font-display text-lg font-semibold tracking-tight">Categories</h2>
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div
             role="tablist"
             aria-label="Category type"
@@ -64,11 +111,15 @@ export default function CircleCategories() {
                 key={tab.value}
                 type="button"
                 role="tab"
-                aria-selected={type === tab.value}
-                onClick={() => setType(tab.value)}
+                aria-selected={filters.type === tab.value}
+                onClick={() => {
+                  if (filters.type !== tab.value) {
+                    applyFilters({ ...filters, type: tab.value });
+                  }
+                }}
                 className={cn(
                   "rounded px-3 py-1 text-sm transition-colors",
-                  type === tab.value
+                  filters.type === tab.value
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground",
                 )}
@@ -77,22 +128,85 @@ export default function CircleCategories() {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={showArchived}
-            onClick={() => setShowArchived((current) => !current)}
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {showArchived ? "Hide archived" : "Show archived"}
-          </button>
+          <Segmented
+            label="Status"
+            value={filters.status}
+            options={[...STATUS_OPTIONS]}
+            onChange={(status) => {
+              if (filters.status !== status) {
+                applyFilters({ ...filters, status });
+              }
+            }}
+          />
         </div>
+        <CategorySearchInput value={filters.q} onSearch={applySearch} />
       </div>
 
-      <NewCategoryForm circleId={circle.id} type={type} writable={circle.status === "active"} />
+      <NewCategoryForm
+        circleId={circle.id}
+        type={filters.type}
+        writable={circle.status === "active"}
+      />
 
-      <CategoryList categories={categories} type={type} circle={circle} />
+      <CategoryList
+        page={page}
+        type={filters.type}
+        narrowed={hasCategoriesNarrowing(filters)}
+        circle={circle}
+      />
     </div>
+  );
+}
+
+/** How long typing may pause before the search commits to the URL. */
+const SEARCH_DEBOUNCE_MS = 250;
+
+/**
+ * The Category Filter's name search box. Local state holds the in-flight
+ * keystrokes; a ~250ms debounce commits the cleaned text to the URL (replace).
+ * `applied` tracks the last value THIS box committed, so an external URL change
+ * (back/forward, a shared link) syncs the box without a render-loop, while the
+ * box's own canonical echo never clobbers what the user is still typing.
+ */
+function CategorySearchInput({
+  value,
+  onSearch,
+}: {
+  value: string;
+  onSearch: (q: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  const applied = useRef(value);
+
+  useEffect(() => {
+    if (value !== applied.current) {
+      applied.current = value;
+      setText(value);
+    }
+  }, [value]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      const clean = cleanQueryText(text);
+      if (clean !== applied.current) {
+        applied.current = clean;
+        onSearch(clean);
+      }
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [text, onSearch]);
+
+  return (
+    <label className="block">
+      <span className="sr-only">Search categories by name</span>
+      <input
+        type="search"
+        value={text}
+        onChange={(event) => setText(event.currentTarget.value)}
+        placeholder="Search categories…"
+        className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
+      />
+    </label>
   );
 }
 
@@ -226,47 +340,85 @@ function ColorPicker({
 }
 
 /**
- * The Categories of the selected type — active, plus archived when the toggle widened
- * the query. Each row offers the affordances the SERVER said this viewer may use
- * (`canEditFields` / `canArchive` — ADR 0015) on a writable Circle, and a History
- * disclosure every current Member may open (PRD story 78). One row at a time edits,
- * and one expands history — a deliberate simplification that keeps the surface calm.
+ * The Category Filter's result list — one source-paginated page stream of the
+ * selected type, lifecycle scope, and search (CAT-4). Each row offers the
+ * affordances the SERVER said this viewer may use (`canEditFields` / `canArchive`
+ * — ADR 0015) on a writable Circle, and a History disclosure every current Member
+ * may open (PRD story 78). One row at a time edits, and one expands history — a
+ * deliberate simplification that keeps the surface calm.
+ *
+ * The two empty states are deliberately distinct: with no narrowing applied an
+ * empty result means the type has no Categories yet; with a search or a
+ * non-default status it means the filter matched nothing.
  */
 function CategoryList({
-  categories,
+  page,
   type,
+  narrowed,
   circle,
 }: {
-  categories: Category[] | null | undefined;
+  page: CategoriesPage;
   type: TransactionType;
+  narrowed: boolean;
   circle: Circle;
 }) {
   const [editingId, setEditingId] = useState<Category["id"] | null>(null);
   const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
+  const { categories, status, loadMore } = page;
 
-  if (categories === undefined) {
+  // The open-editor / open-history selection is only meaningful while its row is
+  // ON the current page. The Category Filter (search, status, type) and reactive
+  // changes can drop the row — unmounting closes the UI, but the id up here must
+  // not outlive it, or widening the filter would remount the row with a fresh
+  // editor/panel popping open unbidden (and an in-progress edit silently gone).
+  // The list-membership counterpart of CategoryRow's capability effect below.
+  useEffect(() => {
+    if (editingId !== null && !categories.some((category) => category.id === editingId)) {
+      setEditingId(null);
+    }
+    if (historyId !== null && !categories.some((category) => category.id === historyId)) {
+      setHistoryId(null);
+    }
+  }, [categories, editingId, historyId]);
+
+  if (status === "LoadingFirstPage") {
     return <p className="text-sm text-muted-foreground">Loading categories…</p>;
   }
-  // null ≡ inaccessible Circle (ADR 0016); the Circle guard already gated entry,
-  // so treat a late null as simply nothing to show.
-  if (categories === null || categories.length === 0) {
-    return <p className="text-sm text-muted-foreground">No {type} categories yet.</p>;
+  if (categories.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {narrowed ? "No categories match this filter." : `No ${type} categories yet.`}
+      </p>
+    );
   }
 
   return (
-    <ul className="space-y-2">
-      {categories.map((category) => (
-        <CategoryRow
-          key={category.id}
-          category={category}
-          circle={circle}
-          editing={editingId === category.id}
-          onEditToggle={(open) => setEditingId(open ? category.id : null)}
-          historyOpen={historyId === category.id}
-          onHistoryToggle={(open) => setHistoryId(open ? category.id : null)}
-        />
-      ))}
-    </ul>
+    <div className="space-y-3">
+      <ul className="space-y-2">
+        {categories.map((category) => (
+          <CategoryRow
+            key={category.id}
+            category={category}
+            circle={circle}
+            editing={editingId === category.id}
+            onEditToggle={(open) => setEditingId(open ? category.id : null)}
+            historyOpen={historyId === category.id}
+            onHistoryToggle={(open) => setHistoryId(open ? category.id : null)}
+          />
+        ))}
+      </ul>
+
+      {status === "CanLoadMore" || status === "LoadingMore" ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={loadMore}
+          disabled={status === "LoadingMore"}
+        >
+          {status === "LoadingMore" ? "Loading…" : "Load more"}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

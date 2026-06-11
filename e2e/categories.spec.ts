@@ -90,18 +90,106 @@ test("a member edits, archives, and restores a category and sees its history", a
   await historyButton.click();
   await expect(history).toHaveCount(0);
 
-  // Archive: the row leaves the default (active-only) list.
+  // Archive: under the default `all` scope the row stays, badge flipped in place
+  // (CAT-4 — archived rows are distinguished, not hidden).
   await page.getByRole("button", { name: `Archive ${renamed}` }).click();
-  await expect(page.getByRole("listitem").filter({ hasText: renamed })).toHaveCount(0);
-
-  // The widened list surfaces it with the badge; restore brings it back active.
-  await page.getByRole("switch", { name: "Show archived" }).click();
   const archivedRow = page.getByRole("listitem").filter({ hasText: renamed });
   await expect(archivedRow.getByText("Archived")).toBeVisible();
-  await page.getByRole("button", { name: `Restore ${renamed}` }).click();
-  await expect(archivedRow.getByText("Archived")).toHaveCount(0);
 
-  // Back on the active-only view the restored category is present again.
-  await page.getByRole("switch", { name: "Hide archived" }).click();
+  // Narrowed to active, the archived row is gone; restore from the archived scope.
+  await page.getByRole("button", { name: "Active", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: renamed })).toHaveCount(0);
+  await page.getByRole("button", { name: "Archived", exact: true }).click();
+  await page.getByRole("button", { name: `Restore ${renamed}` }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: renamed })).toHaveCount(0);
+
+  // Back on the active scope the restored category is present again.
+  await page.getByRole("button", { name: "Active", exact: true }).click();
   await expect(page.getByRole("listitem").filter({ hasText: renamed })).toBeVisible();
+});
+
+/**
+ * CAT-4 critical flow: the Category Filter end to end — debounced name search
+ * narrowing the live `filterCategories` page, the tri-state lifecycle scope,
+ * URL-owned state surviving a reload (ADR 0016), source pagination via Load
+ * more, and an archive reactively leaving the active-scoped list.
+ *
+ * Names carry a per-run nonce: the shared backend accretes Categories across
+ * specs and runs, so every assertion filters by this run's rows.
+ *
+ * The 27 seeded rows live in a DEDICATED Circle, not the shared Personal
+ * Circle: every Category seeded there lands as a chip in every other spec's
+ * Transaction-form picker (the form collects the whole selectable set), and
+ * that load is exactly what makes the reactive form tests flake.
+ */
+test("the category filter searches, scopes by status, reloads from the URL, and paginates", async ({
+  page,
+}) => {
+  test.slow(); // seeds past one 25-row page through the real create form
+
+  const nonce = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const matchName = (i: number) => `E2E Filter Match ${i} ${nonce}`;
+  const otherName = `E2E Filter Other ${nonce}`;
+
+  // An isolated Circle keeps the seeding out of the Personal Circle's pickers.
+  await page.goto("/");
+  await page.getByRole("button", { name: "Circles" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Create circle" }).click();
+  await page.getByLabel("Name").fill(`E2E Filter Circle ${nonce}`);
+  await page.getByRole("button", { name: "Create circle" }).click();
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+  await page.getByRole("link", { name: "Categories" }).click();
+
+  // Seed 26 matching + 1 non-matching expense Categories (page size is 25).
+  const nameField = page.getByLabel(/New expense category/);
+  const addButton = page.getByRole("button", { name: "Add category" });
+  for (let i = 0; i < 26; i++) {
+    await nameField.fill(matchName(i));
+    await addButton.click();
+    await expect(nameField).toHaveValue(""); // create round-tripped
+  }
+  await nameField.fill(otherName);
+  await addButton.click();
+  await expect(page.getByRole("listitem").filter({ hasText: otherName })).toBeVisible();
+
+  // Search narrows the live list (substring, case-insensitive) and lands in the URL.
+  const search = page.getByLabel("Search categories by name");
+  await search.fill(`filter match 25 ${nonce}`);
+  await expect(page.getByRole("listitem").filter({ hasText: matchName(25) })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: otherName })).toHaveCount(0);
+  await expect(page).toHaveURL(/q=filter\+match\+25/);
+
+  // Reload: the filtered view reproduces from the URL alone.
+  await page.reload();
+  await expect(page.getByRole("listitem").filter({ hasText: matchName(25) })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: otherName })).toHaveCount(0);
+
+  // Widen to this run's full set by the nonce (27 rows — two source pages).
+  // Searching the nonce, not a shared term, keeps the parallel desktop/mobile
+  // projects (same backend, same Personal Circle) out of each other's pages.
+  await search.fill(nonce);
+  const matchRows = page.getByRole("listitem").filter({ hasText: nonce });
+  await expect(page.getByRole("button", { name: "Load more" })).toBeVisible();
+  const firstPageCount = await matchRows.count();
+  expect(firstPageCount).toBeLessThanOrEqual(25); // the first page is bounded
+
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(matchRows.filter({ hasText: `Match 0 ${nonce}` })).toBeVisible();
+
+  // Archive one row, then scope to active: it reactively leaves the list.
+  await page.getByRole("button", { name: `Archive ${matchName(25)}` }).click();
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: matchName(25) })
+      .getByText("Archived"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Active", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: matchName(25) })).toHaveCount(0);
+
+  // The archived scope shows only it (of this run's rows still matching).
+  await page.getByRole("button", { name: "Archived", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: matchName(25) })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: `Match 24 ${nonce}` })).toHaveCount(0);
 });

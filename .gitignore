@@ -18,6 +18,9 @@ dist/
 .env
 .env.local
 .env.*.local
+# scripts/e2e-local.sh moves .env.local aside under this name while the
+# self-hosted backend runs; it may hold cloud deploy config — never commit it.
+.env.local.e2e-local-bak
 
 # Test artifacts
 coverage/

@@ -2,6 +2,8 @@ import {
   type ComparisonRangeMonths,
   comparisonWindowMonths,
   type PlainMonth,
+  type TransactionType,
+  textIncludes,
 } from "@spend-circle/domain";
 import type {
   Category,
@@ -75,7 +77,39 @@ export const MOCK_CATEGORIES: Category[] = [
     canEditFields: true,
     canArchive: true,
   },
+  // An archived row so the Category Filter's status=all default renders the
+  // muted-name + "Archived" treatment offline (CAT-4).
+  {
+    id: "mock-cat-subscriptions" as Category["id"],
+    name: "Old Subscriptions",
+    type: "expense",
+    color: "rose",
+    status: "archived",
+    creator: { displayName: "You", image: undefined },
+    canEditFields: false,
+    canArchive: true,
+  },
 ];
+
+/**
+ * The `filterCategories` narrowing applied to the fixtures under MOCKS (CAT-4):
+ * type-scoped, lifecycle-scoped, name-matched with the SAME domain `textIncludes`
+ * the backend handler uses, so the mock path cannot drift from the real match
+ * semantics (ADR 0006). Typed against the derived {@link Category} contract like
+ * every other fixture.
+ */
+export function mockFilterCategories(filters: {
+  type: TransactionType;
+  status: "active" | "archived" | "all";
+  query?: string;
+}): Category[] {
+  return MOCK_CATEGORIES.filter(
+    (category) =>
+      category.type === filters.type &&
+      (filters.status === "all" || category.status === filters.status) &&
+      textIncludes(category.name, filters.query ?? ""),
+  );
+}
 
 /**
  * Mock Members for the Paid By selector and Member List, typed against the

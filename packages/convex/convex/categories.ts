@@ -1,6 +1,13 @@
-import { categoryInputSchema, categoryUpdateSchema, colorLabel } from "@spend-circle/domain";
+import {
+  categoryInputSchema,
+  categoryUpdateSchema,
+  colorLabel,
+  normalizeSearchText,
+  textIncludes,
+} from "@spend-circle/domain";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { stream } from "convex-helpers/server/stream";
 import type { Doc } from "./_generated/dataModel.js";
 import { type MutationCtx, mutation, type QueryCtx, query } from "./_generated/server.js";
 import {
@@ -16,6 +23,7 @@ import {
   recordEvent,
 } from "./history.js";
 import { newActorCache, toHistoryEventView } from "./historyView.js";
+import schema from "./schema.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
 
@@ -153,7 +161,7 @@ export const listCategories = query({
     const categories = type
       ? await ctx.db
           .query("categories")
-          .withIndex("by_circle_and_type", (q) => q.eq("circleId", circleId).eq("type", type))
+          .withIndex("by_circle_type_createdAt", (q) => q.eq("circleId", circleId).eq("type", type))
           .collect()
       : await ctx.db
           .query("categories")
@@ -170,6 +178,96 @@ export const listCategories = query({
 
     const viewer = { userId: access.user._id, isOwner: access.isOwner };
     return await Promise.all(visible.map((category) => toCategoryView(ctx, category, viewer)));
+  },
+});
+
+/** The Category Filter's source stream: the status index when the scope is
+ * `active`/`archived` (eq on status, `createdAt` desc), the no-status
+ * `createdAt` index when `all` (both statuses interleaved). Either way the index
+ * carries the sort key, so pages stay in `createdAt` desc order (with Convex's
+ * implicit `_creationTime` desc tiebreak) across page boundaries. */
+function streamCategoriesByStatus(
+  ctx: QueryCtx,
+  args: {
+    circleId: Doc<"circles">["_id"];
+    type: "expense" | "income";
+    status: "active" | "archived" | "all";
+  },
+) {
+  if (args.status === "all") {
+    return stream(ctx.db, schema)
+      .query("categories")
+      .withIndex("by_circle_type_createdAt", (q) =>
+        q.eq("circleId", args.circleId).eq("type", args.type),
+      )
+      .order("desc");
+  }
+  const status = args.status;
+  return stream(ctx.db, schema)
+    .query("categories")
+    .withIndex("by_circle_type_status_createdAt", (q) =>
+      q.eq("circleId", args.circleId).eq("type", args.type).eq("status", status),
+    )
+    .order("desc");
+}
+
+/**
+ * The **Category Filter** read (CAT-4): one page of a Circle's Categories of one
+ * type, narrowed by lifecycle scope (active / archived / all) and an optional
+ * name search — substring, case-insensitive, whitespace-normalized, **name
+ * only**. The management list this feeds grows with the Circle, so it paginates
+ * **at the source** (README §4): the status-appropriate index streams rows
+ * newest-first and the text match filters in-handler (`filterWith`), filling the
+ * page until the requested size or the source is exhausted, so a sparse match
+ * never yields an empty intermediate page while further matches exist.
+ *
+ * The page-filling read goes through `convex-helpers` streams rather than the
+ * RPT-2 paginate-and-loop shape the slice sketched: Convex permits only ONE
+ * `.paginate()` call per function execution, so a loop that re-paginates to fill
+ * a sparsely-matched page throws `"ran multiple paginated queries"` on the real
+ * backend (convex-test doesn't enforce it; the E2E run did). Streams read the
+ * same index ranges via `take` under the hood, sidestepping the restriction with
+ * identical semantics.
+ *
+ * This deliberately does NOT replace {@link listCategories}: the Transaction-form
+ * picker and the filter-option queries need the whole small selectable set, the
+ * opposite access pattern of this paginated stream.
+ *
+ * Anti-enumeration (ADR 0016): an inaccessible or missing Circle returns the same
+ * empty, exhausted page — indistinguishable from a Circle with no Categories. (A
+ * paginated query returns an empty page rather than `null` so `usePaginatedQuery`
+ * stays on its normal lifecycle, exactly like `listCategoryHistory`.) An archived
+ * Circle still lists — reading history is allowed, writing is not.
+ */
+export const filterCategories = query({
+  args: {
+    circleId: v.id("circles"),
+    type: transactionType,
+    status: v.union(v.literal("active"), v.literal("archived"), v.literal("all")),
+    query: v.optional(v.string()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveCircleAccess(ctx, args.circleId);
+    if (!access) {
+      return { page: [], isDone: true, continueCursor: "" }; // missing ≡ inaccessible (ADR 0016)
+    }
+
+    // Normalized once per request; empty/whitespace means no text narrowing.
+    const queryText = normalizeSearchText(args.query);
+
+    const source = streamCategoriesByStatus(ctx, args);
+    const narrowed = queryText
+      ? source.filterWith(async (category) => textIncludes(category.name, queryText))
+      : source;
+    const result = await narrowed.paginate(args.paginationOpts);
+
+    const viewer = { userId: access.user._id, isOwner: access.isOwner };
+    return {
+      page: await Promise.all(result.page.map((category) => toCategoryView(ctx, category, viewer))),
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
   },
 });
 
