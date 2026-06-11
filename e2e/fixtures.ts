@@ -45,7 +45,7 @@ async function signUpUserAndSaveStorageState(opts: {
           return `error: ${String(err instanceof Error ? err.message : err)}`;
         }
       },
-      [email, password] as const,
+      [email, password],
     );
     if (result !== "ok") throw new Error(`E2E sign-in failed: ${result}`);
 
