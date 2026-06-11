@@ -20,10 +20,9 @@ pnpm install
 
 ## Environment
 
-Copy `.env.example` to `.env.local` at the repo root and replace placeholders:
+Copy `.env.example` to `.env.local` at the repo root and fill it in.
 
 ```sh
-CONVEX_DEPLOYMENT=dev:<your-convex-dev-deployment>
 VITE_CONVEX_URL=https://<your-deployment>.convex.cloud
 VITE_CONVEX_SITE_URL=https://<your-deployment>.convex.site
 SITE_URL=http://127.0.0.1:5173
@@ -44,7 +43,12 @@ https://<your-deployment>.convex.site/api/auth/callback/google
 ## Configure Convex
 
 Push backend code, install the Better Auth component, and generate the typed
-API. Convex lives in `packages/convex` and reads the shared root `.env.local`:
+API. Convex lives in `packages/convex`. The Convex CLI keeps its deployment
+selector in `packages/convex/.env.local` (gitignored) — running the dev command
+below for the first time walks you through login/project setup and writes
+`CONVEX_DEPLOYMENT` there itself. The repo-root `.env.local` is the web app's env
+file (Vite loads it via `envDir`); the Convex CLI does not read it. When switching
+between cloud dev and self-hosted E2E, see [e2e/README.md — The `.env.local` gotcha](e2e/README.md#the-envlocal-gotcha).
 
 ```sh
 pnpm --filter @spend-circle/convex dev
