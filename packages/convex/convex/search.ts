@@ -3,6 +3,8 @@ import {
   isValidPlainDate,
   isValidPlainMonth,
   MAX_AMOUNT_MINOR,
+  normalizeSearchText,
+  textIncludes,
 } from "@spend-circle/domain";
 import { type IndexRange, paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
@@ -104,10 +106,6 @@ function nextPlainDate(date: string) {
   const month = (next.getUTCMonth() + 1).toString().padStart(2, "0");
   const day = next.getUTCDate().toString().padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function textIncludes(value: string | undefined, queryText: string) {
-  return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim().includes(queryText);
 }
 
 async function categoryLinksForTransaction(
@@ -342,7 +340,7 @@ function normalizeCommonFilters(
   return {
     type: selectedType(args.type),
     status: selectedStatus(args.status),
-    queryText: (args.query ?? "").trim().toLowerCase().replace(/\s+/g, " "),
+    queryText: normalizeSearchText(args.query),
     categoryIds,
     recordedByMemberIds,
     paidByMemberIds,
@@ -535,7 +533,9 @@ export const getTransactionSearchOptions = query({
     const categories = type
       ? await ctx.db
           .query("categories")
-          .withIndex("by_circle_and_type", (q) => q.eq("circleId", args.circleId).eq("type", type))
+          .withIndex("by_circle_type_createdAt", (q) =>
+            q.eq("circleId", args.circleId).eq("type", type),
+          )
           .collect()
       : await ctx.db
           .query("categories")

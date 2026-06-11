@@ -1,22 +1,24 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Route, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Category, CategoryHistoryEvent, Circle } from "~/lib/data.js";
+import type { Category, CategoryHistoryEvent, Circle, PaginationStatus } from "~/lib/data.js";
 import {
   configureConvex,
   makeCategoryView,
   makeCircleView,
   makeHistoryEventView,
-  renderInCircle,
+  renderCircleRoutes,
   testId,
 } from "~/test/convex-react.js";
 
 /**
  * Behavior test for the Categories surface (jsdom). The ONLY thing doubled is
  * Convex's reactive client (`convex/react`, via the shared helper). The real
- * `~/lib/data.js` hooks, the real `useCircle` Outlet-context seam, and the real
- * route + form logic run, so a drift between the route, the data layer, and the
- * backend query contract is caught here rather than mocked away (ADR 0006).
+ * `~/lib/data.js` hooks, the real `useCircle` Outlet-context seam, the real
+ * URL codec (`categories-filter-url.ts`), and the real route + form logic run,
+ * so a drift between the route, the data layer, and the backend query contract
+ * is caught here rather than mocked away (ADR 0006).
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
@@ -27,11 +29,25 @@ const updateCategory = vi.fn();
 const archiveCategory = vi.fn();
 const restoreCategory = vi.fn();
 
+/** A chrome control that walks the real history stack, so tests can assert the
+ * push (type/status) vs replace (debounced search) split behaviorally. */
+function GoBack() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      test-go-back
+    </button>
+  );
+}
+
 function setup(
   opts: {
     circle?: Partial<Circle>;
     categories?: Category[] | null;
     categoryHistory?: CategoryHistoryEvent[];
+    categoriesPageStatus?: PaginationStatus;
+    categoriesLoadMore?: () => void;
+    initialEntries?: string[];
   } = {},
 ) {
   const circle = makeCircleView(opts.circle);
@@ -42,12 +58,29 @@ function setup(
   configureConvex({
     categories: opts.categories,
     categoryHistory: opts.categoryHistory,
+    categoriesPageStatus: opts.categoriesPageStatus,
+    categoriesLoadMore: opts.categoriesLoadMore,
     createCategory,
     updateCategory,
     archiveCategory,
     restoreCategory,
   });
-  return renderInCircle(circle, <CircleCategories />);
+  return renderCircleRoutes(circle, <Route path="/" element={<CircleCategories />} />, {
+    initialEntries: opts.initialEntries,
+    chrome: <GoBack />,
+  });
+}
+
+/** Both rows used by the lifecycle-mix tests: one active, one archived. */
+function mixedRows() {
+  return [
+    makeCategoryView(),
+    makeCategoryView({
+      id: testId<Category["id"]>("cat-old"),
+      name: "Old Subscriptions",
+      status: "archived",
+    }),
+  ];
 }
 
 afterEach(() => {
@@ -55,7 +88,7 @@ afterEach(() => {
 });
 
 describe("CircleCategories — list and create (CAT-1)", () => {
-  it("lists active categories of the selected type", () => {
+  it("lists categories of the selected type", () => {
     setup({
       categories: [
         makeCategoryView(),
@@ -65,28 +98,6 @@ describe("CircleCategories — list and create (CAT-1)", () => {
     const list = screen.getByRole("list");
     expect(within(list).getByText("Groceries")).toBeInTheDocument();
     expect(within(list).getByText("Rent")).toBeInTheDocument();
-  });
-
-  it("excludes archived categories from the list (does not request includeArchived)", () => {
-    setup({
-      categories: [
-        makeCategoryView({ name: "Groceries" }),
-        makeCategoryView({
-          id: testId<Category["id"]>("cat-archived"),
-          name: "Old Subscriptions",
-          status: "archived",
-        }),
-      ],
-    });
-    const list = screen.getByRole("list");
-    expect(within(list).getByText("Groceries")).toBeInTheDocument();
-    // This asserts the query contract *indirectly* and rests on one invariant: the
-    // real-mode data hook returns the query verbatim (data.ts `return queried`) — no
-    // client-side status filter. Given that, an archived row appearing can only mean
-    // the route wrongly asked for `includeArchived: true`. If you ever add a real-mode
-    // client filter there (mirroring the MOCKS branch), this test would pass even with
-    // a widened query — add a direct query-args assertion before doing so.
-    expect(within(list).queryByText("Old Subscriptions")).not.toBeInTheDocument();
   });
 
   it("shows an empty state when there are no categories of the type", () => {
@@ -126,6 +137,16 @@ describe("CircleCategories — list and create (CAT-1)", () => {
       type: "expense",
       color: "teal",
     });
+  });
+
+  it("keeps the new-Category form on the URL type (income deep link)", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [], initialEntries: ["/?type=income"] });
+
+    await user.type(screen.getByLabelText(/New income category/), "Bonus");
+    await user.click(screen.getByRole("button", { name: "Add category" }));
+
+    expect(createCategory).toHaveBeenCalledWith(expect.objectContaining({ type: "income" }));
   });
 
   it("clears the name input after a successful create", async () => {
@@ -180,9 +201,181 @@ describe("CircleCategories — list and create (CAT-1)", () => {
     expect(screen.queryByRole("button", { name: "Add category" })).not.toBeInTheDocument();
   });
 
-  it("shows a loading state while categories resolve", () => {
-    setup({ categories: undefined });
+  it("shows a loading state while the first page resolves", () => {
+    setup({ categories: [], categoriesPageStatus: "LoadingFirstPage" });
     expect(screen.getByText(/Loading categories/)).toBeInTheDocument();
+  });
+});
+
+describe("CircleCategories — Category Filter status (CAT-4)", () => {
+  it("defaults to status=all: archived rows show with the badge, not hidden", () => {
+    setup({ categories: mixedRows() });
+    const list = screen.getByRole("list");
+    expect(within(list).getByText("Groceries")).toBeInTheDocument();
+    const row = screen.getByText("Old Subscriptions").closest("li");
+    expect(within(row as HTMLElement).getByText("Archived")).toBeInTheDocument();
+  });
+
+  it("narrows to active-only and archived-only through the Status control", async () => {
+    const user = userEvent.setup();
+    setup({ categories: mixedRows() });
+
+    await user.click(screen.getByRole("button", { name: "Active" }));
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.queryByText("Old Subscriptions")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+    expect(screen.queryByText("Groceries")).not.toBeInTheDocument();
+    expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
+  });
+
+  it("shows the no-match empty state when the status narrows everything out", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategoryView()] }); // active only — nothing archived
+
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+
+    expect(screen.getByText("No categories match this filter.")).toBeInTheDocument();
+    expect(screen.queryByText(/No expense categories yet/)).not.toBeInTheDocument();
+  });
+});
+
+describe("CircleCategories — Category Filter search (CAT-4)", () => {
+  it("debounces the search and narrows the list (substring, case-insensitive)", async () => {
+    const user = userEvent.setup();
+    const view = setup({
+      categories: [
+        makeCategoryView(),
+        makeCategoryView({ id: testId<Category["id"]>("c2"), name: "Rent" }),
+      ],
+    });
+
+    await user.type(screen.getByLabelText("Search categories by name"), "OCER");
+
+    await waitFor(() => expect(view.location()).toContain("q=OCER"));
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.queryByText("Rent")).not.toBeInTheDocument();
+  });
+
+  it("shows the no-match empty state for a term matching nothing", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategoryView()] });
+
+    await user.type(screen.getByLabelText("Search categories by name"), "zzz");
+
+    expect(await screen.findByText("No categories match this filter.")).toBeInTheDocument();
+  });
+
+  it("clearing the search restores the unfiltered list and drops q from the URL", async () => {
+    const user = userEvent.setup();
+    const view = setup({
+      categories: [
+        makeCategoryView(),
+        makeCategoryView({ id: testId<Category["id"]>("c2"), name: "Rent" }),
+      ],
+    });
+    const input = screen.getByLabelText("Search categories by name");
+
+    await user.type(input, "rent");
+    await waitFor(() => expect(view.location()).toContain("q=rent"));
+    expect(screen.queryByText("Groceries")).not.toBeInTheDocument();
+
+    await user.clear(input);
+    await waitFor(() => expect(view.location()).not.toContain("q="));
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.getByText("Rent")).toBeInTheDocument();
+  });
+});
+
+describe("CircleCategories — URL-owned filter state (CAT-4, ADR 0016)", () => {
+  it("canonicalizes a bare URL to always carry type and status", async () => {
+    const view = setup({ categories: [] });
+    await waitFor(() => expect(view.location()).toBe("/?type=expense&status=all"));
+  });
+
+  it("reproduces a filtered view from a deep link", () => {
+    setup({
+      categories: mixedRows(),
+      initialEntries: ["/?type=expense&status=archived&q=subscriptions"],
+    });
+
+    expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
+    expect(screen.queryByText("Groceries")).not.toBeInTheDocument();
+    expect(screen.getByLabelText<HTMLInputElement>("Search categories by name").value).toBe(
+      "subscriptions",
+    );
+  });
+
+  it("clamps unknown type and status values to the defaults", async () => {
+    const view = setup({
+      categories: mixedRows(),
+      initialEntries: ["/?type=bogus&status=nope"],
+    });
+
+    await waitFor(() => expect(view.location()).toBe("/?type=expense&status=all"));
+    // Default all: both rows visible; default type tab selected.
+    expect(screen.getByRole("tab", { name: "Expense" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
+  });
+
+  it("type and status changes PUSH history — back returns to the previous filter", async () => {
+    const user = userEvent.setup();
+    const view = setup({ categories: mixedRows() });
+    await waitFor(() => expect(view.location()).toBe("/?type=expense&status=all"));
+
+    await user.click(screen.getByRole("button", { name: "Active" }));
+    expect(view.location()).toBe("/?type=expense&status=active");
+
+    await user.click(screen.getByRole("button", { name: "test-go-back" }));
+    expect(view.location()).toBe("/?type=expense&status=all");
+    expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
+  });
+
+  it("the debounced search REPLACES — back skips the typed states", async () => {
+    const user = userEvent.setup();
+    const view = setup({ categories: mixedRows() });
+    await waitFor(() => expect(view.location()).toBe("/?type=expense&status=all"));
+
+    // A discrete change first, so there IS a previous entry to land on.
+    await user.click(screen.getByRole("button", { name: "Active" }));
+    expect(view.location()).toBe("/?type=expense&status=active");
+
+    await user.type(screen.getByLabelText("Search categories by name"), "groc");
+    await waitFor(() => expect(view.location()).toContain("q=groc"));
+
+    // Back jumps OVER the search write (it replaced), to the pre-status entry.
+    await user.click(screen.getByRole("button", { name: "test-go-back" }));
+    expect(view.location()).toBe("/?type=expense&status=all");
+  });
+});
+
+describe("CircleCategories — pagination (CAT-4)", () => {
+  it("offers Load more while the backend has more and wires it to loadMore", async () => {
+    const user = userEvent.setup();
+    const categoriesLoadMore = vi.fn();
+    setup({
+      categories: [makeCategoryView()],
+      categoriesPageStatus: "CanLoadMore",
+      categoriesLoadMore,
+    });
+
+    const button = screen.getByRole("button", { name: "Load more" });
+    await user.click(button);
+    expect(categoriesLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the control while a page is loading", () => {
+    setup({ categories: [makeCategoryView()], categoriesPageStatus: "LoadingMore" });
+    expect(screen.getByRole("button", { name: "Loading…" })).toBeDisabled();
+  });
+
+  it("hides the control when the stream is exhausted", () => {
+    setup({ categories: [makeCategoryView()], categoriesPageStatus: "Exhausted" });
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 });
 
@@ -325,44 +518,46 @@ describe("CircleCategories — edit mode answers to server capability (regressio
     });
   }
 
-  it("closes the open editor when the category is archived reactively (Show archived on)", async () => {
+  it("closes the open editor when the category is archived reactively (default all view)", async () => {
     const user = userEvent.setup();
     const view = setup({ categories: [makeCategoryView()] });
 
-    await user.click(screen.getByRole("switch", { name: "Show archived" }));
     await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
     expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
 
-    // Another Member (the Owner) archives it; the reactive list flips the row.
+    // Another Member (the Owner) archives it; the reactive list flips the row
+    // in place — under the default all scope it stays visible, frozen.
     reconfigure([makeCategoryView({ status: "archived" })]);
-    view.rerenderInCircle(<CircleCategories />);
+    view.rerender();
 
     expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Restore Groceries" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit Groceries" })).not.toBeInTheDocument();
   });
 
-  it("never resurrects a stale editor: archived while hidden, re-shown, then restored", async () => {
+  it("never resurrects a stale editor: archived while filtered out, re-shown, then restored", async () => {
     const user = userEvent.setup();
     const view = setup({ categories: [makeCategoryView()] });
 
+    // Narrow to active-only so the archive will REMOVE the row (stranding state).
+    await user.click(screen.getByRole("button", { name: "Active" }));
     await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
     expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
 
-    // Archived reactively while Show archived is OFF: the row leaves the list,
+    // Archived reactively while the active filter is on: the row leaves the list,
     // stranding the edit-mode state upstream.
     reconfigure([makeCategoryView({ status: "archived" })]);
-    view.rerenderInCircle(<CircleCategories />);
+    view.rerender();
     expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
 
-    // The re-mounted archived row must NOT render the stranded editor.
-    await user.click(screen.getByRole("switch", { name: "Show archived" }));
+    // The re-mounted archived row (back under all) must NOT render the stranded editor.
+    await user.click(screen.getByRole("button", { name: "All" }));
     expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Restore Groceries" })).toBeInTheDocument();
 
     // Nor may a later restore pop the forgotten editor back open.
     reconfigure([makeCategoryView()]);
-    view.rerenderInCircle(<CircleCategories />);
+    view.rerender();
     expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit Groceries" })).toBeInTheDocument();
   });
@@ -374,7 +569,7 @@ describe("CircleCategories — edit mode answers to server capability (regressio
     await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
     expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
 
-    view.rerenderInCircle(<CircleCategories />, makeCircleView({ status: "archived" }));
+    view.rerender(makeCircleView({ status: "archived" }));
 
     expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit Groceries" })).not.toBeInTheDocument();
@@ -391,20 +586,9 @@ describe("CircleCategories — archive / restore (CAT-2)", () => {
     expect(archiveCategory).toHaveBeenCalledWith({ categoryId: "cat-groceries" });
   });
 
-  it("shows archived rows with a badge and a Restore affordance when toggled on", async () => {
+  it("shows archived rows with a badge and a Restore affordance (default all view)", async () => {
     const user = userEvent.setup();
-    setup({
-      categories: [
-        makeCategoryView(),
-        makeCategoryView({
-          id: testId<Category["id"]>("cat-old"),
-          name: "Old Subscriptions",
-          status: "archived",
-        }),
-      ],
-    });
-
-    await user.click(screen.getByRole("switch", { name: "Show archived" }));
+    setup({ categories: mixedRows() });
 
     const row = screen.getByText("Old Subscriptions").closest("li");
     expect(row).not.toBeNull();

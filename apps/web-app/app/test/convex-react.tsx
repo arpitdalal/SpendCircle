@@ -3,6 +3,7 @@ import {
   comparisonWindowMonths,
   DEFAULT_COMPARISON_RANGE_MONTHS,
   isComparisonRangeMonths,
+  textIncludes,
 } from "@spend-circle/domain";
 import { render } from "@testing-library/react";
 import { type FunctionReference, getFunctionName } from "convex/server";
@@ -55,6 +56,7 @@ export const convexReactMock = {
 const NAME = {
   listMyCircles: getFunctionName(api.circles.listMyCircles),
   listCategories: getFunctionName(api.categories.listCategories),
+  filterCategories: getFunctionName(api.categories.filterCategories),
   listMembers: getFunctionName(api.members.listMembers),
   listTransactions: getFunctionName(api.transactions.listTransactions),
   getEditableTransaction: getFunctionName(api.transactions.getEditableTransaction),
@@ -126,12 +128,31 @@ function fakeListCategories(rows: Category[], args: Record<string, unknown>) {
   return rows.filter((c) => c.type === args.type && (includeArchived || c.status === "active"));
 }
 
+/** Models the `filterCategories` backend contract (CAT-4): type-scoped, lifecycle-
+ * scoped, name-matched with the SAME domain `textIncludes` the real handler uses —
+ * so a route test exercises real narrowing semantics, not a per-file approximation. */
+function fakeFilterCategories(rows: Category[], args: Record<string, unknown>) {
+  const query = typeof args.query === "string" ? args.query : "";
+  return rows.filter(
+    (c) =>
+      c.type === args.type &&
+      (args.status === "all" || c.status === args.status) &&
+      textIncludes(c.name, query),
+  );
+}
+
 interface ConvexState {
   /** `listMyCircles` — `undefined` ≡ loading. */
   circles?: Circle[] | null;
   /** `listCategories` source rows (filtered per query args); `undefined` ≡ loading,
-   * `null` ≡ inaccessible Circle (ADR 0016). */
+   * `null` ≡ inaccessible Circle (ADR 0016). The same rows feed the paginated
+   * `filterCategories` double (CAT-4), narrowed per ITS query args. */
   categories?: Category[] | null;
+  /** The `filterCategories` pagination lifecycle (CAT-4); defaults to "Exhausted". */
+  categoriesPageStatus?: PaginationStatus;
+  /** The `filterCategories` `loadMore`; assert against it for the Categories
+   * "Load more" wiring. */
+  categoriesLoadMore?: () => void;
   /** `listMembers` — `undefined` ≡ loading, `null` ≡ inaccessible. */
   members?: Member[] | null;
   /** `listTransactions` page (paginated) — the ACTIVE-status page. */
@@ -237,6 +258,8 @@ export function configureConvex(state: ConvexState = {}) {
   const {
     circles,
     categories,
+    categoriesPageStatus = "Exhausted",
+    categoriesLoadMore = () => {},
     members,
     transactions = [],
     archivedTransactions = [],
@@ -327,6 +350,14 @@ export function configureConvex(state: ConvexState = {}) {
       // The Category History panel (CAT-2) pages the same shared event shape.
       if (name === NAME.listCategoryHistory) {
         return { results: categoryHistory, status: historyStatus, loadMore: historyLoadMore };
+      }
+      // The Categories management list (CAT-4) pages the narrowed Category set.
+      if (name === NAME.filterCategories) {
+        return {
+          results: fakeFilterCategories(categories ?? [], args),
+          status: categoriesPageStatus,
+          loadMore: categoriesLoadMore,
+        };
       }
       if (name === NAME.filterLedgerTransactions) {
         return { results: ledgerFilterTransactions, status: ledgerFilterStatus, loadMore };

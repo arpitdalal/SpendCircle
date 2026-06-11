@@ -12,6 +12,7 @@ import {
   MOCK_MONTHLY_SUMMARY,
   MOCK_TRANSACTION_HISTORY,
   MOCK_TRANSACTIONS,
+  mockFilterCategories,
   mockMonthlyComparison,
 } from "./fixtures.js";
 
@@ -84,6 +85,59 @@ export function useCategories(
         (category) => category.type === type && (includeArchived || category.status === "active"),
       )
     : queried;
+}
+
+/** How many Categories to fetch per page (initial load and each "load more"). */
+export const CATEGORIES_PAGE_SIZE = 25;
+
+/**
+ * One row of the paginated Category Filter read (CAT-4), derived from
+ * `filterCategories` so it cannot drift from `toCategoryView` (ADR 0003). The
+ * backend shapes both queries with the same view builder, so this is the same
+ * shape as {@link Category} — deriving it (rather than aliasing) keeps that true
+ * by construction if the queries ever diverge.
+ */
+export type CategoryPageRow = FunctionReturnType<
+  typeof api.categories.filterCategories
+>["page"][number];
+
+export interface CategoriesPage {
+  categories: CategoryPageRow[];
+  status: PaginationStatus;
+  /** Loads the next page; a no-op unless `status` is "CanLoadMore". */
+  loadMore: () => void;
+}
+
+/**
+ * The Categories management list (CAT-4): one type's Categories narrowed by the
+ * Category Filter (lifecycle scope + name search), newest first, paginated at the
+ * source so the page never holds an unbounded set (README §4) — the mirror of
+ * {@link useLedgerTransactionFilter} for Categories. An inaccessible Circle reads
+ * as an empty, exhausted page (anti-enumeration parity with the history reads —
+ * the Circle guard already gated entry). Mock mode narrows the fixtures with the
+ * same domain text-match the backend uses and skips the backend (ADR 0006).
+ */
+export function useCategoriesPage(
+  circleId: Circle["id"],
+  filters: { type: TransactionType; status: "active" | "archived" | "all"; query?: string },
+): CategoriesPage {
+  const paginated = usePaginatedQuery(
+    api.categories.filterCategories,
+    MOCKS ? "skip" : { circleId, ...filters },
+    { initialNumItems: CATEGORIES_PAGE_SIZE },
+  );
+  if (MOCKS) {
+    return {
+      categories: mockFilterCategories(filters),
+      status: "Exhausted",
+      loadMore: () => {},
+    };
+  }
+  return {
+    categories: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(CATEGORIES_PAGE_SIZE),
+  };
 }
 
 /**

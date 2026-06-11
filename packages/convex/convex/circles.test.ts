@@ -41,7 +41,9 @@ describe("completeCircleSetup", () => {
 
       const categories = await ctx.db
         .query("categories")
-        .withIndex("by_circle_and_type", (q) => q.eq("circleId", circleId).eq("type", "expense"))
+        .withIndex("by_circle_type_createdAt", (q) =>
+          q.eq("circleId", circleId).eq("type", "expense"),
+        )
         .collect();
       expect(categories.map((category) => category.name).sort()).toEqual([
         "Dining",
@@ -196,7 +198,9 @@ describe("completeCircleSetup", () => {
     await t.run(async (ctx) => {
       const categories = await ctx.db
         .query("categories")
-        .withIndex("by_circle_and_type", (q) => q.eq("circleId", circleId).eq("type", "expense"))
+        .withIndex("by_circle_type_createdAt", (q) =>
+          q.eq("circleId", circleId).eq("type", "expense"),
+        )
         .collect();
       expect(categories.map((category) => category.name).sort()).toContain("Rent");
       expect(categories.map((category) => category.name).sort()).not.toContain("Mortgage");
