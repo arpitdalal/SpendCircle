@@ -38,6 +38,9 @@ const FIELD_LABEL: Record<string, string> = {
   note: "Note",
   paidBy: "Paid By",
   categories: "Categories",
+  // Category History fields (CAT-2).
+  name: "Name",
+  color: "Color",
 };
 
 /** Human labels for the event verbs recorded by `recordEvent`. */

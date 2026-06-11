@@ -11,6 +11,7 @@ import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router";
 import { type Mock, vi } from "vitest";
 import type {
   Category,
+  CategoryHistoryEvent,
   Circle,
   Dashboard,
   Member,
@@ -74,6 +75,10 @@ const NAME = {
   archiveTransaction: getFunctionName(api.transactions.archiveTransaction),
   restoreTransaction: getFunctionName(api.transactions.restoreTransaction),
   createCategory: getFunctionName(api.categories.createCategory),
+  updateCategory: getFunctionName(api.categories.updateCategory),
+  archiveCategory: getFunctionName(api.categories.archiveCategory),
+  restoreCategory: getFunctionName(api.categories.restoreCategory),
+  listCategoryHistory: getFunctionName(api.categories.listCategoryHistory),
 };
 
 /** A zero Monthly Ledger summary — the default for tests that don't drive totals. */
@@ -194,6 +199,11 @@ interface ConvexState {
   historyStatus?: PaginationStatus;
   /** The paginated history `loadMore`; assert against it for the history "Load more". */
   historyLoadMore?: () => void;
+  /** `listCategoryHistory` page (paginated, CAT-2) — the Categories surface's
+   * per-row history panel; defaults to empty. Shares `historyStatus` /
+   * `historyLoadMore` with the Transaction History double — the two queries never
+   * render in one surface, so one status knob serves both. */
+  categoryHistory?: CategoryHistoryEvent[];
   /** The `createTransaction` / `createCategory` mutation spies the test owns.
    *
    * These are plain spies the caller configures. To assert the backend-guard
@@ -216,6 +226,9 @@ interface ConvexState {
   archiveTransaction?: Mock;
   restoreTransaction?: Mock;
   createCategory?: Mock;
+  updateCategory?: Mock;
+  archiveCategory?: Mock;
+  restoreCategory?: Mock;
 }
 
 /** Configures what each doubled Convex subscription/mutation returns for one test.
@@ -246,6 +259,7 @@ export function configureConvex(state: ConvexState = {}) {
     transactionHistory = [],
     historyStatus = "Exhausted",
     historyLoadMore = () => {},
+    categoryHistory = [],
     createCircle,
     completeCircleSetup,
     createTransaction,
@@ -253,6 +267,9 @@ export function configureConvex(state: ConvexState = {}) {
     archiveTransaction,
     restoreTransaction,
     createCategory,
+    updateCategory,
+    archiveCategory,
+    restoreCategory,
   } = state;
 
   convexReactMock.useQuery.mockImplementation(
@@ -307,6 +324,10 @@ export function configureConvex(state: ConvexState = {}) {
       if (name === NAME.listTransactionHistory) {
         return { results: transactionHistory, status: historyStatus, loadMore: historyLoadMore };
       }
+      // The Category History panel (CAT-2) pages the same shared event shape.
+      if (name === NAME.listCategoryHistory) {
+        return { results: categoryHistory, status: historyStatus, loadMore: historyLoadMore };
+      }
       if (name === NAME.filterLedgerTransactions) {
         return { results: ledgerFilterTransactions, status: ledgerFilterStatus, loadMore };
       }
@@ -344,6 +365,12 @@ export function configureConvex(state: ConvexState = {}) {
         return restoreTransaction ?? noop;
       case NAME.createCategory:
         return createCategory ?? noop;
+      case NAME.updateCategory:
+        return updateCategory ?? noop;
+      case NAME.archiveCategory:
+        return archiveCategory ?? noop;
+      case NAME.restoreCategory:
+        return restoreCategory ?? noop;
       default:
         return noop;
     }
@@ -413,6 +440,8 @@ export function makeCategoryView(over: Partial<Category> = {}): Category {
     color: "green",
     status: "active",
     creator: { displayName: "You", image: undefined },
+    canEditFields: true,
+    canArchive: true,
     ...over,
   };
 }

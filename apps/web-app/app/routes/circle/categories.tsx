@@ -1,14 +1,25 @@
 import {
   COLOR_PALETTE,
   categoryInputSchema,
+  categoryUpdateSchema,
   colorLabel,
   DEFAULT_COLOR_ID,
   LIMITS,
   type TransactionType,
 } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
+import { HistoryList } from "~/components/history-list.js";
 import { Button } from "~/components/ui/button.js";
-import { type Category, type Circle, useCategories, useCreateCategory } from "~/lib/data.js";
+import {
+  type Category,
+  type Circle,
+  useArchiveCategory,
+  useCategories,
+  useCategoryHistory,
+  useCreateCategory,
+  useRestoreCategory,
+  useUpdateCategory,
+} from "~/lib/data.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -18,49 +29,69 @@ const TYPE_TABS: ReadonlyArray<{ value: TransactionType; label: string }> = [
 ];
 
 /**
- * Circle-scoped Categories surface (PRD stories 47–61). A type segmented control
- * drives both the visible list and the new-Category form, because Categories are
- * type-specific — an Expense form never shows Income Categories. The server owns
- * the unique-name invariant (case-insensitive, per Circle+type, incl. archived);
- * we surface its rejection inline rather than pre-checking client-side.
+ * Circle-scoped Categories surface (PRD stories 47–61; CAT-2 adds edit / archive /
+ * restore / history). A type segmented control drives both the visible list and the
+ * new-Category form, because Categories are type-specific — an Expense form never
+ * shows Income Categories. The server owns the unique-name invariant
+ * (case-insensitive, per Circle+type, incl. archived); we surface its rejection
+ * inline rather than pre-checking client-side.
+ *
+ * Per-row affordances are gated on the SERVER-returned capability flags
+ * (`canEditFields` — the creator only; `canArchive` — creator or Owner) plus a
+ * writable Circle. The flags are a courtesy: the server re-checks every mutation
+ * (ADR 0015). "Show archived" widens the query (`includeArchived`) so archived
+ * Categories surface with a Restore affordance — they stay attached to history and
+ * filters but can't be newly added to Transactions (PRD 54, 57).
  */
 export default function CircleCategories() {
   const circle = useCircle();
   const [type, setType] = useState<TransactionType>("expense");
-  const categories = useCategories(circle.id, type);
+  const [showArchived, setShowArchived] = useState(false);
+  const categories = useCategories(circle.id, type, { includeArchived: showArchived });
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
         <h2 className="font-display text-lg font-semibold tracking-tight">Categories</h2>
-        <div
-          role="tablist"
-          aria-label="Category type"
-          className="inline-flex rounded-md bg-muted p-1"
-        >
-          {TYPE_TABS.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              role="tab"
-              aria-selected={type === tab.value}
-              onClick={() => setType(tab.value)}
-              className={cn(
-                "rounded px-3 py-1 text-sm transition-colors",
-                type === tab.value
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div
+            role="tablist"
+            aria-label="Category type"
+            className="inline-flex rounded-md bg-muted p-1"
+          >
+            {TYPE_TABS.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                role="tab"
+                aria-selected={type === tab.value}
+                onClick={() => setType(tab.value)}
+                className={cn(
+                  "rounded px-3 py-1 text-sm transition-colors",
+                  type === tab.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showArchived}
+            onClick={() => setShowArchived((current) => !current)}
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {showArchived ? "Hide archived" : "Show archived"}
+          </button>
         </div>
       </div>
 
       <NewCategoryForm circleId={circle.id} type={type} writable={circle.status === "active"} />
 
-      <CategoryList categories={categories} type={type} />
+      <CategoryList categories={categories} type={type} circle={circle} />
     </div>
   );
 }
@@ -145,26 +176,7 @@ function NewCategoryForm({
         />
       </div>
 
-      <fieldset className="space-y-1.5">
-        <legend className="text-sm font-medium">Color</legend>
-        <div className="flex flex-wrap gap-2">
-          {COLOR_PALETTE.map((paletteColor) => (
-            <button
-              key={paletteColor.id}
-              type="button"
-              aria-label={paletteColor.name}
-              aria-pressed={color === paletteColor.id}
-              onClick={() => setColor(paletteColor.id)}
-              style={{ backgroundColor: paletteColor.hex }}
-              className={cn(
-                "size-7 rounded-full ring-offset-2 ring-offset-background transition",
-                color === paletteColor.id ? "ring-2 ring-ring" : "ring-0",
-              )}
-            />
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">{colorLabel(color)}</p>
-      </fieldset>
+      <ColorPicker legend="Color" color={color} onChange={setColor} />
 
       {error ? (
         <p id="category-error" role="alert" className="text-sm text-destructive">
@@ -179,14 +191,59 @@ function NewCategoryForm({
   );
 }
 
-/** The active Categories of the selected type. */
+/** The shared palette picker: one definition for the create and edit forms. */
+function ColorPicker({
+  legend,
+  color,
+  onChange,
+}: {
+  legend: string;
+  color: string;
+  onChange: (color: string) => void;
+}) {
+  return (
+    <fieldset className="space-y-1.5">
+      <legend className="text-sm font-medium">{legend}</legend>
+      <div className="flex flex-wrap gap-2">
+        {COLOR_PALETTE.map((paletteColor) => (
+          <button
+            key={paletteColor.id}
+            type="button"
+            aria-label={paletteColor.name}
+            aria-pressed={color === paletteColor.id}
+            onClick={() => onChange(paletteColor.id)}
+            style={{ backgroundColor: paletteColor.hex }}
+            className={cn(
+              "size-7 rounded-full ring-offset-2 ring-offset-background transition",
+              color === paletteColor.id ? "ring-2 ring-ring" : "ring-0",
+            )}
+          />
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">{colorLabel(color)}</p>
+    </fieldset>
+  );
+}
+
+/**
+ * The Categories of the selected type — active, plus archived when the toggle widened
+ * the query. Each row offers the affordances the SERVER said this viewer may use
+ * (`canEditFields` / `canArchive` — ADR 0015) on a writable Circle, and a History
+ * disclosure every current Member may open (PRD story 78). One row at a time edits,
+ * and one expands history — a deliberate simplification that keeps the surface calm.
+ */
 function CategoryList({
   categories,
   type,
+  circle,
 }: {
   categories: Category[] | null | undefined;
   type: TransactionType;
+  circle: Circle;
 }) {
+  const [editingId, setEditingId] = useState<Category["id"] | null>(null);
+  const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
+
   if (categories === undefined) {
     return <p className="text-sm text-muted-foreground">Loading categories…</p>;
   }
@@ -198,25 +255,269 @@ function CategoryList({
 
   return (
     <ul className="space-y-2">
-      {categories.map((category) => {
-        const swatch = COLOR_PALETTE.find((c) => c.id === category.color);
-        return (
-          <li
-            key={category.id}
-            className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
-          >
-            <span
-              aria-hidden
-              className="size-3 rounded-full"
-              style={{ backgroundColor: swatch?.hex }}
-            />
-            <span className="text-sm font-medium">{category.name}</span>
-            <span className="ml-auto text-xs text-muted-foreground">
-              {category.creator.displayName}
-            </span>
-          </li>
-        );
-      })}
+      {categories.map((category) => (
+        <CategoryRow
+          key={category.id}
+          category={category}
+          circle={circle}
+          editing={editingId === category.id}
+          onEditToggle={(open) => setEditingId(open ? category.id : null)}
+          historyOpen={historyId === category.id}
+          onHistoryToggle={(open) => setHistoryId(open ? category.id : null)}
+        />
+      ))}
     </ul>
+  );
+}
+
+function CategoryRow({
+  category,
+  circle,
+  editing,
+  onEditToggle,
+  historyOpen,
+  onHistoryToggle,
+}: {
+  category: Category;
+  circle: Circle;
+  editing: boolean;
+  onEditToggle: (open: boolean) => void;
+  historyOpen: boolean;
+  onHistoryToggle: (open: boolean) => void;
+}) {
+  const writable = circle.status === "active";
+  const swatch = COLOR_PALETTE.find((c) => c.id === category.color);
+  const isArchived = category.status === "archived";
+
+  return (
+    <li className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
+      {editing ? (
+        <EditCategoryForm category={category} onClose={() => onEditToggle(false)} />
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            aria-hidden
+            className="size-3 rounded-full"
+            style={{ backgroundColor: swatch?.hex }}
+          />
+          <span className={cn("text-sm font-medium", isArchived && "text-muted-foreground")}>
+            {category.name}
+          </span>
+          {isArchived ? (
+            <span className="rounded-full border border-border bg-muted px-2 py-px text-xs text-muted-foreground">
+              Archived
+            </span>
+          ) : null}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {category.creator.displayName}
+          </span>
+          {writable && category.canEditFields && !isArchived ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onEditToggle(true)}
+              aria-label={`Edit ${category.name}`}
+            >
+              Edit
+            </Button>
+          ) : null}
+          {writable && category.canArchive ? (
+            <LifecycleButton category={category} action={isArchived ? "restore" : "archive"} />
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={historyOpen}
+            onClick={() => onHistoryToggle(!historyOpen)}
+            aria-label={`History of ${category.name}`}
+          >
+            History
+          </Button>
+        </div>
+      )}
+
+      {historyOpen ? (
+        // Mounted only while expanded, so only the open row subscribes to its
+        // paginated history query.
+        <div className="mt-3 border-t border-border pt-3">
+          <CategoryHistory circleId={circle.id} categoryId={category.id} name={category.name} />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * The inline rename/recolor form (creator-only — the server enforces it, ADR 0015).
+ * Sends only the fields that differ from the current Category, so an untouched
+ * submit is a server-side no-op that records no history.
+ */
+function EditCategoryForm({ category, onClose }: { category: Category; onClose: () => void }) {
+  const updateCategory = useUpdateCategory();
+  const [name, setName] = useState(category.name);
+  const [color, setColor] = useState(category.color);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const inputId = `edit-category-${category.id}`;
+  const errorId = `${inputId}-error`;
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+
+    const parsed = categoryUpdateSchema.safeParse({ name, color });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "Please check the category details.");
+      return;
+    }
+
+    const changedName = parsed.data.name !== category.name ? parsed.data.name : undefined;
+    const changedColor = parsed.data.color !== category.color ? parsed.data.color : undefined;
+    if (changedName === undefined && changedColor === undefined) {
+      onClose(); // nothing changed — just close, no write
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await updateCategory({
+        categoryId: category.id,
+        ...(changedName !== undefined ? { name: changedName } : {}),
+        ...(changedColor !== undefined ? { color: changedColor } : {}),
+      });
+      onClose();
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      setError(
+        /already exists/i.test(message)
+          ? "A category with this name already exists for this type."
+          : "Couldn't save the category. Please try again.",
+      );
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-3" aria-label={`Edit ${category.name}`}>
+      <div className="space-y-1.5">
+        <label htmlFor={inputId} className="block text-sm font-medium">
+          Name
+        </label>
+        <input
+          id={inputId}
+          name="name"
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+            if (error) {
+              setError(null);
+            }
+          }}
+          maxLength={LIMITS.categoryNameMax}
+          autoComplete="off"
+          aria-invalid={error != null}
+          aria-describedby={error ? errorId : undefined}
+          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
+        />
+      </div>
+
+      <ColorPicker legend="Color" color={color} onChange={setColor} />
+
+      {error ? (
+        <p id={errorId} role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="flex gap-2">
+        <Button type="submit" disabled={submitting || name.trim() === ""}>
+          {submitting ? "Saving…" : "Save"}
+        </Button>
+        <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+const LIFECYCLE_COPY = {
+  archive: { idle: "Archive", busy: "Archiving…", error: "Couldn't archive the category." },
+  restore: { idle: "Restore", busy: "Restoring…", error: "Couldn't restore the category." },
+};
+
+/**
+ * The archive/restore moderation affordance (creator or Owner — the server enforces
+ * it, ADR 0015). The action derives from the row's own `status`, so the widened
+ * active+archived list shows Archive on active rows and Restore on archived ones.
+ * Failures surface inline next to the action (`role="alert"`), never swallowed.
+ */
+function LifecycleButton({
+  category,
+  action,
+}: {
+  category: Category;
+  action: "archive" | "restore";
+}) {
+  const archiveCategory = useArchiveCategory();
+  const restoreCategory = useRestoreCategory();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const copy = LIFECYCLE_COPY[action];
+
+  const onClick = async () => {
+    setPending(true);
+    setError(null);
+    try {
+      const run = action === "archive" ? archiveCategory : restoreCategory;
+      await run({ categoryId: category.id });
+    } catch (caught) {
+      console.error(`${action}Category failed`, caught);
+      setError(`${copy.error} Please try again.`);
+    } finally {
+      // Always clear the in-flight flag: on success the row stays mounted in the
+      // widened list and `action` flips with the new `status` (the TXN-3 lesson,
+      // issue #82).
+      setPending(false);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        onClick={onClick}
+        aria-label={`${copy.idle} ${category.name}`}
+      >
+        {pending ? copy.busy : copy.idle}
+      </Button>
+      {error ? (
+        <p role="alert" className="w-full text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/** The Category History panel (PRD story 78) — the paginated audit fed into the shared
+ * {@link HistoryList}. Kept a thin wrapper so the data hook stays out of the row shell. */
+function CategoryHistory({
+  circleId,
+  categoryId,
+  name,
+}: {
+  circleId: Circle["id"];
+  categoryId: Category["id"];
+  name: string;
+}) {
+  const { events, status, loadMore } = useCategoryHistory(circleId, categoryId);
+  return (
+    <HistoryList events={events} status={status} loadMore={loadMore} label={`${name} history`} />
   );
 }

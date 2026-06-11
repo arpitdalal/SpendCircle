@@ -1,11 +1,29 @@
-import { categoryInputSchema, colorLabel } from "@spend-circle/domain";
+import { categoryInputSchema, categoryUpdateSchema, colorLabel } from "@spend-circle/domain";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel.js";
 import { type MutationCtx, mutation, type QueryCtx, query } from "./_generated/server.js";
-import { type AuthorizedCircle, requireCircleAccess, resolveCircleAccess } from "./guard.js";
-import { categoryEntity, recordEvent } from "./history.js";
+import {
+  type AuthorizedCircle,
+  requireCategoryAccess,
+  requireCircleAccess,
+  resolveCircleAccess,
+} from "./guard.js";
+import {
+  categoryEntity,
+  type HistoryChange,
+  paginateEntityHistory,
+  recordEvent,
+} from "./history.js";
+import { newActorCache, toHistoryEventView } from "./historyView.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
+
+/** The viewer a Category view is shaped FOR — drives the capability flags below. */
+export interface CategoryViewer {
+  userId: Doc<"users">["_id"];
+  isOwner: boolean;
+}
 
 /**
  * A Category shaped for the client. The creator is surfaced as a Member
@@ -13,14 +31,29 @@ const transactionType = v.union(v.literal("expense"), v.literal("income"));
  * identity (ADR 0018) — never a raw user id — so the UI can attribute the
  * Category without re-resolving. Categories created by a Removed Member stay
  * active (PRD story 53); the frozen removed-member identity is what shows.
+ *
+ * `canEditFields` is resolved HERE against the viewer: only the creator may edit
+ * a Category's name/color (CAT-2), and because it compares the stored
+ * `creatorUserId` to the caller's stable User id, a Removed→rejoined creator
+ * regains it automatically (PRD 44 applied to Categories). `canArchive` is the
+ * moderation counterpart — the creator OR the Owner may archive/restore (the
+ * Owner moderates lifecycle without gaining field edit, so the two flags are
+ * deliberately distinct). The UI gates its affordances on these flags, but the
+ * server re-checks on every mutation — they are the courtesy, not the
+ * enforcement (ADR 0015), matching `requireCategoryAccess` in `guard.ts`.
  */
-export async function toCategoryView(ctx: QueryCtx, category: Doc<"categories">) {
+export async function toCategoryView(
+  ctx: QueryCtx,
+  category: Doc<"categories">,
+  viewer: CategoryViewer,
+) {
   const creatorMembership = await ctx.db
     .query("members")
     .withIndex("by_circle_and_user", (q) =>
       q.eq("circleId", category.circleId).eq("userId", category.creatorUserId),
     )
     .unique();
+  const isCreator = category.creatorUserId === viewer.userId;
   return {
     id: category._id,
     name: category.name,
@@ -31,6 +64,8 @@ export async function toCategoryView(ctx: QueryCtx, category: Doc<"categories">)
       displayName: creatorMembership?.displayName ?? "Unknown member",
       image: creatorMembership?.image,
     },
+    canEditFields: isCreator,
+    canArchive: isCreator || viewer.isOwner,
   };
 }
 
@@ -133,7 +168,8 @@ export const listCategories = query({
     // `_creationTime` breaks ties when two rows share a `createdAt` millisecond.
     visible.sort((a, b) => b.createdAt - a.createdAt || b._creationTime - a._creationTime);
 
-    return await Promise.all(visible.map((category) => toCategoryView(ctx, category)));
+    const viewer = { userId: access.user._id, isOwner: access.isOwner };
+    return await Promise.all(visible.map((category) => toCategoryView(ctx, category, viewer)));
   },
 });
 
@@ -162,5 +198,263 @@ export const createCategory = mutation({
       throw new Error("A category with this name already exists for this type");
     }
     return result.categoryId;
+  },
+});
+
+/**
+ * Edits a Category's fields — name and/or color (CAT-2; PRD stories 55, 56). Both
+ * args are optional: an absent field is left unchanged, and only the fields that
+ * actually change are patched and recorded, so a no-op submit writes nothing and
+ * leaves no spurious history (the TXN-2 contract applied to Categories).
+ *
+ * Flow: `requireCategoryAccess` (folds in `resolveCircleAccess`, ADR 0015) →
+ * `assertWritable` (an archived Circle is read-only) → **creator check**: only the
+ * Member who created the Category may edit its fields — the Owner moderates
+ * lifecycle (archive/restore below) but may NOT rename or recolor another
+ * Member's Category, so this gates on `isCreator`, never `canArchive` → reject an
+ * **Archived Category** (frozen until restored, like an Archived Transaction) →
+ * validate present fields against the shared Zod schema → re-run uniqueness on a
+ * rename (case-insensitive, per Circle+type, INCLUDING archived names — the same
+ * invariant create enforces) → patch → `recordEvent` with per-field `from`/`to`
+ * (color as its display label, never the raw id — ADR 0018).
+ *
+ * A case-only rename of the SAME Category (e.g. "gas" → "Gas") is allowed: its
+ * `nameLower` lookup finds itself, which is not a collision.
+ *
+ * Anti-enumeration (ADR 0016): a missing Category and one whose Circle the caller
+ * can't access both throw the same "Category not found".
+ */
+export const updateCategory = mutation({
+  args: {
+    categoryId: v.id("categories"),
+    name: v.optional(v.string()),
+    color: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireCategoryAccess(ctx, args.categoryId);
+    access.assertWritable(); // an archived Circle is read-only (PRD story 79)
+
+    // Only the creator edits fields (PRD story 55). The Owner's moderation power is
+    // archive/restore, NOT field edits (PRD story 56) — same generic message either way.
+    if (!access.isCreator) {
+      throw new Error("Only the member who created this category can edit it");
+    }
+
+    const category = access.category;
+    // An Archived Category is frozen — restore it first. Blocked here, never by the
+    // UI alone (ADR 0015); its name stays reserved while archived (PRD story 54).
+    if (category.status !== "active") {
+      throw new Error("Archived categories can't be edited");
+    }
+
+    const input = categoryUpdateSchema.parse({ name: args.name, color: args.color });
+
+    const patch: Partial<Doc<"categories">> = {};
+    const changes: HistoryChange[] = [];
+
+    if (input.name !== undefined && input.name !== category.name) {
+      const nameLower = input.name.toLowerCase();
+      // Re-run uniqueness on rename, across ALL statuses (archived names stay
+      // reserved) — finding ITSELF (a case-only rename) is not a collision.
+      const existing = await ctx.db
+        .query("categories")
+        .withIndex("by_circle_type_name", (q) =>
+          q.eq("circleId", category.circleId).eq("type", category.type).eq("nameLower", nameLower),
+        )
+        .first();
+      if (existing && existing._id !== category._id) {
+        throw new Error("A category with this name already exists for this type");
+      }
+      patch.name = input.name;
+      patch.nameLower = nameLower;
+      changes.push({ field: "name", from: category.name, to: input.name });
+    }
+
+    if (input.color !== undefined && input.color !== category.color) {
+      patch.color = input.color;
+      // Frozen display labels, never the raw color id (ADR 0018).
+      changes.push({
+        field: "color",
+        from: colorLabel(category.color),
+        to: colorLabel(input.color),
+      });
+    }
+
+    // No real change ⇒ a true no-op: no patch, no spurious history.
+    if (changes.length === 0) {
+      return args.categoryId;
+    }
+
+    await ctx.db.patch(category._id, patch);
+
+    await recordEvent(ctx, {
+      entity: categoryEntity(category._id),
+      actor: access.membership,
+      action: "edited",
+      changes,
+    });
+
+    return args.categoryId;
+  },
+});
+
+/**
+ * Archives a Category — removes it from future Transaction selection without
+ * deleting it (CAT-2; PRD stories 54, 57, 58). An Archived Category stays attached
+ * to historical Transactions and stays usable as a filter, but cannot be NEWLY
+ * added to Transactions (TXN-1/2 enforce that side), and its name stays reserved
+ * until restored, so historical meaning is never split.
+ *
+ * Flow: `requireCategoryAccess` → `assertWritable` (an archived Circle is
+ * read-only, so neither archive nor restore works there) → permission:
+ * `canArchive` = the creator OR the Owner. This is deliberately a DIFFERENT
+ * predicate than `isCreator` (which gates field edits): the Owner moderates
+ * lifecycle here but `updateCategory` still rejects an Owner renaming another
+ * Member's Category, so archiving never becomes a field-edit backdoor.
+ *
+ * Archiving an already-archived Category is REJECTED (not a silent no-op) so a
+ * stale UI or a lost race surfaces rather than masquerading as success (README §4).
+ * Records an `"archived"` event with the moderator as actor and no field changes
+ * (the lifecycle flip is the event — ADR 0018).
+ */
+export const archiveCategory = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, args) => {
+    const access = await requireCategoryAccess(ctx, args.categoryId);
+    access.assertWritable(); // an archived Circle is read-only (PRD story 79)
+
+    // The creator OR the Owner may archive (PRD story 56). NOT `isCreator`: the
+    // Owner moderates lifecycle without gaining field-edit rights.
+    if (!access.canArchive) {
+      throw new Error("Only the creator or the owner can archive this category");
+    }
+
+    const category = access.category;
+    // Reject a redundant archive rather than silently succeeding — a no-op would
+    // hide a stale UI or a concurrent race (README §4 no silent failures).
+    if (category.status !== "active") {
+      throw new Error("Category is already archived");
+    }
+
+    await ctx.db.patch(category._id, { status: "archived", archivedAt: Date.now() });
+
+    await recordEvent(ctx, {
+      entity: categoryEntity(category._id),
+      actor: access.membership, // the moderator who archived it
+      action: "archived",
+      changes: [],
+    });
+
+    return args.categoryId;
+  },
+});
+
+/**
+ * Restores an Archived Category back to active (CAT-2; PRD story 58) — it becomes
+ * selectable on Transactions again and editable by its creator. The mirror of
+ * {@link archiveCategory}: same `canArchive` permission (creator or Owner), same
+ * `assertWritable`, and the same anti-enumeration "Category not found".
+ *
+ * Restore re-checks the name invariant defensively: `createCategory` reserves
+ * archived names, so an active same-name Category shouldn't exist — but if one
+ * somehow does, restoring must fail rather than seat two active Categories on one
+ * name (the uniqueness invariant stays airtight). Restoring a Category that is
+ * already active is REJECTED for the same no-silent-failure reason archiving a
+ * redundant one is. Records a `"restored"` event with the moderator as actor and
+ * no field changes, and clears `archivedAt`.
+ */
+export const restoreCategory = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, args) => {
+    const access = await requireCategoryAccess(ctx, args.categoryId);
+    access.assertWritable(); // an archived Circle is read-only (PRD story 79)
+
+    if (!access.canArchive) {
+      throw new Error("Only the creator or the owner can restore this category");
+    }
+
+    const category = access.category;
+    if (category.status !== "archived") {
+      throw new Error("Category is not archived");
+    }
+
+    // Defensive collision re-check: any OTHER Category holding this name (in this
+    // Circle+type, any status) blocks the restore. The index range is one exact
+    // nameLower key — bounded by construction, not an unbounded scan.
+    const sameName = await ctx.db
+      .query("categories")
+      .withIndex("by_circle_type_name", (q) =>
+        q
+          .eq("circleId", category.circleId)
+          .eq("type", category.type)
+          .eq("nameLower", category.nameLower),
+      )
+      .collect();
+    if (sameName.some((other) => other._id !== category._id)) {
+      throw new Error("A category with this name already exists for this type");
+    }
+
+    // Setting `archivedAt` to undefined removes the field (it is schema-optional).
+    await ctx.db.patch(category._id, { status: "active", archivedAt: undefined });
+
+    await recordEvent(ctx, {
+      entity: categoryEntity(category._id),
+      actor: access.membership, // the moderator who restored it
+      action: "restored",
+      changes: [],
+    });
+
+    return args.categoryId;
+  },
+});
+
+/**
+ * One newest-first page of a Category's **Category History** (CAT-2; PRD story 78)
+ * — the immutable created / edited / archived / restored events with the acting
+ * Member, changed field names, and old/new values. Any current Member of the
+ * Circle may view it, for an Archived Category too (history is a read surface).
+ *
+ * The exact mirror of `listTransactionHistory` (TXN-4), reusing the same
+ * `paginateEntityHistory` read over the `by_entity` index (README §4: history is
+ * unbounded-growth, so it must never `.collect()` the whole audit) and the same
+ * shared event view, so the web's `HistoryList` renders both.
+ *
+ * Anti-enumeration (ADR 0016): a malformed id, a missing Category, an inaccessible
+ * Circle, or a wrong-Circle Category all return the same empty, exhausted page —
+ * indistinguishable from a Category with no history, so nothing leaks. (A paginated
+ * query returns an empty page rather than `null` so `usePaginatedQuery` stays on
+ * its normal lifecycle, exactly like the Transaction History read.)
+ */
+export const listCategoryHistory = query({
+  args: {
+    circleId: v.string(),
+    categoryId: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const emptyPage = { page: [], isDone: true, continueCursor: "" };
+    const categoryId = ctx.db.normalizeId("categories", args.categoryId);
+    const circleId = ctx.db.normalizeId("circles", args.circleId);
+    if (!categoryId || !circleId) {
+      return emptyPage;
+    }
+    const access = await resolveCircleAccess(ctx, circleId);
+    if (!access) {
+      return emptyPage;
+    }
+    const category = await ctx.db.get(categoryId);
+    if (!category || category.circleId !== circleId) {
+      return emptyPage;
+    }
+    const result = await paginateEntityHistory(
+      ctx,
+      categoryEntity(categoryId),
+      args.paginationOpts,
+    );
+    const cache = newActorCache();
+    const page = await Promise.all(
+      result.page.map((event) => toHistoryEventView(ctx, event, cache)),
+    );
+    return { ...result, page };
   },
 });

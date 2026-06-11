@@ -1,4 +1,4 @@
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvex } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -105,6 +105,69 @@ async function addMember(
 }
 
 const EXPENSE = { name: "Groceries", type: "expense", color: "green" } as const;
+
+type T = TestConvex<typeof schema>;
+
+/** Creates a Category through the real mutation AS `user` (CAT-2 scenarios switch
+ * identities mid-test: the creator writes, then the Owner or a bystander acts). */
+async function createCategoryAs(
+  t: T,
+  user: Doc<"users">,
+  circleId: Id<"circles">,
+  over: Partial<typeof EXPENSE> = {},
+) {
+  mockCurrentUser.mockResolvedValue(user);
+  return await t.mutation(api.categories.createCategory, { circleId, ...EXPENSE, ...over });
+}
+
+/** The full CAT-2 cast: an active Circle with its Owner, a non-owner Member who
+ * creates a Category, and a second non-owner bystander Member. */
+async function seedCategoryScenario(t: T, opts: { archivedCircle?: boolean } = {}) {
+  const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+  const creator = await t.run((ctx) =>
+    addMember(ctx, circleId, "creator@example.com", "Cleo Creator"),
+  );
+  const bystander = await t.run((ctx) =>
+    addMember(ctx, circleId, "bystander@example.com", "Bo Bystander"),
+  );
+  const categoryId = await createCategoryAs(t, creator, circleId);
+  if (opts.archivedCircle) {
+    await t.run((ctx) => ctx.db.patch(circleId, { status: "archived", archivedAt: Date.now() }));
+  }
+  return { owner, creator, bystander, circleId, categoryId };
+}
+
+/** An entity's recorded history rows, oldest first. */
+async function eventsFor(t: T, entityId: string) {
+  return await t.run((ctx) =>
+    ctx.db
+      .query("histories")
+      .withIndex("by_entity", (q) => q.eq("entityId", entityId))
+      .collect(),
+  );
+}
+
+/** Flips the creator's membership row (removal / rejoin reactivates the SAME row). */
+async function setMemberStatus(
+  t: T,
+  circleId: Id<"circles">,
+  userId: Id<"users">,
+  status: "active" | "removed",
+) {
+  await t.run(async (ctx) => {
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_circle_and_user", (q) => q.eq("circleId", circleId).eq("userId", userId))
+      .unique();
+    if (!member) {
+      throw new Error("seed failed");
+    }
+    await ctx.db.patch(member._id, {
+      status,
+      ...(status === "removed" ? { removedAt: Date.now() } : { removedAt: undefined }),
+    });
+  });
+}
 
 describe("createCategory — happy path", () => {
   it("persists an active expense category with nameLower, creator, and a create event", async () => {
@@ -503,5 +566,585 @@ describe("listCategories", () => {
     const { circleId } = await t.run((ctx) => seedCircle(ctx));
     mockCurrentUser.mockResolvedValue(null);
     expect(await t.query(api.categories.listCategories, { circleId, type: "expense" })).toBeNull();
+  });
+
+  it("resolves capability flags per viewer (creator / Owner / bystander)", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, creator, bystander, circleId } = await seedCategoryScenario(t);
+
+    const as = async (user: Doc<"users">) => {
+      mockCurrentUser.mockResolvedValue(user);
+      const list = await t.query(api.categories.listCategories, { circleId, type: "expense" });
+      return list?.[0];
+    };
+
+    // The creator may field-edit and archive their own Category.
+    expect(await as(creator)).toMatchObject({ canEditFields: true, canArchive: true });
+    // The Owner may moderate (archive/restore) but NOT field-edit another's Category.
+    expect(await as(owner)).toMatchObject({ canEditFields: false, canArchive: true });
+    // A non-creator, non-owner Member may do neither.
+    expect(await as(bystander)).toMatchObject({ canEditFields: false, canArchive: false });
+  });
+});
+
+describe("updateCategory — happy path", () => {
+  it("renames and recolors, updating nameLower and recording one edited event", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await t.mutation(api.categories.updateCategory, {
+      categoryId,
+      name: "Food",
+      color: "teal",
+    });
+
+    await t.run(async (ctx) => {
+      const category = await ctx.db.get(categoryId);
+      expect(category?.name).toBe("Food");
+      expect(category?.nameLower).toBe("food");
+      expect(category?.color).toBe("teal");
+    });
+
+    const events = await eventsFor(t, categoryId);
+    expect(events).toHaveLength(2); // created + edited
+    const edited = events[1];
+    expect(edited?.action).toBe("edited");
+    expect(edited?.changes).toEqual([
+      { field: "name", from: "Groceries", to: "Food" },
+      { field: "color", from: "Green", to: "Teal" }, // display labels, never raw ids
+    ]);
+  });
+
+  it("records only the field that changed (name-only edit)", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await t.mutation(api.categories.updateCategory, { categoryId, name: "Food" });
+
+    const events = await eventsFor(t, categoryId);
+    expect(events[1]?.changes).toEqual([{ field: "name", from: "Groceries", to: "Food" }]);
+  });
+
+  it("records only the field that changed (color-only edit)", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await t.mutation(api.categories.updateCategory, { categoryId, color: "amber" });
+
+    const events = await eventsFor(t, categoryId);
+    expect(events[1]?.changes).toEqual([{ field: "color", from: "Green", to: "Amber" }]);
+  });
+
+  it("treats an unchanged submit as a no-op: no patch, no spurious history", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await t.mutation(api.categories.updateCategory, {
+      categoryId,
+      name: "Groceries",
+      color: "green",
+    });
+
+    expect(await eventsFor(t, categoryId)).toHaveLength(1); // only the create
+  });
+
+  it("allows a case-only rename of the SAME category and records it", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await t.mutation(api.categories.updateCategory, { categoryId, name: "GROCERIES" });
+
+    await t.run(async (ctx) => {
+      const category = await ctx.db.get(categoryId);
+      expect(category?.name).toBe("GROCERIES");
+      expect(category?.nameLower).toBe("groceries");
+    });
+    const events = await eventsFor(t, categoryId);
+    expect(events[1]?.changes).toEqual([{ field: "name", from: "Groceries", to: "GROCERIES" }]);
+  });
+
+  it("trims the new name before storing", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await t.mutation(api.categories.updateCategory, { categoryId, name: "  Dining  " });
+
+    await t.run(async (ctx) => {
+      const category = await ctx.db.get(categoryId);
+      expect(category?.name).toBe("Dining");
+      expect(category?.nameLower).toBe("dining");
+    });
+  });
+});
+
+describe("updateCategory — permission matrix (creator-only field edits)", () => {
+  it("denies the Owner renaming another member's category", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(owner);
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Owner Rename" }),
+    ).rejects.toThrow("Only the member who created this category can edit it");
+  });
+
+  it("denies the Owner recoloring another member's category", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(owner);
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, color: "red" }),
+    ).rejects.toThrow("Only the member who created this category can edit it");
+  });
+
+  it("denies a non-creator member", async () => {
+    const t = convexTest(schema, modules);
+    const { bystander, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(bystander);
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Hijack" }),
+    ).rejects.toThrow("Only the member who created this category can edit it");
+  });
+
+  it("denies a Removed creator, then allows them again after rejoin", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await setMemberStatus(t, circleId, creator._id, "removed");
+    // Removed ≡ inaccessible: the same anti-enumeration throw as a missing Category.
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Food" }),
+    ).rejects.toThrow("Category not found");
+
+    // Rejoin reactivates the SAME member row; field-edit rights return (PRD 44).
+    await setMemberStatus(t, circleId, creator._id, "active");
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Food" }),
+    ).resolves.toBeTruthy();
+  });
+
+  it("denies a non-member and an unauthenticated caller with the same generic error", async () => {
+    const t = convexTest(schema, modules);
+    const { categoryId } = await seedCategoryScenario(t);
+
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+    mockCurrentUser.mockResolvedValue(stranger);
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Food" }),
+    ).rejects.toThrow("Category not found");
+
+    mockCurrentUser.mockResolvedValue(null);
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Food" }),
+    ).rejects.toThrow("Category not found");
+  });
+});
+
+describe("updateCategory — rename uniqueness", () => {
+  it("rejects renaming into an existing active name of the same type", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    await createCategoryAs(t, creator, circleId, { name: "Gas", color: "amber" });
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Gas" }),
+    ).rejects.toThrow(/already exists/);
+  });
+
+  it("rejects a case-only collision with ANOTHER category", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    await createCategoryAs(t, creator, circleId, { name: "Gas", color: "amber" });
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "GAS" }),
+    ).rejects.toThrow(/already exists/);
+  });
+
+  it("rejects renaming into an ARCHIVED name (still reserved)", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    const archivedId = await createCategoryAs(t, creator, circleId, {
+      name: "Gas",
+      color: "amber",
+    });
+    await t.mutation(api.categories.archiveCategory, { categoryId: archivedId });
+
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "gas" }),
+    ).rejects.toThrow(/already exists/);
+  });
+
+  it("allows renaming to a free name and to a name held by the OTHER type", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    await createCategoryAs(t, creator, circleId, { name: "Refund", type: "income" });
+    mockCurrentUser.mockResolvedValue(creator);
+
+    // "Refund" is taken by an Income Category — a different uniqueness scope.
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Refund" }),
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe("updateCategory — input edges and lifecycle", () => {
+  it.each([
+    ["empty name", { name: "" }],
+    ["whitespace-only name", { name: "   " }],
+    ["over-long name", { name: "x".repeat(41) }],
+    ["invalid color", { color: "chartreuse" }],
+  ])("rejects %s", async (_label, patch) => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, ...patch }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects edits in an archived Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t, { archivedCircle: true });
+    mockCurrentUser.mockResolvedValue(creator);
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Food" }),
+    ).rejects.toThrow("Circle is archived");
+  });
+
+  it("rejects edits to an Archived Category (frozen until restored)", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+
+    await expect(
+      t.mutation(api.categories.updateCategory, { categoryId, name: "Food" }),
+    ).rejects.toThrow("Archived categories can't be edited");
+  });
+});
+
+describe("archiveCategory / restoreCategory — moderation", () => {
+  it("lets the creator archive their own category and records the event", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+
+    await t.run(async (ctx) => {
+      const category = await ctx.db.get(categoryId);
+      expect(category?.status).toBe("archived");
+      expect(category?.archivedAt).toEqual(expect.any(Number));
+    });
+    const events = await eventsFor(t, categoryId);
+    const archived = events[1];
+    expect(archived?.action).toBe("archived");
+    expect(archived?.changes).toEqual([]); // the lifecycle flip IS the event — no `to`
+    expect(archived?.actorMemberId).toBeTruthy();
+  });
+
+  it("lets the Owner archive and restore ANY member's category, with the Owner as actor", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+    await t.mutation(api.categories.restoreCategory, { categoryId });
+
+    await t.run(async (ctx) => {
+      const category = await ctx.db.get(categoryId);
+      expect(category?.status).toBe("active");
+      expect(category?.archivedAt).toBeUndefined();
+
+      const ownerMember = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_user", (q) => q.eq("circleId", circleId).eq("userId", owner._id))
+        .unique();
+      const events = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", categoryId))
+        .collect();
+      expect(events.map((event) => event.action)).toEqual(["created", "archived", "restored"]);
+      expect(events[1]?.actorMemberId).toBe(ownerMember?._id);
+      expect(events[2]?.actorMemberId).toBe(ownerMember?._id);
+    });
+  });
+
+  it("lets the creator restore their own archived category", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).resolves.toBeTruthy();
+  });
+
+  it("denies a non-creator, non-owner member both archive and restore", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, bystander, categoryId } = await seedCategoryScenario(t);
+
+    mockCurrentUser.mockResolvedValue(bystander);
+    await expect(t.mutation(api.categories.archiveCategory, { categoryId })).rejects.toThrow(
+      "Only the creator or the owner can archive this category",
+    );
+
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+
+    mockCurrentUser.mockResolvedValue(bystander);
+    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toThrow(
+      "Only the creator or the owner can restore this category",
+    );
+  });
+
+  it("denies a Removed Member and a non-member with the generic error", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    await setMemberStatus(t, circleId, creator._id, "removed");
+    mockCurrentUser.mockResolvedValue(creator);
+    await expect(t.mutation(api.categories.archiveCategory, { categoryId })).rejects.toThrow(
+      "Category not found",
+    );
+
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+    mockCurrentUser.mockResolvedValue(stranger);
+    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toThrow(
+      "Category not found",
+    );
+  });
+
+  it("rejects a redundant archive and a redundant restore (no silent no-op)", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toThrow(
+      "Category is not archived",
+    );
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+    await expect(t.mutation(api.categories.archiveCategory, { categoryId })).rejects.toThrow(
+      "Category is already archived",
+    );
+  });
+
+  it("rejects archive and restore in an archived Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+    await t.run((ctx) => ctx.db.patch(circleId, { status: "archived", archivedAt: Date.now() }));
+
+    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toThrow(
+      "Circle is archived",
+    );
+    await t.run((ctx) => ctx.db.patch(categoryId, { status: "active" }));
+    await expect(t.mutation(api.categories.archiveCategory, { categoryId })).rejects.toThrow(
+      "Circle is archived",
+    );
+  });
+
+  it("rejects a restore that would collide with a now-active same-name category", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+
+    // CAT-1 reserves archived names, so plant the colliding active row directly —
+    // the defensive re-check must still hold if the invariant is ever bypassed.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("categories", {
+        circleId,
+        name: "groceries",
+        nameLower: "groceries",
+        type: "expense",
+        color: "red",
+        creatorUserId: creator._id,
+        status: "active",
+        createdAt: Date.now(),
+      });
+    });
+
+    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toThrow(
+      /already exists/,
+    );
+    await t.run(async (ctx) => {
+      const category = await ctx.db.get(categoryId);
+      expect(category?.status).toBe("archived"); // unchanged — the restore failed atomically
+    });
+  });
+
+  it("flips the default list live: archived drops out, restore brings it back", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+    const activeNames = async () =>
+      (await t.query(api.categories.listCategories, { circleId, type: "expense" }))?.map(
+        (category) => category.name,
+      );
+
+    expect(await activeNames()).toEqual(["Groceries"]);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+    expect(await activeNames()).toEqual([]);
+    await t.mutation(api.categories.restoreCategory, { categoryId });
+    expect(await activeNames()).toEqual(["Groceries"]);
+  });
+});
+
+describe("listCategoryHistory", () => {
+  it("returns the full lifecycle newest-first with actors, labels, and no raw ids", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, creator, circleId, categoryId } = await seedCategoryScenario(t);
+
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.updateCategory, { categoryId, name: "Food", color: "teal" });
+    mockCurrentUser.mockResolvedValue(owner);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+    await t.mutation(api.categories.restoreCategory, { categoryId });
+
+    // Any current Member may read Category History — the bystander's view works too,
+    // but read as the creator here to also assert actor identity resolution.
+    mockCurrentUser.mockResolvedValue(creator);
+    const result = await t.query(api.categories.listCategoryHistory, {
+      circleId,
+      categoryId,
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+
+    expect(result.page.map((event) => event.action)).toEqual([
+      "restored",
+      "archived",
+      "edited",
+      "created",
+    ]);
+    expect(result.page.map((event) => event.actor?.displayName)).toEqual([
+      "Olive Owner",
+      "Olive Owner",
+      "Cleo Creator",
+      "Cleo Creator",
+    ]);
+    const edited = result.page[2];
+    expect(edited?.changes).toEqual([
+      { field: "name", from: "Groceries", to: "Food" },
+      { field: "color", from: "Green", to: "Teal" },
+    ]);
+    // No raw internal id ever appears in the frozen change values (PRD story 80).
+    for (const event of result.page) {
+      for (const change of event.changes) {
+        expect(change.from ?? "").not.toMatch(/^[a-z0-9]{20,}/);
+        expect(change.to ?? "").not.toMatch(/^[a-z0-9]{20,}/);
+      }
+    }
+  });
+
+  it("paginates at the source: a bounded first page and a cursor to the next", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+
+    // created + 4 edits = 5 events, past a 2-item page.
+    for (const name of ["A", "B", "C", "D"]) {
+      await t.mutation(api.categories.updateCategory, { categoryId, name });
+    }
+
+    const first = await t.query(api.categories.listCategoryHistory, {
+      circleId,
+      categoryId,
+      paginationOpts: { numItems: 2, cursor: null },
+    });
+    expect(first.page).toHaveLength(2);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.categories.listCategoryHistory, {
+      circleId,
+      categoryId,
+      paginationOpts: { numItems: 2, cursor: first.continueCursor },
+    });
+    expect(second.page).toHaveLength(2);
+    expect(second.page[0]?.id).not.toBe(first.page[0]?.id);
+  });
+
+  it("collapses missing, inaccessible, malformed, and wrong-Circle to the same empty page", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, circleId, categoryId } = await seedCategoryScenario(t);
+    const emptyPage = { page: [], isDone: true, continueCursor: "" };
+    const paginationOpts = { numItems: 10, cursor: null };
+
+    // A non-member.
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+    mockCurrentUser.mockResolvedValue(stranger);
+    expect(
+      await t.query(api.categories.listCategoryHistory, { circleId, categoryId, paginationOpts }),
+    ).toEqual(emptyPage);
+
+    // Unauthenticated.
+    mockCurrentUser.mockResolvedValue(null);
+    expect(
+      await t.query(api.categories.listCategoryHistory, { circleId, categoryId, paginationOpts }),
+    ).toEqual(emptyPage);
+
+    // Malformed ids (raw strings from the URL).
+    mockCurrentUser.mockResolvedValue(creator);
+    expect(
+      await t.query(api.categories.listCategoryHistory, {
+        circleId: "nonsense",
+        categoryId: "garbage",
+        paginationOpts,
+      }),
+    ).toEqual(emptyPage);
+
+    // A category belonging to a DIFFERENT Circle than the URL's.
+    const otherCircleId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("circles", {
+        name: "Other",
+        kind: "regular",
+        currency: "USD",
+        color: "blue",
+        mark: "O",
+        ownerUserId: creator._id,
+        status: "active",
+        currencyLocked: false,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert("members", {
+        circleId: id,
+        userId: creator._id,
+        role: "owner",
+        status: "active",
+        displayName: creator.displayName,
+        joinedAt: Date.now(),
+      });
+      return id;
+    });
+    expect(
+      await t.query(api.categories.listCategoryHistory, {
+        circleId: otherCircleId,
+        categoryId,
+        paginationOpts,
+      }),
+    ).toEqual(emptyPage);
+  });
+
+  it("remains readable for an ARCHIVED category (history is a read surface)", async () => {
+    const t = convexTest(schema, modules);
+    const { creator, bystander, circleId, categoryId } = await seedCategoryScenario(t);
+    mockCurrentUser.mockResolvedValue(creator);
+    await t.mutation(api.categories.archiveCategory, { categoryId });
+
+    // Any current Member — even one with no edit/moderation rights — may read it.
+    mockCurrentUser.mockResolvedValue(bystander);
+    const result = await t.query(api.categories.listCategoryHistory, {
+      circleId,
+      categoryId,
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(result.page.map((event) => event.action)).toEqual(["archived", "created"]);
   });
 });
