@@ -51,6 +51,24 @@ export const convexReactMock = {
   useConvexAuth: vi.fn(() => ({ isAuthenticated: true, isLoading: false })),
 };
 
+/**
+ * The double for `convex-helpers/react` — the same vendor edge as `convex/react`
+ * (its hooks build on `useConvex`/`useQueries` from there). `useCategoriesPage`
+ * consumes the STREAM-paginated `filterCategories` through the helper's
+ * `usePaginatedQuery` (it pins `endCursor` so reactive changes can't shift page
+ * boundaries — see `data.ts`); tests double it with the SAME dispatching mock so
+ * the per-function-name contract modelling below serves both import paths.
+ * Install alongside the convex/react mock:
+ *
+ * ```ts
+ * vi.mock("convex-helpers/react", async () =>
+ *   (await import("~/test/convex-react.js")).convexHelpersReactMock);
+ * ```
+ */
+export const convexHelpersReactMock = {
+  usePaginatedQuery: convexReactMock.usePaginatedQuery,
+};
+
 // Stable function names (`getFunctionName` works on the `anyApi` proxy; reference
 // identity does not). The one place query/mutation identity is encoded.
 const NAME = {

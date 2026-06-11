@@ -2,6 +2,13 @@ import { api } from "@spend-circle/convex";
 import type { ComparisonRangeMonths, PlainMonth, TransactionType } from "@spend-circle/domain";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+// The stream-pagination variant of usePaginatedQuery. A query that paginates a
+// convex-helpers STREAM (filterCategories) has no journal to pin page bounds, so
+// the reactive client must pass `endCursor` back itself or pages develop holes /
+// duplicates at their boundaries once the underlying rows change after a
+// loadMore. This hook does exactly that; convex/react's version is only correct
+// for queries that call ctx.db's own .paginate().
+import { usePaginatedQuery as useStreamPaginatedQuery } from "convex-helpers/react";
 import { MOCKS } from "./env.js";
 import {
   MOCK_CATEGORIES,
@@ -116,12 +123,17 @@ export interface CategoriesPage {
  * as an empty, exhausted page (anti-enumeration parity with the history reads —
  * the Circle guard already gated entry). Mock mode narrows the fixtures with the
  * same domain text-match the backend uses and skips the backend (ADR 0006).
+ *
+ * `filterCategories` paginates a convex-helpers stream, so this MUST go through
+ * the stream-aware {@link useStreamPaginatedQuery} (it pins each page's
+ * `endCursor` on loadMore) — the convex/react hook would let reactive
+ * inserts/archives shift page boundaries and skip or duplicate rows.
  */
 export function useCategoriesPage(
   circleId: Circle["id"],
   filters: { type: TransactionType; status: "active" | "archived" | "all"; query?: string },
 ): CategoriesPage {
-  const paginated = usePaginatedQuery(
+  const paginated = useStreamPaginatedQuery(
     api.categories.filterCategories,
     MOCKS ? "skip" : { circleId, ...filters },
     { initialNumItems: CATEGORIES_PAGE_SIZE },

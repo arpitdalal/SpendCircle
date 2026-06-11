@@ -21,6 +21,12 @@ import {
  * is caught here rather than mocked away (ADR 0006).
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+// useCategoriesPage reads the stream-paginated filterCategories through the
+// convex-helpers hook (endCursor pinning) — same vendor edge, same double.
+vi.mock(
+  "convex-helpers/react",
+  async () => (await import("~/test/convex-react.js")).convexHelpersReactMock,
+);
 
 import CircleCategories from "./categories.js";
 
