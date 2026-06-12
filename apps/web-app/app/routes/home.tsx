@@ -2,7 +2,7 @@ import { colorLabel } from "@spend-circle/domain";
 import { href, Link } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Splash } from "~/components/splash.js";
-import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
 import { useMyCircles } from "~/lib/data.js";
 
 /** Home: the User's Circles, Personal Circle first. The default safe route. */
@@ -17,9 +17,12 @@ export default function Home() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-semibold tracking-tight">Your circles</h1>
-        <Button asChild>
-          <Link to={href("/circles/new")}>Create circle</Link>
-        </Button>
+        <Link
+          to={href("/circles/new")}
+          className={buttonVariants({ variant: "default", size: "default" })}
+        >
+          Create circle
+        </Link>
       </div>
       <ul className="grid gap-3 sm:grid-cols-2">
         {circles.map((circle) => (

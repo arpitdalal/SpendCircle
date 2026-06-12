@@ -13,6 +13,7 @@ import { type FormEvent, useState } from "react";
 import { href, Link, useNavigate } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
 import { useCreateCircle } from "~/lib/data.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { useSnackbar } from "~/lib/snackbar.js";
@@ -194,9 +195,9 @@ export default function CreateCircle() {
               Cancel
             </Button>
           ) : (
-            <Button asChild variant="ghost">
-              <Link to={href("/")}>Cancel</Link>
-            </Button>
+            <Link to={href("/")} className={buttonVariants({ variant: "ghost", size: "default" })}>
+              Cancel
+            </Link>
           )}
         </div>
       </form>

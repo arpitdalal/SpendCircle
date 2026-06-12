@@ -1,7 +1,7 @@
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
-import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
 import { cn } from "~/lib/utils.js";
 
 export function FilterPanel({
@@ -20,12 +20,12 @@ export function FilterPanel({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] data-[open]:animate-fade-in" />
+        <Dialog.Popup
           className={cn(
             "fixed z-50 flex flex-col border-border bg-card shadow-xl outline-none",
-            "inset-x-0 bottom-0 max-h-[86vh] rounded-t-xl border-t data-[state=open]:animate-panel-up",
-            "md:inset-y-0 md:right-0 md:left-auto md:h-dvh md:max-h-none md:w-[380px] md:rounded-none md:border-t-0 md:border-l md:data-[state=open]:animate-panel-side",
+            "inset-x-0 bottom-0 max-h-[86vh] rounded-t-xl border-t data-[open]:animate-panel-up",
+            "md:inset-y-0 md:right-0 md:left-auto md:h-dvh md:max-h-none md:w-[380px] md:rounded-none md:border-t-0 md:border-l md:data-[open]:animate-panel-side",
           )}
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -33,20 +33,17 @@ export function FilterPanel({
             <Dialog.Description className="sr-only">
               Adjust filters, then apply or reset them.
             </Dialog.Description>
-            <Dialog.Close asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                className="size-9 p-0"
-                aria-label="Close filters"
-              >
-                <X className="size-4" />
-              </Button>
+            <Dialog.Close
+              type="button"
+              className={cn(buttonVariants({ variant: "ghost" }), "size-9 p-0")}
+              aria-label="Close filters"
+            >
+              <X className="size-4" />
             </Dialog.Close>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
           <div className="flex gap-2 border-t border-border px-4 py-3">{footer}</div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

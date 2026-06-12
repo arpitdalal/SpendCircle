@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
 import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
 import {
   type Circle,
   type PaginatedTransactions,
@@ -96,14 +97,13 @@ export function TransactionList({
               )}
             </span>
             {ledgerMonth && txn.status === "active" && canEdit && txn.canEditFields ? (
-              <Button asChild variant="outline" size="sm">
-                <Link
-                  to={`/circles/${circle.ref}/transactions/${txn.ref}/edit?month=${ledgerMonth}`}
-                  aria-label={`Edit ${txn.title}`}
-                >
-                  Edit
-                </Link>
-              </Button>
+              <Link
+                to={`/circles/${circle.ref}/transactions/${txn.ref}/edit?month=${ledgerMonth}`}
+                aria-label={`Edit ${txn.title}`}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                Edit
+              </Link>
             ) : null}
             {showLifecycle && canEdit && txn.canArchive ? (
               <LifecycleButton
