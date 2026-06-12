@@ -88,6 +88,30 @@ describe("TransactionForm — create", () => {
     await user.keyboard("{Escape}");
   });
 
+  it("filters category options by search query", async () => {
+    const user = userEvent.setup();
+    renderForm(createExpense, {
+      categories: [
+        makeCategoryView({ name: "Groceries", type: "expense" }),
+        makeCategoryView({
+          id: testId<Category["id"]>("cat-gas"),
+          name: "Gas",
+          type: "expense",
+        }),
+      ],
+    });
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const categoryCombo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(categoryCombo);
+    await user.type(categoryCombo, "Groc");
+    expect(await screen.findByRole("option", { name: "Groceries" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Gas" })).not.toBeInTheDocument();
+    await user.clear(categoryCombo);
+    await user.type(categoryCombo, "zzz");
+    expect(await screen.findByText("No matching categories.")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+  });
+
   it("submits a new expense with parsed minor units and the default Paid By", async () => {
     const user = userEvent.setup();
     const { onClose } = renderForm(createExpense, {
@@ -430,7 +454,7 @@ describe("TransactionForm — edit (TXN-2)", () => {
     });
     rerenderForm();
 
-    expect(within(form).getByText(/Snacks · archived ✕/)).toBeInTheDocument();
+    expect(within(form).getByText(/Snacks · archived/)).toBeInTheDocument();
     expect(within(form).getByRole("alert")).toHaveTextContent(/"Snacks" was archived/);
     await user.click(within(form).getByRole("button", { name: "Save changes" }));
     expect(updateTransaction).not.toHaveBeenCalled();

@@ -80,7 +80,6 @@ export function TransactionFormCategorySection({
                             {values.map((id) => {
                               const category = categoryById.get(id);
                               const archived = category?.status === "archived";
-                              const blocking = archived && !alreadyAttached.has(id);
                               const label = category?.name ?? id;
                               return (
                                 <ComboboxChip
@@ -97,7 +96,6 @@ export function TransactionFormCategorySection({
                                 >
                                   {label}
                                   {archived ? " · archived" : ""}
-                                  {blocking ? " ✕" : ""}
                                 </ComboboxChip>
                               );
                             })}
