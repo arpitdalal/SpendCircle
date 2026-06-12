@@ -22,7 +22,7 @@ export interface HistoryState {
   categoryHistory?: CategoryHistoryEvent[];
 }
 
-export function historyDouble<S extends HistoryState>(state: S): EntityDouble {
+export function historyDouble(state: HistoryState): EntityDouble {
   const {
     transactionHistory = [],
     historyStatus = "Exhausted",

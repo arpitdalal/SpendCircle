@@ -15,7 +15,7 @@ export interface CirclesState {
   completeCircleSetup?: Mock;
 }
 
-export function circlesDouble<S extends CirclesState>(state: S): EntityDouble {
+export function circlesDouble(state: CirclesState): EntityDouble {
   const { circles, createCircle, completeCircleSetup } = state;
   return {
     queries: {
@@ -28,13 +28,7 @@ export function circlesDouble<S extends CirclesState>(state: S): EntityDouble {
   };
 }
 
-/**
- * Shared view-shape builders for the Transaction surfaces (the ledger, the form, the
- * edit route). One definition each — typed against the derived `~/lib/data.js`
- * contracts so a `to*View` change fails typecheck here — driven by a partial override
- * so each test states only what differs (CLAUDE.md: one helper, not copy-pasted
- * fixtures tweaked per file). Ids default to stable slugs; pass overrides for the rest.
- */
+/** Default `Circle` fixture for shell and Circle-scoped route tests. */
 export function makeCircleView(over: Partial<Circle> = {}): Circle {
   return {
     id: testId<Circle["id"]>("c1"),

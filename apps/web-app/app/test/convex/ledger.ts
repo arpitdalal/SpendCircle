@@ -39,7 +39,7 @@ export interface LedgerState {
   loadMore?: () => void;
 }
 
-export function ledgerDouble<S extends LedgerState>(state: S): EntityDouble {
+export function ledgerDouble(state: LedgerState): EntityDouble {
   const {
     monthlySummary = EMPTY_MONTHLY_SUMMARY,
     ledgerFilterTransactions = [],

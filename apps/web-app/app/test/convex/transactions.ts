@@ -39,31 +39,29 @@ export interface TransactionsState {
     | TransactionDetail
     | null
     | ((args: Record<string, unknown>) => TransactionDetail | null | undefined);
-  /** The `createTransaction` / `createCategory` mutation spies the test owns.
+  /** The transaction mutation spies the test owns (`createTransaction`, `updateTransaction`, …).
    *
-   * These are plain spies the caller configures. To assert the backend-guard
-   * *rejection* path (e.g. TXN edit where `assertWritable`/`requireCircleAccess`
-   * throws because the Circle was archived or went inaccessible mid-submit), the
-   * caller passes a rejecting spy directly — `createTransaction: vi.fn()
-   * .mockRejectedValue(new ConvexError("Circle is archived"))` (from
-   * `convex/values`, matching production) — and asserts the route's error
-   * handling. Intentionally NOT abstracted into a dedicated
-   * `rejects`/error knob here: no caller needs it yet, and the spy already
-   * exposes the full mock surface. Add a typed helper only when the first edit
-   * test lands and a shared rejection contract actually emerges — don't invent a
-   * second config shape speculatively. */
+   * Plain spies the caller configures. To assert a backend-guard *rejection* path
+   * (`assertWritable` / `requireCircleAccess` throws because the Circle was archived or
+   * went inaccessible mid-submit), pass a rejecting spy on the mutation under test, e.g.
+   * `createTransaction: vi.fn().mockRejectedValue(new ConvexError("Circle is archived"))`
+   * (from `convex/values`, matching production) and assert the route's error handling.
+   * Intentionally NOT abstracted into a dedicated `rejects` knob: the spy already exposes
+   * the full mock surface; add a typed helper only when a shared rejection contract emerges. */
   createTransaction?: Mock;
   updateTransaction?: Mock;
   archiveTransaction?: Mock;
   restoreTransaction?: Mock;
 }
 
-export function transactionsDouble<S extends TransactionsState>(state: S): EntityDouble {
+export function transactionsDouble(state: TransactionsState): EntityDouble {
   const {
     transactions = [],
     archivedTransactions = [],
     transactionsStatus = "Exhausted",
     loadMore = () => {},
+    // No default: absent ≡ `undefined` ≡ loading (the codebase's reactive-query
+    // convention); a test passes `null` to model an unavailable edit target.
     editableTransaction,
     transactionDetail,
     createTransaction,

@@ -9,7 +9,7 @@ export interface MembersState {
   members?: Member[] | null;
 }
 
-export function membersDouble<S extends MembersState>(state: S): EntityDouble {
+export function membersDouble(state: MembersState): EntityDouble {
   const { members } = state;
   return {
     queries: {

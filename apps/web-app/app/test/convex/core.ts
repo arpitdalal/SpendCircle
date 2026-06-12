@@ -18,16 +18,14 @@ export type ConvexState = CirclesState &
   DashboardState &
   HistoryState;
 
-type EntityDoubleBuilder = (state: ConvexState) => EntityDouble;
-
-const ENTITY_DOUBLES: EntityDoubleBuilder[] = [
-  (state) => circlesDouble(state),
-  (state) => categoriesDouble(state),
-  (state) => membersDouble(state),
-  (state) => transactionsDouble(state),
-  (state) => ledgerDouble(state),
-  (state) => dashboardDouble(state),
-  (state) => historyDouble(state),
+const ENTITY_DOUBLES = [
+  circlesDouble,
+  categoriesDouble,
+  membersDouble,
+  transactionsDouble,
+  ledgerDouble,
+  dashboardDouble,
+  historyDouble,
 ];
 
 function mergeEntityDoubles(state: ConvexState) {

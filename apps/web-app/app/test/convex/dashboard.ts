@@ -59,7 +59,7 @@ export interface DashboardState {
   paidByFilterOptions?: Member[] | null;
 }
 
-export function dashboardDouble<S extends DashboardState>(state: S): EntityDouble {
+export function dashboardDouble(state: DashboardState): EntityDouble {
   const {
     dashboard = EMPTY_DASHBOARD,
     monthlyComparison = emptyMonthlyComparison,

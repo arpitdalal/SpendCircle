@@ -36,26 +36,22 @@ export interface CategoriesState {
   /** The `filterCategories` `loadMore`; assert against it for the Categories
    * "Load more" wiring. */
   categoriesLoadMore?: () => void;
-  /** The `createTransaction` / `createCategory` mutation spies the test owns.
+  /** The category mutation spies the test owns (`createCategory`, `updateCategory`, …).
    *
-   * These are plain spies the caller configures. To assert the backend-guard
-   * *rejection* path (e.g. TXN edit where `assertWritable`/`requireCircleAccess`
-   * throws because the Circle was archived or went inaccessible mid-submit), the
-   * caller passes a rejecting spy directly — `createTransaction: vi.fn()
-   * .mockRejectedValue(new ConvexError("Circle is archived"))` (from
-   * `convex/values`, matching production) — and asserts the route's error
-   * handling. Intentionally NOT abstracted into a dedicated
-   * `rejects`/error knob here: no caller needs it yet, and the spy already
-   * exposes the full mock surface. Add a typed helper only when the first edit
-   * test lands and a shared rejection contract actually emerges — don't invent a
-   * second config shape speculatively. */
+   * Plain spies the caller configures. To assert a backend-guard *rejection* path
+   * (`assertWritable` / `requireCircleAccess` throws because the Circle was archived or
+   * went inaccessible mid-submit), pass a rejecting spy on the mutation under test, e.g.
+   * `createCategory: vi.fn().mockRejectedValue(new ConvexError("Circle is archived"))`
+   * (from `convex/values`, matching production) and assert the route's error handling.
+   * Intentionally NOT abstracted into a dedicated `rejects` knob: the spy already exposes
+   * the full mock surface; add a typed helper only when a shared rejection contract emerges. */
   createCategory?: Mock;
   updateCategory?: Mock;
   archiveCategory?: Mock;
   restoreCategory?: Mock;
 }
 
-export function categoriesDouble<S extends CategoriesState>(state: S): EntityDouble {
+export function categoriesDouble(state: CategoriesState): EntityDouble {
   const {
     categories,
     categoriesPageStatus = "Exhausted",
