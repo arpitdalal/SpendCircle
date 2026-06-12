@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures.js";
+import { expect, pickFormCategory, test } from "./fixtures.js";
 
 test("transaction search finds circle transactions across months and opens detail", async ({
   page,
@@ -25,7 +25,7 @@ test("transaction search finds circle transactions across months and opens detai
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("14.00");
-  await form.getByRole("button", { name: categoryName }).click();
+  await pickFormCategory(page, form, categoryName);
   await form.getByRole("button", { name: "Add expense" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
 
@@ -43,9 +43,13 @@ test("transaction search finds circle transactions across months and opens detai
   await dialog.getByLabel("To").fill(`${month}-28`);
   await dialog.getByLabel("Amount min").fill("14.00");
   await dialog.getByLabel("Amount max").fill("14.00");
+  // Picking inside the dialog also proves the combobox popup stacks above the
+  // filter sheet: Playwright's click fails if the option doesn't receive events.
+  await pickFormCategory(page, dialog, categoryName);
   await dialog.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(/type=expense/);
   await expect(page).toHaveURL(/min=14.00/);
+  await expect(page).toHaveURL(/categories=/);
   await expect(result).toBeVisible();
 
   await result.getByRole("link", { name: `View ${title}` }).click();
@@ -100,7 +104,7 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
     await form.getByLabel("Title").fill(index % 2 === 0 ? matchingTitle(index) : missTitle(index));
     await form.getByLabel(/Amount/).fill("1.00");
     await form.getByLabel("Date").fill(`${month}-${day}`);
-    await form.getByRole("button", { name: categoryName }).click();
+    await pickFormCategory(page, form, categoryName);
     await form.getByRole("button", { name: "Add expense" }).click();
     await expect(form).toHaveCount(0);
   }

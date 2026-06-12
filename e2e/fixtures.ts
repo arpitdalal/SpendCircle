@@ -1,8 +1,18 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Browser } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 import { test as base, expect } from "@playwright/test";
+
+/**
+ * Pick from a "Categories" combobox inside `scope` (a form or filter dialog).
+ * Base UI portals options to `body`; never scope the option lookup to `scope`.
+ */
+export async function pickFormCategory(page: Page, scope: Locator, name: string) {
+  await scope.getByRole("combobox", { name: "Categories" }).click();
+  await page.getByRole("option", { name }).click();
+  await page.keyboard.press("Escape");
+}
 
 const e2eDir = dirname(fileURLToPath(import.meta.url));
 

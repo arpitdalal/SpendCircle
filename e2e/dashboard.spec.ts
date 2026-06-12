@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures.js";
+import { expect, pickFormCategory, test } from "./fixtures.js";
 
 /**
  * RPT-3 true-E2E (ADR 0019): the per-Circle Dashboard (the Circle index route) shows
@@ -36,7 +36,7 @@ test("the dashboard shows recent activity and a working Paid By filter", async (
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("18.25");
-  await form.getByRole("button", { name: categoryName }).click();
+  await pickFormCategory(page, form, categoryName);
   await form.getByRole("button", { name: "Add expense" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
 

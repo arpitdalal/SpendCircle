@@ -25,6 +25,8 @@ import {
   makeCircleView,
   makeMemberView,
   makeTransactionView,
+  pickCombobox,
+  pickTransactionFormCategory,
   renderCircleRoutes,
   testId,
 } from "~/test/convex-react.js";
@@ -173,6 +175,36 @@ describe("CircleTransactions", () => {
     );
     expect(screen.getByText("Rent payment")).toBeInTheDocument();
     expect(screen.getAllByText(/\$125\.00/)).toHaveLength(2);
+  });
+
+  it("applies a category filter from the combobox to the URL", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05`],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    await pickCombobox(user, dialog, "Categories", "Groceries");
+    await user.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    expect(location()).toMatch(/categories=cat-grocery/);
+  });
+
+  it("filters category options by detail text, not just label", async () => {
+    const user = userEvent.setup();
+    setup({ initialEntries: [`/circles/${REF}/transactions?month=2026-05`] });
+
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    const combobox = within(dialog).getByRole("combobox", { name: "Categories" });
+    await user.click(combobox);
+    await user.type(combobox, "archived");
+
+    // "archived" matches Rent's detail marker only — its label doesn't contain it.
+    expect(await screen.findByRole("option", { name: /Rent/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Groceries/ })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
   });
 
   it("resets filters when the selected month changes", async () => {
@@ -353,7 +385,7 @@ describe("CircleTransactions", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Late entry");
     await user.type(within(form).getByLabelText(/Amount/), "10");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
 
     expect(await within(form).findByText("Circle is archived")).toBeInTheDocument();
@@ -370,7 +402,7 @@ describe("CircleTransactions", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Late entry");
     await user.type(within(form).getByLabelText(/Amount/), "10");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
 
     expect(

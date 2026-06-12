@@ -22,6 +22,7 @@ import {
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
+import { pickTransactionFormCategory } from "~/test/convex-react.js";
 import { TransactionForm, type TransactionFormMode } from "./index.js";
 
 const createTransaction = vi.fn();
@@ -72,7 +73,8 @@ afterEach(() => {
 });
 
 describe("TransactionForm — create", () => {
-  it("scopes categories to the form's type", () => {
+  it("scopes categories to the form's type", async () => {
+    const user = userEvent.setup();
     renderForm(createExpense, {
       categories: [
         makeCategoryView({ name: "Groceries", type: "expense" }),
@@ -80,8 +82,34 @@ describe("TransactionForm — create", () => {
       ],
     });
     const form = screen.getByRole("form", { name: /add expense/i });
-    expect(within(form).getByRole("button", { name: "Groceries" })).toBeInTheDocument();
-    expect(within(form).queryByRole("button", { name: "Salary" })).not.toBeInTheDocument();
+    await user.click(within(form).getByRole("combobox", { name: "Categories" }));
+    expect(await screen.findByRole("option", { name: "Groceries" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Salary" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+  });
+
+  it("filters category options by search query", async () => {
+    const user = userEvent.setup();
+    renderForm(createExpense, {
+      categories: [
+        makeCategoryView({ name: "Groceries", type: "expense" }),
+        makeCategoryView({
+          id: testId<Category["id"]>("cat-gas"),
+          name: "Gas",
+          type: "expense",
+        }),
+      ],
+    });
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const categoryCombo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(categoryCombo);
+    await user.type(categoryCombo, "Groc");
+    expect(await screen.findByRole("option", { name: "Groceries" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Gas" })).not.toBeInTheDocument();
+    await user.clear(categoryCombo);
+    await user.type(categoryCombo, "zzz");
+    expect(await screen.findByText("No matching categories.")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
   });
 
   it("submits a new expense with parsed minor units and the default Paid By", async () => {
@@ -92,7 +120,7 @@ describe("TransactionForm — create", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Weekly shop");
     await user.type(within(form).getByLabelText(/Amount/), "12.5");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
 
     expect(createTransaction).toHaveBeenCalledWith({
@@ -119,7 +147,7 @@ describe("TransactionForm — create", () => {
 
     await user.type(within(form).getByLabelText("Title"), "Back-dated");
     await user.type(within(form).getByLabelText(/Amount/), "10");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
     expect(createTransaction).toHaveBeenCalledWith(expect.objectContaining({ date: "2026-03-01" }));
   });
@@ -140,7 +168,7 @@ describe("TransactionForm — create", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Dinner");
     await user.type(within(form).getByLabelText(/Amount/), "20");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.selectOptions(within(form).getByLabelText("Paid by"), "mem-alex");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
 
@@ -162,7 +190,7 @@ describe("TransactionForm — create", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Dinner");
     await user.type(within(form).getByLabelText(/Amount/), "20");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.selectOptions(within(form).getByLabelText("Paid by"), "mem-y");
 
     members.splice(1, 1); // Yuki removed mid-form
@@ -229,7 +257,7 @@ describe("TransactionForm — create", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Movie night");
     await user.type(within(form).getByLabelText(/Amount/), "10");
-    await user.click(within(form).getByRole("button", { name: "Snacks" }));
+    await pickTransactionFormCategory(user, form, "Snacks");
 
     cats[0] = makeCategoryView({
       id: testId<Category["id"]>("cat-x"),
@@ -244,7 +272,7 @@ describe("TransactionForm — create", () => {
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
     expect(createTransaction).not.toHaveBeenCalled();
 
-    await user.click(within(form).getByText(/Snacks · archived/));
+    await user.click(within(form).getByRole("button", { name: /Remove Snacks/ }));
     expect(within(form).queryByText(/Snacks · archived/)).not.toBeInTheDocument();
   });
 
@@ -259,7 +287,7 @@ describe("TransactionForm — create", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Weekly shop");
     await user.type(within(form).getByLabelText(/Amount/), "10");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
 
     const alert = await screen.findByRole("alert");
@@ -287,9 +315,7 @@ describe("TransactionForm — edit (TXN-2)", () => {
     expect(within(form).getByLabelText("Title")).toHaveValue("Weekly shop");
     expect(within(form).getByLabelText(/Amount/)).toHaveValue("12.50");
     expect(within(form).getByLabelText("Date")).toHaveValue("2026-05-15");
-    expect(
-      within(form).getByRole("button", { name: "Groceries", pressed: true }),
-    ).toBeInTheDocument();
+    expect(within(form).getByRole("button", { name: /Remove Groceries/ })).toBeInTheDocument();
   });
 
   it("saves edited fields through updateTransaction and closes", async () => {
@@ -340,10 +366,12 @@ describe("TransactionForm — edit (TXN-2)", () => {
     await user.click(
       within(within(form).getByRole("alertdialog")).getByRole("button", { name: "Change type" }),
     );
-    expect(within(form).queryByRole("button", { name: "Groceries" })).not.toBeInTheDocument();
+    expect(
+      within(form).queryByRole("button", { name: /Remove Groceries/ }),
+    ).not.toBeInTheDocument();
     expect(within(form).getByRole("button", { name: "Income", pressed: true })).toBeInTheDocument();
 
-    await user.click(within(form).getByRole("button", { name: "Salary" }));
+    await pickTransactionFormCategory(user, form, "Salary");
     await user.click(within(form).getByRole("button", { name: "Save changes" }));
 
     expect(updateTransaction).toHaveBeenCalledWith(
@@ -392,7 +420,7 @@ describe("TransactionForm — edit (TXN-2)", () => {
       },
     );
     const form = screen.getByRole("form", { name: /edit transaction/i });
-    expect(within(form).getByRole("button", { name: /OldCat · archived/ })).toBeInTheDocument();
+    expect(within(form).getByText(/OldCat · archived/)).toBeInTheDocument();
     expect(within(form).queryByRole("alert")).not.toBeInTheDocument();
 
     await user.clear(within(form).getByLabelText("Title"));
@@ -416,7 +444,7 @@ describe("TransactionForm — edit (TXN-2)", () => {
     ];
     const { rerenderForm } = renderForm(editMode({ title: "Weekly shop" }), { categories: cats });
     const form = screen.getByRole("form", { name: /edit transaction/i });
-    await user.click(within(form).getByRole("button", { name: "Snacks" }));
+    await pickTransactionFormCategory(user, form, "Snacks");
 
     cats[1] = makeCategoryView({
       id: testId<Category["id"]>("cat-snacks"),
@@ -426,7 +454,7 @@ describe("TransactionForm — edit (TXN-2)", () => {
     });
     rerenderForm();
 
-    expect(within(form).getByText(/Snacks · archived ✕/)).toBeInTheDocument();
+    expect(within(form).getByText(/Snacks · archived/)).toBeInTheDocument();
     expect(within(form).getByRole("alert")).toHaveTextContent(/"Snacks" was archived/);
     await user.click(within(form).getByRole("button", { name: "Save changes" }));
     expect(updateTransaction).not.toHaveBeenCalled();

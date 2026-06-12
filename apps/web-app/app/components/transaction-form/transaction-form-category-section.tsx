@@ -1,4 +1,17 @@
 import { type TransactionType, transactionFieldSchemas } from "@spend-circle/domain";
+import { useMemo } from "react";
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxValue,
+  useComboboxAnchor,
+} from "~/components/ui/combobox.js";
 import { FieldError, FieldLegend, FieldSet } from "~/components/ui/field.js";
 import type { Category } from "~/lib/data.js";
 import { useTypedAppFormContext } from "~/lib/form.js";
@@ -17,6 +30,11 @@ export function TransactionFormCategorySection({
   activeType: TransactionType;
 }) {
   const form = useTypedAppFormContext(transactionFormContextOptions);
+  const anchorRef = useComboboxAnchor();
+  const activeIds = useMemo(
+    () => activeCategories.map((category) => category.id),
+    [activeCategories],
+  );
 
   return (
     <form.Subscribe selector={(state) => state.submissionAttempts > 0}>
@@ -28,8 +46,6 @@ export function TransactionFormCategorySection({
           {(field) => {
             const reveal = field.state.meta.isDirty || submitReveal;
             const invalid = reveal && field.state.meta.errors.length > 0;
-            const deselect = (id: string) =>
-              field.handleChange(field.state.value.filter((current) => current !== id));
             const archivedSelected = field.state.value.flatMap((id) => {
               const category = categoryById.get(id);
               return category && category.status === "archived" ? [category] : [];
@@ -37,53 +53,77 @@ export function TransactionFormCategorySection({
             const blockingArchived = archivedSelected.filter(
               (category) => !alreadyAttached.has(category.id),
             );
+            const showPicker = activeCategories.length > 0 || archivedSelected.length > 0;
+
             return (
               <FieldSet>
                 <FieldLegend>Categories</FieldLegend>
-                {activeCategories.length === 0 && archivedSelected.length === 0 ? (
+                {!showPicker ? (
                   <p className="text-xs text-muted-foreground">
                     No {activeType} categories yet. Create one first to record a {activeType}.
                   </p>
                 ) : (
-                  <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto rounded-md border border-border p-2">
-                    {activeCategories.map((category) => {
-                      const selected = field.state.value.includes(category.id);
-                      return (
-                        <button
-                          key={category.id}
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() =>
-                            selected
-                              ? deselect(category.id)
-                              : field.handleChange([...field.state.value, category.id])
+                  <Combobox
+                    multiple
+                    autoHighlight
+                    value={field.state.value}
+                    onValueChange={(next) => {
+                      field.handleChange(next ?? []);
+                    }}
+                    items={activeIds}
+                    itemToStringLabel={(id: string) => categoryById.get(id)?.name ?? id}
+                  >
+                    <ComboboxChips ref={anchorRef} className="w-full max-w-full">
+                      <ComboboxValue>
+                        {(values: string[]) => (
+                          <>
+                            {values.map((id) => {
+                              const category = categoryById.get(id);
+                              const archived = category?.status === "archived";
+                              const label = category?.name ?? id;
+                              return (
+                                <ComboboxChip
+                                  key={id}
+                                  removeAriaLabel={`Remove ${label}`}
+                                  className={
+                                    archived
+                                      ? cn(
+                                          "border border-amber-600/70 bg-amber-950/40 text-amber-300",
+                                          "hover:text-amber-100",
+                                        )
+                                      : undefined
+                                  }
+                                >
+                                  {label}
+                                  {archived ? " · archived" : ""}
+                                </ComboboxChip>
+                              );
+                            })}
+                            <ComboboxChipsInput
+                              placeholder="Search categories…"
+                              aria-label="Categories"
+                            />
+                          </>
+                        )}
+                      </ComboboxValue>
+                    </ComboboxChips>
+                    <ComboboxContent anchor={anchorRef}>
+                      <ComboboxEmpty>No matching categories.</ComboboxEmpty>
+                      <ComboboxList>
+                        {(id: string) => {
+                          const category = categoryById.get(id);
+                          if (category?.status !== "active") {
+                            return null;
                           }
-                          className={cn(
-                            "max-w-full whitespace-normal wrap-break-word rounded-full border px-3 py-1 text-left text-sm transition-colors",
-                            selected
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-border text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {category.name}
-                        </button>
-                      );
-                    })}
-                    {archivedSelected.map((category) => {
-                      const blocking = !alreadyAttached.has(category.id);
-                      return (
-                        <button
-                          key={category.id}
-                          type="button"
-                          aria-pressed={true}
-                          onClick={() => deselect(category.id)}
-                          className="max-w-full whitespace-normal wrap-break-word rounded-full border border-amber-600/70 bg-amber-950/40 px-3 py-1 text-left text-sm text-amber-300 transition-colors hover:text-amber-100"
-                        >
-                          {category.name} · archived{blocking ? " ✕" : ""}
-                        </button>
-                      );
-                    })}
-                  </div>
+                          return (
+                            <ComboboxItem key={id} value={id}>
+                              {category.name}
+                            </ComboboxItem>
+                          );
+                        }}
+                      </ComboboxList>
+                    </ComboboxContent>
+                  </Combobox>
                 )}
                 {blockingArchived.length > 0 ? (
                   <p role="alert" className="text-sm text-amber-400">
