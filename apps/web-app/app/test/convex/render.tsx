@@ -1,0 +1,116 @@
+import { render } from "@testing-library/react";
+import type { ReactElement, ReactNode } from "react";
+import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router";
+import type { Circle } from "~/lib/data.js";
+import { SnackbarProvider } from "~/lib/snackbar.js";
+import type { CircleOutletContext } from "~/routes/layouts/circle-layout.js";
+
+function withRouter(node: ReactElement) {
+  return <MemoryRouter>{node}</MemoryRouter>;
+}
+
+/** Renders a route that reads no Circle context (e.g. Home) under a real router. */
+export function renderWithRouter(element: ReactElement) {
+  return render(withRouter(element));
+}
+
+/** Renders a Circle-scoped route with the Circle supplied through a REAL Outlet
+ * context — the same channel the Circle guard layout uses — so the real `useCircle`
+ * runs. `rerenderInCircle` rebuilds a fresh element tree so React reconciles (re-
+ * reading the query doubles) rather than bailing on an identical element; pass a
+ * `nextCircle` to model the reactive `getCircle` flipping (e.g. the Circle archived
+ * mid-edit), defaulting to the originally-rendered Circle. */
+export function renderInCircle(circle: Circle, element: ReactElement) {
+  const wrap = (node: ReactElement, current: Circle) =>
+    withRouter(
+      <Routes>
+        <Route element={<Outlet context={{ circle: current } satisfies CircleOutletContext} />}>
+          <Route path="*" element={node} />
+        </Route>
+      </Routes>,
+    );
+  const result = render(wrap(element, circle));
+  return {
+    ...result,
+    rerenderInCircle: (node: ReactElement, nextCircle: Circle = circle) =>
+      result.rerender(wrap(node, nextCircle)),
+  };
+}
+
+/** Surfaces the live URL (pathname + search) so URL-state tests can assert it. */
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname + location.search}</output>;
+}
+
+/**
+ * Renders arbitrary (non-Circle-scoped) ROUTES under a real `MemoryRouter` so route
+ * navigation is exercised end to end: the test seeds the address bar via `initialEntries`,
+ * reads it back through {@link LocationProbe} (`location()`), and real route logic,
+ * `useNavigate`, and `useSnackbar` all run. Used by the shell surfaces that live ABOVE
+ * the Circle guard (the Circle switcher, the Create Circle flow — CS-0), which resolve no
+ * Circle from context. `SnackbarProvider` wraps so a route's snackbar has its real context.
+ *
+ * `routes` is the caller's `<Route>` subtree, kept generic so this helper never imports
+ * route modules — the test wires only the routes it needs (typically the surface under
+ * test plus a probe route the flow navigates to).
+ */
+export function renderRoutes(routes: ReactNode, opts: { initialEntries?: string[] } = {}) {
+  const result = render(
+    <SnackbarProvider>
+      <MemoryRouter initialEntries={opts.initialEntries ?? ["/"]}>
+        <LocationProbe />
+        <Routes>{routes}</Routes>
+      </MemoryRouter>
+    </SnackbarProvider>,
+  );
+  return {
+    ...result,
+    /** The current URL (pathname + search), e.g. `/circles/my-home-c1`. */
+    location: () => result.getByTestId("location").textContent ?? "",
+  };
+}
+
+/**
+ * Renders Circle-scoped ROUTES under a real `MemoryRouter` so URL-owned state (the
+ * ledger `month`, the `new` create param, and the edit object route — TXN-5/ADR 0017)
+ * is exercised end to end: the test seeds the address bar via `initialEntries`, reads
+ * it back through {@link LocationProbe} (`location()`), and the real route logic,
+ * `useSearchParams`, `useResolvedTransaction`, and `useSnackbar` all run. The Circle is
+ * supplied through the same Outlet context channel the Circle guard uses, so the real
+ * `useCircle` runs; `rerender(nextCircle)` models the reactive `getCircle` flipping
+ * (e.g. archived mid-edit). `SnackbarProvider` wraps so the unavailable-link fallback
+ * has its real context.
+ *
+ * `routes` is the caller's `<Route>` subtree (the routes under test), kept generic so
+ * this helper never imports route modules — the test wires only the routes it needs.
+ * `chrome` is an optional always-mounted node rendered inside the Router but outside
+ * `Routes` (so it has router context and survives route changes) — e.g. a nav control a
+ * test uses to drive an in-route param change (edit→edit) without unmounting the route.
+ */
+export function renderCircleRoutes(
+  circle: Circle,
+  routes: ReactNode,
+  opts: { initialEntries?: string[]; chrome?: ReactNode } = {},
+) {
+  const wrap = (current: Circle) => (
+    <SnackbarProvider>
+      <MemoryRouter initialEntries={opts.initialEntries ?? ["/"]}>
+        <LocationProbe />
+        {opts.chrome}
+        <Routes>
+          <Route element={<Outlet context={{ circle: current } satisfies CircleOutletContext} />}>
+            {routes}
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </SnackbarProvider>
+  );
+  const result = render(wrap(circle));
+  return {
+    ...result,
+    rerender: (nextCircle: Circle = circle) => result.rerender(wrap(nextCircle)),
+    /** The current URL (pathname + search), e.g. `/circles/trip-c1/transactions?month=2026-05`. */
+    location: () => result.getByTestId("location").textContent ?? "",
+  };
+}

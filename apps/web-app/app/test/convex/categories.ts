@@ -1,0 +1,101 @@
+import { api } from "@spend-circle/convex";
+import { textIncludes } from "@spend-circle/domain";
+import { getFunctionName } from "convex/server";
+import type { Mock } from "vitest";
+import type { Category, PaginationStatus } from "~/lib/data.js";
+import type { EntityDouble } from "./contract.js";
+import { testId } from "./ids.js";
+
+/** Models the `listCategories` backend contract: filter by type, optionally include
+ * archived. The single definition the doubles share so it cannot drift per file. */
+function fakeListCategories(rows: Category[], args: Record<string, unknown>) {
+  const includeArchived = args.includeArchived === true;
+  return rows.filter((c) => c.type === args.type && (includeArchived || c.status === "active"));
+}
+
+/** Models the `filterCategories` backend contract (CAT-4): type-scoped, lifecycle-
+ * scoped, name-matched with the SAME domain `textIncludes` the real handler uses —
+ * so a route test exercises real narrowing semantics, not a per-file approximation. */
+function fakeFilterCategories(rows: Category[], args: Record<string, unknown>) {
+  const query = typeof args.query === "string" ? args.query : "";
+  return rows.filter(
+    (c) =>
+      c.type === args.type &&
+      (args.status === "all" || c.status === args.status) &&
+      textIncludes(c.name, query),
+  );
+}
+
+export interface CategoriesState {
+  /** `listCategories` source rows (filtered per query args); `undefined` ≡ loading,
+   * `null` ≡ inaccessible Circle (ADR 0016). The same rows feed the paginated
+   * `filterCategories` double (CAT-4), narrowed per ITS query args. */
+  categories?: Category[] | null;
+  /** The `filterCategories` pagination lifecycle (CAT-4); defaults to "Exhausted". */
+  categoriesPageStatus?: PaginationStatus;
+  /** The `filterCategories` `loadMore`; assert against it for the Categories
+   * "Load more" wiring. */
+  categoriesLoadMore?: () => void;
+  /** The `createTransaction` / `createCategory` mutation spies the test owns.
+   *
+   * These are plain spies the caller configures. To assert the backend-guard
+   * *rejection* path (e.g. TXN edit where `assertWritable`/`requireCircleAccess`
+   * throws because the Circle was archived or went inaccessible mid-submit), the
+   * caller passes a rejecting spy directly — `createTransaction: vi.fn()
+   * .mockRejectedValue(new ConvexError("Circle is archived"))` (from
+   * `convex/values`, matching production) — and asserts the route's error
+   * handling. Intentionally NOT abstracted into a dedicated
+   * `rejects`/error knob here: no caller needs it yet, and the spy already
+   * exposes the full mock surface. Add a typed helper only when the first edit
+   * test lands and a shared rejection contract actually emerges — don't invent a
+   * second config shape speculatively. */
+  createCategory?: Mock;
+  updateCategory?: Mock;
+  archiveCategory?: Mock;
+  restoreCategory?: Mock;
+}
+
+export function categoriesDouble<S extends CategoriesState>(state: S): EntityDouble {
+  const {
+    categories,
+    categoriesPageStatus = "Exhausted",
+    categoriesLoadMore = () => {},
+    createCategory,
+    updateCategory,
+    archiveCategory,
+    restoreCategory,
+  } = state;
+  return {
+    queries: {
+      [getFunctionName(api.categories.listCategories)]: (args) =>
+        categories == null ? categories : fakeListCategories(categories, args),
+    },
+    paginatedQueries: {
+      [getFunctionName(api.categories.filterCategories)]: (args) => ({
+        results: fakeFilterCategories(categories ?? [], args),
+        status: categoriesPageStatus,
+        loadMore: categoriesLoadMore,
+      }),
+    },
+    mutations: {
+      [getFunctionName(api.categories.createCategory)]: createCategory,
+      [getFunctionName(api.categories.updateCategory)]: updateCategory,
+      [getFunctionName(api.categories.archiveCategory)]: archiveCategory,
+      [getFunctionName(api.categories.restoreCategory)]: restoreCategory,
+    },
+  };
+}
+
+export function makeCategoryView(over: Partial<Category> = {}): Category {
+  return {
+    id: testId<Category["id"]>("cat-groceries"),
+    name: "Groceries",
+    type: "expense",
+    color: "green",
+    status: "active",
+    creator: { displayName: "You", image: undefined },
+    canEditFields: true,
+    canArchive: true,
+    ...over,
+  };
+}
