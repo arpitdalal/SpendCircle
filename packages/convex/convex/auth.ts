@@ -103,17 +103,22 @@ export async function getCurrentUserOrNull(
   // returns undefined when there is no Convex identity or no valid session/user row.
   // The throwing `getAuthUser` wraps that with `ConvexError("Unauthenticated")` — use
   // the safe API so only real component/query failures hit the catch below.
+  let authUser: Awaited<ReturnType<typeof authComponent.safeGetAuthUser>>;
   try {
-    const authUser = await authComponent.safeGetAuthUser(ctx);
-    if (!authUser?.userId) {
-      return null;
-    }
-    const userId = ctx.db.normalizeId("users", authUser.userId);
-    return userId ? await ctx.db.get(userId) : null;
+    authUser = await authComponent.safeGetAuthUser(ctx);
   } catch (error) {
-    console.error("getAuthUser failed unexpectedly", error);
+    // Unexpected component failure: degrade to signed-out but leave a trace
+    // (upgrade to Sentry capture when OBS-1 lands). Our own users-table read
+    // below is deliberately OUTSIDE this catch — a DB failure there must
+    // propagate, not masquerade as "signed out".
+    console.error("safeGetAuthUser failed unexpectedly", error);
     return null;
   }
+  if (!authUser?.userId) {
+    return null;
+  }
+  const userId = ctx.db.normalizeId("users", authUser.userId);
+  return userId ? await ctx.db.get(userId) : null;
 }
 
 /** Throws unless the request is from a bootstrapped Spend Circle User. */

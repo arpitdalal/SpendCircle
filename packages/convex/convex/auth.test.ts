@@ -11,6 +11,8 @@ afterEach(() => {
 });
 
 describe("getCurrentUserOrNull (via users.getCurrentUser)", () => {
+  // Step 3.2 (unexpected `safeGetAuthUser` throw → log + null): skipped — convex-test
+  // cannot force a component failure without mocking `auth.ts` (ADR 0006).
   it("returns null without error logging when there is no session", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const t = convexTest(schema, modules);
