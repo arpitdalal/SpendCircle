@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { Route, useNavigate } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Category, CategoryHistoryEvent, Circle, PaginationStatus } from "~/lib/data.js";
 import {
   configureConvex,
@@ -52,6 +52,8 @@ function setup(
     circle?: Partial<Circle>;
     categories?: Category[] | null;
     categoryHistory?: CategoryHistoryEvent[];
+    historyStatus?: PaginationStatus;
+    historyLoadMore?: () => void;
     categoriesPageStatus?: PaginationStatus;
     categoriesLoadMore?: () => void;
     initialEntries?: string[];
@@ -65,6 +67,8 @@ function setup(
   configureConvex({
     categories: opts.categories,
     categoryHistory: opts.categoryHistory,
+    historyStatus: opts.historyStatus,
+    historyLoadMore: opts.historyLoadMore,
     categoriesPageStatus: opts.categoriesPageStatus,
     categoriesLoadMore: opts.categoriesLoadMore,
     createCategory,
@@ -360,9 +364,92 @@ describe("CircleCategories — URL-owned filter state (CAT-4, ADR 0016)", () => 
   });
 });
 
+/**
+ * jsdom has no IntersectionObserver — stub as a true browser boundary (ADR 0006).
+ * Instances register in a live set; tests call {@link flushCategoriesInfiniteScrollIntersections}.
+ */
+class CategoriesInfiniteScrollIntersectionObserverStub implements IntersectionObserver {
+  private static readonly live = new Set<CategoriesInfiniteScrollIntersectionObserverStub>();
+
+  static disconnectAllForTests() {
+    for (const io of [...CategoriesInfiniteScrollIntersectionObserverStub.live]) {
+      io.disconnect();
+    }
+  }
+
+  static flushAll(isIntersecting = true) {
+    for (const io of CategoriesInfiniteScrollIntersectionObserverStub.live) {
+      io.deliver(isIntersecting);
+    }
+  }
+
+  readonly root: Element | Document | null = null;
+  readonly rootMargin = "";
+  readonly thresholds: ReadonlyArray<number> = [0];
+  private readonly observed = new Set<Element>();
+
+  constructor(
+    private readonly intersectionCallback: IntersectionObserverCallback,
+    _init?: IntersectionObserverInit,
+  ) {
+    CategoriesInfiniteScrollIntersectionObserverStub.live.add(this);
+  }
+
+  observe(element: Element) {
+    this.observed.add(element);
+  }
+
+  unobserve(element: Element) {
+    this.observed.delete(element);
+  }
+
+  disconnect() {
+    CategoriesInfiniteScrollIntersectionObserverStub.live.delete(this);
+    this.observed.clear();
+  }
+
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+
+  private deliver(isIntersecting: boolean) {
+    for (const target of this.observed) {
+      const boundingClientRect = target.getBoundingClientRect();
+      const entry: IntersectionObserverEntry = {
+        isIntersecting,
+        target,
+        boundingClientRect,
+        intersectionRect: boundingClientRect,
+        rootBounds: null,
+        intersectionRatio: isIntersecting ? 1 : 0,
+        time: performance.now(),
+      };
+      this.intersectionCallback([entry], this);
+    }
+  }
+}
+
+function flushCategoriesInfiniteScrollIntersections(isIntersecting = true) {
+  CategoriesInfiniteScrollIntersectionObserverStub.flushAll(isIntersecting);
+}
+
 describe("CircleCategories — pagination (CAT-4)", () => {
-  it("offers Load more while the backend has more and wires it to loadMore", async () => {
-    const user = userEvent.setup();
+  const savedIntersectionObserver = globalThis.IntersectionObserver;
+
+  beforeAll(() => {
+    globalThis.IntersectionObserver = CategoriesInfiniteScrollIntersectionObserverStub;
+  });
+
+  afterAll(() => {
+    CategoriesInfiniteScrollIntersectionObserverStub.disconnectAllForTests();
+    globalThis.IntersectionObserver = savedIntersectionObserver;
+  });
+
+  beforeEach(() => {
+    CategoriesInfiniteScrollIntersectionObserverStub.disconnectAllForTests();
+  });
+
+  it("loads the next page when the infinite-scroll sentinel intersects (wires loadMore)", () => {
     const categoriesLoadMore = vi.fn();
     setup({
       categories: [makeCategoryView()],
@@ -370,19 +457,36 @@ describe("CircleCategories — pagination (CAT-4)", () => {
       categoriesLoadMore,
     });
 
-    const button = screen.getByRole("button", { name: "Load more" });
-    await user.click(button);
+    expect(screen.getByTestId("categories-infinite-scroll-sentinel")).toBeInTheDocument();
+    flushCategoriesInfiniteScrollIntersections(true);
     expect(categoriesLoadMore).toHaveBeenCalledTimes(1);
   });
 
-  it("disables the control while a page is loading", () => {
-    setup({ categories: [makeCategoryView()], categoriesPageStatus: "LoadingMore" });
-    expect(screen.getByRole("button", { name: "Loading…" })).toBeDisabled();
+  it("does not call loadMore when the observer reports no intersection", () => {
+    const categoriesLoadMore = vi.fn();
+    setup({
+      categories: [makeCategoryView()],
+      categoriesPageStatus: "CanLoadMore",
+      categoriesLoadMore,
+    });
+
+    flushCategoriesInfiniteScrollIntersections(false);
+    expect(categoriesLoadMore).not.toHaveBeenCalled();
   });
 
-  it("hides the control when the stream is exhausted", () => {
-    setup({ categories: [makeCategoryView()], categoriesPageStatus: "Exhausted" });
+  it("shows a loading status line while LoadingMore and omits the manual Load-more control", () => {
+    setup({ categories: [makeCategoryView()], categoriesPageStatus: "LoadingMore" });
+    expect(screen.getByRole("status", { name: "Loading more categories" })).toBeInTheDocument();
+    expect(screen.queryByTestId("categories-infinite-scroll-sentinel")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("hides sentinel and loading row when the stream is exhausted", () => {
+    setup({ categories: [makeCategoryView()], categoriesPageStatus: "Exhausted" });
+    expect(screen.queryByTestId("categories-infinite-scroll-sentinel")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: "Loading more categories" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -777,5 +881,21 @@ describe("CircleCategories — history panel (CAT-2)", () => {
 
     const panel = screen.getByRole("region", { name: "Groceries history" });
     expect(within(panel).getByText("No history yet.")).toBeInTheDocument();
+  });
+
+  it("keeps a manual Load more control on category history when more pages exist (issue #89)", async () => {
+    const user = userEvent.setup();
+    const historyLoadMore = vi.fn();
+    setup({
+      categories: [makeCategoryView()],
+      categoryHistory: [makeHistoryEventView()],
+      historyStatus: "CanLoadMore",
+      historyLoadMore,
+    });
+
+    await user.click(screen.getByRole("button", { name: "History of Groceries" }));
+    const panel = screen.getByRole("region", { name: "Groceries history" });
+    await user.click(within(panel).getByRole("button", { name: "Load more" }));
+    expect(historyLoadMore).toHaveBeenCalledTimes(1);
   });
 });

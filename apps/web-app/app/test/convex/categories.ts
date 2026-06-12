@@ -34,7 +34,7 @@ export interface CategoriesState {
   /** The `filterCategories` pagination lifecycle (CAT-4); defaults to "Exhausted". */
   categoriesPageStatus?: PaginationStatus;
   /** The `filterCategories` `loadMore`; assert against it for the Categories
-   * "Load more" wiring. */
+   * infinite-scroll / intersection wiring. */
   categoriesLoadMore?: () => void;
   /** The category mutation spies the test owns (`createCategory`, `updateCategory`, …).
    *

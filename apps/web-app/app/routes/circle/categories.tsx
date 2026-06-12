@@ -7,7 +7,7 @@ import {
   LIMITS,
   type TransactionType,
 } from "@spend-circle/domain";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { Button } from "~/components/ui/button.js";
@@ -61,7 +61,7 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: CategoryLifecycleFilter; label: str
  * REPLACES so typing a word doesn't bury history. The default scope is `all`
  * (parity with the ledger's one-picture view): archived rows are distinguished —
  * muted name + "Archived" badge — not hidden. The list paginates at the source
- * via `filterCategories` with a Load-more control (README §4).
+ * via `filterCategories` with automatic infinite scroll (README §4).
  *
  * Per-row affordances are gated on the SERVER-returned capability flags
  * (`canEditFields` — the creator only; `canArchive` — creator or Owner) plus a
@@ -348,6 +348,11 @@ function ColorPicker({
  * may open (PRD story 78). One row at a time edits, and one expands history — a
  * deliberate simplification that keeps the surface calm.
  *
+ * Infinite scroll: a sentinel below the list intersects the viewport (with bottom
+ * `rootMargin` so the next page starts while the user is still near the last rows).
+ * The observer calls `loadMore` only when `status === "CanLoadMore"` so a page
+ * already in `LoadingMore` never receives duplicate loads from repeated entries.
+ *
  * The two empty states are deliberately distinct: with no narrowing applied an
  * empty result means the type has no Categories yet; with a search or a
  * non-default status it means the filter matched nothing.
@@ -366,6 +371,8 @@ function CategoryList({
   const [editingId, setEditingId] = useState<Category["id"] | null>(null);
   const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
   const { categories, status, loadMore } = page;
+  const infiniteScrollSentinelRef = useRef<HTMLDivElement>(null);
+  useCategoryListInfiniteScroll(infiniteScrollSentinelRef, status, loadMore);
 
   // The open-editor / open-history selection is only meaningful while its row is
   // ON the current page. The Category Filter (search, status, type) and reactive
@@ -409,18 +416,68 @@ function CategoryList({
         ))}
       </ul>
 
-      {status === "CanLoadMore" || status === "LoadingMore" ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={loadMore}
-          disabled={status === "LoadingMore"}
+      {status === "LoadingMore" ? (
+        <p
+          role="status"
+          aria-live="polite"
+          aria-label="Loading more categories"
+          className="text-sm text-muted-foreground"
         >
-          {status === "LoadingMore" ? "Loading…" : "Load more"}
-        </Button>
+          Loading more categories…
+        </p>
+      ) : null}
+      {status === "CanLoadMore" ? (
+        <div
+          ref={infiniteScrollSentinelRef}
+          data-testid="categories-infinite-scroll-sentinel"
+          aria-hidden
+          className="h-2 w-full shrink-0"
+        />
       ) : null}
     </div>
   );
+}
+
+/**
+ * Pins `loadMore` to the latest closure while `IntersectionObserver` only runs when
+ * more pages exist — avoids effect churn from an inline `loadMore` identity each render.
+ */
+function useCategoryListInfiniteScroll(
+  sentinelRef: RefObject<HTMLElement | null>,
+  status: CategoriesPage["status"],
+  loadMore: CategoriesPage["loadMore"],
+) {
+  const statusRef = useRef(status);
+  const loadMoreRef = useRef(loadMore);
+  statusRef.current = status;
+  loadMoreRef.current = loadMore;
+
+  useEffect(() => {
+    if (status !== "CanLoadMore") {
+      return;
+    }
+    const node = sentinelRef.current;
+    if (!node) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            continue;
+          }
+          if (statusRef.current !== "CanLoadMore") {
+            return;
+          }
+          loadMoreRef.current();
+          return;
+        }
+      },
+      { root: null, rootMargin: "0px 0px 200px 0px", threshold: 0 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [status, sentinelRef]);
 }
 
 function CategoryRow({

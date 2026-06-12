@@ -170,12 +170,13 @@ test("the category filter searches, scopes by status, reloads from the URL, and 
   // projects (same backend, same Personal Circle) out of each other's pages.
   await search.fill(nonce);
   const matchRows = page.getByRole("listitem").filter({ hasText: nonce });
-  await expect(page.getByRole("button", { name: "Load more" })).toBeVisible();
+  const sentinel = page.getByTestId("categories-infinite-scroll-sentinel");
+  await expect(sentinel).toBeVisible();
   const firstPageCount = await matchRows.count();
   expect(firstPageCount).toBeLessThanOrEqual(25); // the first page is bounded
 
-  await page.getByRole("button", { name: "Load more" }).click();
-  await expect(matchRows.filter({ hasText: `Match 0 ${nonce}` })).toBeVisible();
+  await sentinel.scrollIntoViewIfNeeded();
+  await expect(matchRows.filter({ hasText: `Match 0 ${nonce}` })).toBeVisible({ timeout: 15_000 });
 
   // Archive one row, then scope to active: it reactively leaves the list.
   await page.getByRole("button", { name: `Archive ${matchName(25)}` }).click();

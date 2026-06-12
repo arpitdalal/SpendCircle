@@ -68,9 +68,10 @@ CAT-2).
   URL-driven filters. Render the type tab + a tri-state status `Segmented` + a debounced
   (~250ms) search `input[type=search]`, all inline (no draft/Apply panel — three controls fit
   in place). Discrete changes (type, status) write the URL with **push**; debounced search
-  writes with **replace** (so typing a word doesn't bury history). List paginates with a
-  **"Load more"** button driven by `usePaginatedQuery` status (`CanLoadMore`/`LoadingMore`),
-  page size ~25 — mirroring `transaction-list.tsx`. The new-Category form keeps using the URL
+  writes with **replace** (so typing a word doesn't bury history). The list paginates at the
+  source (`filterCategories`, ~25 per page — mirroring `transaction-list.tsx`'s page size)
+  with automatic **infinite scroll** (IntersectionObserver sentinel); the inline **History**
+  panel still uses a manual **Load more** button. The new-Category form keeps using the URL
   `type`.
 
 ## Why this way
@@ -116,16 +117,16 @@ CAT-2).
 - **Picker untouched:** the Transaction-form Category picker still loads its full selectable
   set via `listCategories` (active + already-attached archived) after the index swap.
 - **Mock parity:** the `filterCategories` fixture shape matches the derived view type;
-  add a route/render test for the filter + Load-more interaction under MOCKS.
+  add a route/render test for the filter + infinite-scroll interaction under MOCKS.
 - **Empty states:** distinguish "no Categories of this type yet" from "no Categories match
   this filter" (search/status narrowed everything out).
 - **E2E:** type a search term and see the list narrow; switch status active/archived/all;
-  reload the page and the filtered view reproduces from the URL; Load more pulls the next
+  reload the page and the filtered view reproduces from the URL; scrolling the infinite-scroll sentinel loads the next
   page; archive a row and watch it leave the active-filtered list.
 
 ## Done when
 
-- The Categories page paginates `filterCategories` at the source with a Load-more control;
+- The Categories page paginates `filterCategories` at the source with **infinite scroll** (sentinel + `IntersectionObserver`);
   name search (substring, name-only) and tri-state status narrow the list; filter state is
   URL-owned and reproducible; the index swap leaves the picker and option queries correct;
   `listCategories` remains the collected picker query; comprehensive unit, integration, and
