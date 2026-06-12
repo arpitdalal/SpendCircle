@@ -22,7 +22,7 @@ import {
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
-import { TransactionForm, type TransactionFormMode } from "./transaction-form.js";
+import { TransactionForm, type TransactionFormMode } from "./index.js";
 
 const createTransaction = vi.fn();
 const updateTransaction = vi.fn();

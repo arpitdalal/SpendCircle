@@ -6,6 +6,8 @@ Validation reuses the existing Zod schemas (ADR 0010) directly via Standard Sche
 
 The house validation-timing convention is on-blur-then-live: field-level `onBlur` validators give early feedback, errors are revealed only when `(isBlurred && isDirty) || submissionAttempts > 0` — so tabbing through an untouched field stays silent and "required" surfaces at submit, while an edited-but-invalid field flags on blur — and a form-level `onSubmit` validator against the full `transactionFormSchema` is the authoritative gate. Non-text fields (Category chips, Paid By select) bind through `field.handleChange` and validate on change/submit rather than blur.
 
+Web implements the shared field kit with TanStack Form’s `createFormHookContexts` + `createFormHook` (`apps/web-app/app/lib/form.tsx`): pre-bound leaf components (`TextField`, `AmountField`, `DateField`, `TextareaField`, `SelectField`) read `submissionAttempts` from the form store for submit-time reveal; `formComponents` includes the transaction submit row. Callers use `useAppForm` from that module so `AppField` / `AppForm` stay wired to one context pair.
+
 ## Considered alternatives
 
 - **React Hook Form** — the more mature, more popular default, and shadcn's original `Form` integration. Rejected primarily on the native goal: RHF's core advantage is *uncontrolled* DOM inputs via `register()`, which React Native cannot use, forcing a `<Controller>` around every field and diverging the web and native binding styles. This app's forms are custom-controlled-widget-heavy anyway, so RHF would pay the controlled-path cost on web while never cashing its uncontrolled edge. shadcn now ships a TanStack Form integration as well, neutralizing the remaining web-DX argument.

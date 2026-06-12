@@ -10,7 +10,7 @@ import {
 import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { TransactionForm } from "~/components/transaction-form.js";
+import { TransactionForm } from "~/components/transaction-form/index.js";
 import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
 import { FilterPanel } from "~/components/ui/filter-panel.js";
