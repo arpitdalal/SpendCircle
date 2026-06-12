@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { test as base, expect } from "@playwright/test";
 
-/** Base UI combobox portals options to `body`; never scope option lookup to the form. */
-export async function pickFormCategory(page: Page, form: Locator, name: string) {
-  await form.getByRole("combobox", { name: "Categories" }).click();
+/**
+ * Pick from a "Categories" combobox inside `scope` (a form or filter dialog).
+ * Base UI portals options to `body`; never scope the option lookup to `scope`.
+ */
+export async function pickFormCategory(page: Page, scope: Locator, name: string) {
+  await scope.getByRole("combobox", { name: "Categories" }).click();
   await page.getByRole("option", { name }).click();
   await page.keyboard.press("Escape");
 }

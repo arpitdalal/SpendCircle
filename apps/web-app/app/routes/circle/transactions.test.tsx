@@ -191,6 +191,22 @@ describe("CircleTransactions", () => {
     expect(location()).toMatch(/categories=cat-grocery/);
   });
 
+  it("filters category options by detail text, not just label", async () => {
+    const user = userEvent.setup();
+    setup({ initialEntries: [`/circles/${REF}/transactions?month=2026-05`] });
+
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    const combobox = within(dialog).getByRole("combobox", { name: "Categories" });
+    await user.click(combobox);
+    await user.type(combobox, "archived");
+
+    // "archived" matches Rent's detail marker only — its label doesn't contain it.
+    expect(await screen.findByRole("option", { name: /Rent/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Groceries/ })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+  });
+
   it("resets filters when the selected month changes", async () => {
     const user = userEvent.setup();
     const { location } = setup({

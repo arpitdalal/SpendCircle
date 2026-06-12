@@ -43,7 +43,10 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
     <SnackbarContext.Provider value={contextValue}>
       {children}
       {message ? (
-        <output className="fixed inset-x-0 bottom-4 z-50 mx-auto block w-fit max-w-[90vw] animate-slide-up rounded-lg border border-border bg-popover px-4 py-2.5 text-center text-sm text-popover-foreground shadow-lg">
+        // z-60: the one tier above the z-50 portaled overlays. The snackbar renders
+        // in-tree (earlier in the DOM than any portal), so at equal z it would paint
+        // under an open dialog/sheet. Nothing stacks above this tier.
+        <output className="fixed inset-x-0 bottom-4 z-60 mx-auto block w-fit max-w-[90vw] animate-slide-up rounded-lg border border-border bg-popover px-4 py-2.5 text-center text-sm text-popover-foreground shadow-lg">
           {message}
         </output>
       ) : null}

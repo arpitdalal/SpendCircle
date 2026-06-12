@@ -43,9 +43,13 @@ test("transaction search finds circle transactions across months and opens detai
   await dialog.getByLabel("To").fill(`${month}-28`);
   await dialog.getByLabel("Amount min").fill("14.00");
   await dialog.getByLabel("Amount max").fill("14.00");
+  // Picking inside the dialog also proves the combobox popup stacks above the
+  // filter sheet: Playwright's click fails if the option doesn't receive events.
+  await pickFormCategory(page, dialog, categoryName);
   await dialog.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(/type=expense/);
   await expect(page).toHaveURL(/min=14.00/);
+  await expect(page).toHaveURL(/categories=/);
   await expect(result).toBeVisible();
 
   await result.getByRole("link", { name: `View ${title}` }).click();

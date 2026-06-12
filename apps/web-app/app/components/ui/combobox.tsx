@@ -98,7 +98,9 @@ function ComboboxContent({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="isolate z-[100]"
+        // All portaled overlays share z-50; portals mount on open, so DOM order
+        // layers a popup above the dialog it was opened from. Don't escalate.
+        className="isolate z-50"
       >
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"
