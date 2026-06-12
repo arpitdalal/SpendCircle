@@ -62,8 +62,8 @@ function setup(
   configureConvex({
     searchTransactions: opts.searchTransactions,
     transactionSearchOptions: opts.options ?? makeSearchOptions(),
-    ...(opts.searchStatus !== undefined ? { searchStatus: opts.searchStatus } : {}),
-    ...(opts.loadMore !== undefined ? { loadMore: opts.loadMore } : {}),
+    searchStatus: opts.searchStatus,
+    loadMore: opts.loadMore,
   });
   const initialEntries = opts.initialEntries ?? [`/circles/${REF}/search`];
   return { circle, ...renderCircleRoutes(circle, ROUTES, { initialEntries }) };
