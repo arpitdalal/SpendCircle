@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { MutationCtx, QueryCtx } from "./_generated/server.js";
 import { getCurrentUserOrNull } from "./auth.js";
@@ -60,7 +61,12 @@ export interface AuthorizedCircle {
   isOwner: boolean;
   /** The Circle is active; an archived Circle is read-only (PRD story 79). */
   isWritable: boolean;
-  /** Throws "Circle is archived" unless the Circle is writable — the one home of that guard. */
+  /**
+   * Throws `ConvexError` with `"Circle is archived"` unless the Circle is writable — the
+   * one home of that guard. Uses `ConvexError` so the payload survives Convex production
+   * redaction (plain `Error` messages become a generic "Server Error" on the client);
+   * other guard throws stay plain errors by design (ADR 0016).
+   */
   assertWritable(): void;
 }
 
@@ -111,7 +117,7 @@ export async function resolveCircleAccess(
     isWritable,
     assertWritable() {
       if (!isWritable) {
-        throw new Error("Circle is archived");
+        throw new ConvexError("Circle is archived");
       }
     },
   };

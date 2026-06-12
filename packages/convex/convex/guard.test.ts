@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -168,7 +169,11 @@ describe("resolveCircleAccess", () => {
       try {
         access?.assertWritable();
       } catch (error) {
-        message = (error as Error).message;
+        if (error instanceof ConvexError && typeof error.data === "string") {
+          message = error.data;
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
       }
       return { isWritable: access?.isWritable, message };
     });

@@ -31,6 +31,7 @@ import {
   useRestoreCategory,
   useUpdateCategory,
 } from "~/lib/data.js";
+import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -255,7 +256,7 @@ function NewCategoryForm({
       setError(
         /already exists/i.test(message)
           ? "A category with this name already exists for this type."
-          : "Couldn't create the category. Please try again.",
+          : mutationErrorMessageForUser(caught, "Couldn't create the category. Please try again."),
       );
     } finally {
       setSubmitting(false);
@@ -559,7 +560,7 @@ function EditCategoryForm({ category, onClose }: { category: Category; onClose: 
       setError(
         /already exists/i.test(message)
           ? "A category with this name already exists for this type."
-          : "Couldn't save the category. Please try again.",
+          : mutationErrorMessageForUser(caught, "Couldn't save the category. Please try again."),
       );
       setSubmitting(false);
     }
@@ -641,7 +642,7 @@ function LifecycleButton({
       await run({ categoryId: category.id });
     } catch (caught) {
       console.error(`${action}Category failed`, caught);
-      setError(`${copy.error} Please try again.`);
+      setError(mutationErrorMessageForUser(caught, `${copy.error} Please try again.`));
     } finally {
       // Always clear the in-flight flag: on success the row stays mounted in the
       // widened list and `action` flips with the new `status` (the TXN-3 lesson,
