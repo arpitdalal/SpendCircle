@@ -88,7 +88,7 @@ export function MultiSelect({
                 disabled={disabled}
                 checked={selected.has(option.value)}
                 onChange={() => toggle(option.value)}
-                className="accent-(--primary)"
+                className="accent-primary"
               />
               {option.color ? (
                 <span

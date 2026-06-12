@@ -20,12 +20,12 @@ export function FilterPanel({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] data-[open]:animate-fade-in" />
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] data-open:animate-fade-in" />
         <Dialog.Popup
           className={cn(
             "fixed z-50 flex flex-col border-border bg-card shadow-xl outline-none",
-            "inset-x-0 bottom-0 max-h-[86vh] rounded-t-xl border-t data-[open]:animate-panel-up",
-            "md:inset-y-0 md:right-0 md:left-auto md:h-dvh md:max-h-none md:w-[380px] md:rounded-none md:border-t-0 md:border-l md:data-[open]:animate-panel-side",
+            "inset-x-0 bottom-0 max-h-[86vh] rounded-t-xl border-t data-open:animate-panel-up",
+            "md:inset-y-0 md:right-0 md:left-auto md:h-dvh md:max-h-none md:w-[380px] md:rounded-none md:border-t-0 md:border-l md:data-open:animate-panel-side",
           )}
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
