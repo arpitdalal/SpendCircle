@@ -189,22 +189,18 @@ export const getPaidByFilterOptions = query({
 
     const active = members.filter((member) => member.status === "active").sort(byOwnerThenJoin);
 
-    const relevantRemoved: Doc<"members">[] = [];
-    for (const member of members) {
-      if (member.status !== "removed") {
-        continue;
-      }
-      const matched = await ctx.db
-        .query("transactions")
-        .withIndex("by_circle_paidby_status_date", (q) =>
-          q.eq("circleId", args.circleId).eq("paidByMemberId", member._id).eq("status", "active"),
-        )
-        .first();
-      if (matched) {
-        relevantRemoved.push(member);
-      }
-    }
-    relevantRemoved.sort(byOwnerThenJoin);
+    const removed = members.filter((member) => member.status === "removed");
+    const matches = await Promise.all(
+      removed.map((member) =>
+        ctx.db
+          .query("transactions")
+          .withIndex("by_circle_paidby_status_date", (q) =>
+            q.eq("circleId", args.circleId).eq("paidByMemberId", member._id).eq("status", "active"),
+          )
+          .first(),
+      ),
+    );
+    const relevantRemoved = removed.filter((_, i) => matches[i] != null).sort(byOwnerThenJoin);
 
     return [...active, ...relevantRemoved].map((member) =>
       toMemberView(member, access.membership._id),
