@@ -1,5 +1,6 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { api } from "./_generated/api.js";
 import { createAuth } from "./auth.js";
 import schema from "./schema.js";
 
@@ -7,6 +8,19 @@ const modules = import.meta.glob("./**/*.ts");
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("getCurrentUserOrNull (via users.getCurrentUser)", () => {
+  // Step 3.2 (unexpected `safeGetAuthUser` throw → log + null): skipped — convex-test
+  // cannot force a component failure without mocking `auth.ts` (ADR 0006).
+  it("returns null without error logging when there is no session", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const t = convexTest(schema, modules);
+    const user = await t.query(api.users.getCurrentUser, {});
+    expect(user).toBeNull();
+    expect(errSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
 });
 
 describe("createAuth", () => {

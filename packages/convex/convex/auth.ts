@@ -99,7 +99,21 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
 export async function getCurrentUserOrNull(
   ctx: QueryCtx | MutationCtx,
 ): Promise<Doc<"users"> | null> {
-  const authUser = await authComponent.getAuthUser(ctx).catch(() => null);
+  // @convex-dev/better-auth@0.12.3 (`src/client/create-client.ts`): `safeGetAuthUser`
+  // returns undefined when there is no Convex identity or no valid session/user row.
+  // The throwing `getAuthUser` wraps that with `ConvexError("Unauthenticated")` — use
+  // the safe API so only real component/query failures hit the catch below.
+  let authUser: Awaited<ReturnType<typeof authComponent.safeGetAuthUser>>;
+  try {
+    authUser = await authComponent.safeGetAuthUser(ctx);
+  } catch (error) {
+    // Unexpected component failure: degrade to signed-out but leave a trace
+    // (upgrade to Sentry capture when OBS-1 lands). Our own users-table read
+    // below is deliberately OUTSIDE this catch — a DB failure there must
+    // propagate, not masquerade as "signed out".
+    console.error("safeGetAuthUser failed unexpectedly", error);
+    return null;
+  }
   if (!authUser?.userId) {
     return null;
   }
