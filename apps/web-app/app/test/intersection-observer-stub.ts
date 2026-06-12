@@ -1,8 +1,9 @@
+import { afterAll, beforeAll, beforeEach } from "vitest";
+
 /**
  * jsdom has no `IntersectionObserver` — a minimal test double at the browser boundary
  * (ADR 0006). Register instances in a live set; tests call {@link flushIntersectionObserverStub}
- * to deliver synthetic entries. Reuse for any route that wires infinite scroll (Categories
- * today; mirror here if Transaction list adopts the same pattern).
+ * to deliver synthetic entries. Reuse for any route that wires infinite scroll.
  */
 
 export class IntersectionObserverStub implements IntersectionObserver {
@@ -68,4 +69,22 @@ export class IntersectionObserverStub implements IntersectionObserver {
 
 export function flushIntersectionObserverStub(isIntersecting = true) {
   IntersectionObserverStub.flushAll(isIntersecting);
+}
+
+/**
+ * Registers vitest hooks that swap in {@link IntersectionObserverStub} and reset observers
+ * between tests. Call once at the start of a `describe` block (not at module scope).
+ */
+export function installIntersectionObserverStub() {
+  const saved = globalThis.IntersectionObserver;
+  beforeAll(() => {
+    globalThis.IntersectionObserver = IntersectionObserverStub;
+  });
+  afterAll(() => {
+    IntersectionObserverStub.disconnectAllForTests();
+    globalThis.IntersectionObserver = saved;
+  });
+  beforeEach(() => {
+    IntersectionObserverStub.disconnectAllForTests();
+  });
 }

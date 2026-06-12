@@ -1,6 +1,7 @@
 import { formatMoney, money, type PlainMonth, toCurrencyCode } from "@spend-circle/domain";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router";
+import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
 import { Button } from "~/components/ui/button.js";
 import {
   type Circle,
@@ -13,6 +14,7 @@ import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useSnackbar } from "~/lib/snackbar.js";
+import { useInfiniteScroll } from "~/lib/use-infinite-scroll.js";
 import { cn } from "~/lib/utils.js";
 
 export function TransactionList({
@@ -37,6 +39,8 @@ export function TransactionList({
   showLifecycle?: boolean;
 }) {
   const { transactions, status, loadMore } = paginated;
+  const infiniteScrollSentinelRef = useRef<HTMLDivElement>(null);
+  useInfiniteScroll(infiniteScrollSentinelRef, status, loadMore);
 
   if (status === "LoadingFirstPage") {
     return <p className="text-sm text-muted-foreground">Loading transactions…</p>;
@@ -114,16 +118,13 @@ export function TransactionList({
         ))}
       </ul>
 
-      {status === "CanLoadMore" || status === "LoadingMore" ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={loadMore}
-          disabled={status === "LoadingMore"}
-        >
-          {status === "LoadingMore" ? "Loading…" : "Load more"}
-        </Button>
-      ) : null}
+      <InfiniteScrollFooter
+        status={status}
+        loadingCopy="Loading more transactions…"
+        listAriaLabel="Transaction list"
+        sentinelTestId="transactions-infinite-scroll-sentinel"
+        sentinelRef={infiniteScrollSentinelRef}
+      />
     </div>
   );
 }

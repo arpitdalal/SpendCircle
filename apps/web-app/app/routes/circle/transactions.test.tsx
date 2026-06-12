@@ -19,6 +19,8 @@ import {
 import {
   configureConvex,
   convexReactMock,
+  flushIntersectionObserverStub,
+  installIntersectionObserverStub,
   makeCategoryView,
   makeCircleView,
   makeMemberView,
@@ -336,13 +338,6 @@ describe("CircleTransactions", () => {
     expect(location()).toBe(url);
   });
 
-  it("renders Load more and pages by the shared page size", async () => {
-    const user = userEvent.setup();
-    setup({ filteredTransactions: [makeTransactionView()], status: "CanLoadMore" });
-    await user.click(screen.getByRole("button", { name: "Load more" }));
-    expect(paginatedLoadMore).toHaveBeenCalledWith(TRANSACTIONS_PAGE_SIZE);
-  });
-
   it("hides write actions in archived circles", () => {
     setup({ circle: { status: "archived" }, filteredTransactions: [makeTransactionView()] });
     expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
@@ -416,6 +411,40 @@ describe("CircleTransactions", () => {
     expect(await screen.findByText("Circle is archived")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Restore Old buy" })).toBeEnabled(),
+    );
+  });
+});
+
+describe("CircleTransactions — infinite scroll pagination", () => {
+  installIntersectionObserverStub();
+
+  it("loads the next page when the sentinel intersects (loadMore with page size)", () => {
+    setup({ filteredTransactions: [makeTransactionView()], status: "CanLoadMore" });
+    expect(screen.getByTestId("transactions-infinite-scroll-sentinel")).toBeInTheDocument();
+    flushIntersectionObserverStub(true);
+    expect(paginatedLoadMore).toHaveBeenCalledWith(TRANSACTIONS_PAGE_SIZE);
+  });
+
+  it("does not call loadMore when the observer reports no intersection", () => {
+    setup({ filteredTransactions: [makeTransactionView()], status: "CanLoadMore" });
+    flushIntersectionObserverStub(false);
+    expect(paginatedLoadMore).not.toHaveBeenCalled();
+  });
+
+  it("shows loading status while LoadingMore; no sentinel and no Load more button", () => {
+    setup({ filteredTransactions: [makeTransactionView()], status: "LoadingMore" });
+    expect(screen.getByRole("status", { name: "Transaction list" })).toHaveTextContent(
+      /loading more transactions/i,
+    );
+    expect(screen.queryByTestId("transactions-infinite-scroll-sentinel")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("hides sentinel when exhausted; live region without loading copy", () => {
+    setup({ filteredTransactions: [makeTransactionView()], status: "Exhausted" });
+    expect(screen.queryByTestId("transactions-infinite-scroll-sentinel")).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Transaction list" })).not.toHaveTextContent(
+      /loading more/i,
     );
   });
 });
