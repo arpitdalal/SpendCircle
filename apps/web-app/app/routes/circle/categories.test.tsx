@@ -2,12 +2,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { Route, useNavigate } from "react-router";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category, CategoryHistoryEvent, Circle, PaginationStatus } from "~/lib/data.js";
 import {
   configureConvex,
   flushIntersectionObserverStub,
-  IntersectionObserverStub,
+  installIntersectionObserverStub,
   makeCategoryView,
   makeCircleView,
   makeHistoryEventView,
@@ -367,20 +367,7 @@ describe("CircleCategories — URL-owned filter state (CAT-4, ADR 0016)", () => 
 });
 
 describe("CircleCategories — pagination (CAT-4)", () => {
-  const savedIntersectionObserver = globalThis.IntersectionObserver;
-
-  beforeAll(() => {
-    globalThis.IntersectionObserver = IntersectionObserverStub;
-  });
-
-  afterAll(() => {
-    IntersectionObserverStub.disconnectAllForTests();
-    globalThis.IntersectionObserver = savedIntersectionObserver;
-  });
-
-  beforeEach(() => {
-    IntersectionObserverStub.disconnectAllForTests();
-  });
+  installIntersectionObserverStub();
 
   it("loads the next page when the infinite-scroll sentinel intersects (wires loadMore)", () => {
     const categoriesLoadMore = vi.fn();

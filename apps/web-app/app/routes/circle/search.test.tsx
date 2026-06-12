@@ -2,15 +2,19 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  Category,
-  Circle,
-  Member,
-  Transaction,
-  TransactionFilterOptions,
+import {
+  type Category,
+  type Circle,
+  type Member,
+  type PaginationStatus,
+  TRANSACTIONS_PAGE_SIZE,
+  type Transaction,
+  type TransactionFilterOptions,
 } from "~/lib/data.js";
 import {
   configureConvex,
+  flushIntersectionObserverStub,
+  installIntersectionObserverStub,
   makeCategoryView,
   makeCircleView,
   makeMemberView,
@@ -28,6 +32,8 @@ vi.mock(
 import CircleSearch from "./search.js";
 
 const REF = "trip-c1";
+
+const searchPaginatedLoadMore = vi.fn();
 
 const ROUTES = (
   <>
@@ -48,12 +54,16 @@ function setup(
       | null
       | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
     initialEntries?: string[];
+    searchStatus?: PaginationStatus;
+    loadMore?: () => void;
   } = {},
 ) {
   const circle = makeCircleView(opts.circle);
   configureConvex({
     searchTransactions: opts.searchTransactions,
     transactionSearchOptions: opts.options ?? makeSearchOptions(),
+    searchStatus: opts.searchStatus,
+    loadMore: opts.loadMore,
   });
   const initialEntries = opts.initialEntries ?? [`/circles/${REF}/search`];
   return { circle, ...renderCircleRoutes(circle, ROUTES, { initialEntries }) };
@@ -183,5 +193,32 @@ describe("CircleSearch", () => {
 
     await user.click(screen.getByRole("link", { name: "View Rent" }));
     expect(location()).toBe(`/circles/${REF}/transactions/rent-t1`);
+  });
+});
+
+describe("CircleSearch — infinite scroll pagination", () => {
+  installIntersectionObserverStub();
+
+  it("loads the next page when the sentinel intersects (searchTransactions)", () => {
+    setup({
+      searchTransactions: [makeTransactionView()],
+      searchStatus: "CanLoadMore",
+      loadMore: searchPaginatedLoadMore,
+    });
+    expect(screen.getByTestId("transactions-infinite-scroll-sentinel")).toBeInTheDocument();
+    flushIntersectionObserverStub(true);
+    expect(searchPaginatedLoadMore).toHaveBeenCalledWith(TRANSACTIONS_PAGE_SIZE);
+  });
+
+  it("shows loading status while LoadingMore on search results", () => {
+    setup({
+      searchTransactions: [makeTransactionView()],
+      searchStatus: "LoadingMore",
+      loadMore: searchPaginatedLoadMore,
+    });
+    expect(screen.getByRole("status", { name: "Transaction list" })).toHaveTextContent(
+      /loading more transactions/i,
+    );
+    expect(screen.queryByTestId("transactions-infinite-scroll-sentinel")).not.toBeInTheDocument();
   });
 });

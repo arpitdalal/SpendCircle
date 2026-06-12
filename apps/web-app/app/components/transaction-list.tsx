@@ -1,6 +1,7 @@
 import { formatMoney, money, type PlainMonth, toCurrencyCode } from "@spend-circle/domain";
 import { useState } from "react";
 import { Link } from "react-router";
+import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
 import { Button } from "~/components/ui/button.js";
 import {
   type Circle,
@@ -114,16 +115,13 @@ export function TransactionList({
         ))}
       </ul>
 
-      {status === "CanLoadMore" || status === "LoadingMore" ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={loadMore}
-          disabled={status === "LoadingMore"}
-        >
-          {status === "LoadingMore" ? "Loading…" : "Load more"}
-        </Button>
-      ) : null}
+      <InfiniteScrollFooter
+        status={status}
+        loadMore={loadMore}
+        loadingCopy="Loading more transactions…"
+        listAriaLabel="Transaction list"
+        sentinelTestId="transactions-infinite-scroll-sentinel"
+      />
     </div>
   );
 }

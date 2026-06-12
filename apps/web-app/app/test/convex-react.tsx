@@ -26,4 +26,5 @@ export { makeTransactionDetailView, makeTransactionView } from "./convex/transac
 export {
   flushIntersectionObserverStub,
   IntersectionObserverStub,
+  installIntersectionObserverStub,
 } from "./intersection-observer-stub.js";

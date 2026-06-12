@@ -7,9 +7,10 @@ import {
   LIMITS,
   type TransactionType,
 } from "@spend-circle/domain";
-import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
+import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
 import { Button } from "~/components/ui/button.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import {
@@ -341,52 +342,6 @@ function ColorPicker({
 }
 
 /**
- * Pins `status` and `loadMore` for the intersection callback in an effect — not during
- * render — so concurrent React never observes ref values ahead of committed props.
- * Observes the sentinel only while `status === "CanLoadMore"`.
- */
-function useCategoryListInfiniteScroll(
-  sentinelRef: RefObject<HTMLElement | null>,
-  status: CategoriesPage["status"],
-  loadMore: CategoriesPage["loadMore"],
-) {
-  const statusRef = useRef(status);
-  const loadMoreRef = useRef(loadMore);
-
-  useEffect(() => {
-    statusRef.current = status;
-    loadMoreRef.current = loadMore;
-  }, [status, loadMore]);
-
-  useEffect(() => {
-    if (status !== "CanLoadMore") {
-      return;
-    }
-    const node = sentinelRef.current;
-    if (!node) {
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) {
-            continue;
-          }
-          if (statusRef.current !== "CanLoadMore") {
-            return;
-          }
-          loadMoreRef.current();
-          return;
-        }
-      },
-      { root: null, rootMargin: "0px 0px 200px 0px", threshold: 0 },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [status, sentinelRef]);
-}
-
-/**
  * The Category Filter's result list — one source-paginated page stream of the
  * selected type, lifecycle scope, and search (CAT-4). Each row offers the
  * affordances the SERVER said this viewer may use (`canEditFields` / `canArchive`
@@ -419,8 +374,6 @@ function CategoryList({
   const [editingId, setEditingId] = useState<Category["id"] | null>(null);
   const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
   const { categories, status, loadMore } = page;
-  const infiniteScrollSentinelRef = useRef<HTMLDivElement>(null);
-  useCategoryListInfiniteScroll(infiniteScrollSentinelRef, status, loadMore);
 
   // The open-editor / open-history selection is only meaningful while its row is
   // ON the current page. The Category Filter (search, status, type) and reactive
@@ -464,27 +417,13 @@ function CategoryList({
         ))}
       </ul>
 
-      <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        aria-label="Category list"
-        className={cn(
-          status === "LoadingMore"
-            ? "text-sm text-muted-foreground"
-            : "sr-only pointer-events-none",
-        )}
-      >
-        {status === "LoadingMore" ? "Loading more categories…" : "\u00a0"}
-      </div>
-      {status === "CanLoadMore" ? (
-        <div
-          ref={infiniteScrollSentinelRef}
-          data-testid="categories-infinite-scroll-sentinel"
-          aria-hidden
-          className="h-2 w-full shrink-0"
-        />
-      ) : null}
+      <InfiniteScrollFooter
+        status={status}
+        loadMore={loadMore}
+        loadingCopy="Loading more categories…"
+        listAriaLabel="Category list"
+        sentinelTestId="categories-infinite-scroll-sentinel"
+      />
     </div>
   );
 }
