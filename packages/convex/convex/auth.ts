@@ -99,12 +99,21 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
 export async function getCurrentUserOrNull(
   ctx: QueryCtx | MutationCtx,
 ): Promise<Doc<"users"> | null> {
-  const authUser = await authComponent.getAuthUser(ctx).catch(() => null);
-  if (!authUser?.userId) {
+  // @convex-dev/better-auth@0.12.3 (`src/client/create-client.ts`): `safeGetAuthUser`
+  // returns undefined when there is no Convex identity or no valid session/user row.
+  // The throwing `getAuthUser` wraps that with `ConvexError("Unauthenticated")` — use
+  // the safe API so only real component/query failures hit the catch below.
+  try {
+    const authUser = await authComponent.safeGetAuthUser(ctx);
+    if (!authUser?.userId) {
+      return null;
+    }
+    const userId = ctx.db.normalizeId("users", authUser.userId);
+    return userId ? await ctx.db.get(userId) : null;
+  } catch (error) {
+    console.error("getAuthUser failed unexpectedly", error);
     return null;
   }
-  const userId = ctx.db.normalizeId("users", authUser.userId);
-  return userId ? await ctx.db.get(userId) : null;
 }
 
 /** Throws unless the request is from a bootstrapped Spend Circle User. */
