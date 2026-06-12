@@ -3,7 +3,7 @@ import type { Mock } from "vitest";
 import { vi } from "vitest";
 import { type CategoriesState, categoriesDouble } from "./categories.js";
 import { type CirclesState, circlesDouble } from "./circles.js";
-import type { EntityDouble, PaginatedPage } from "./contract.js";
+import type { PaginatedPage } from "./contract.js";
 import { type DashboardState, dashboardDouble } from "./dashboard.js";
 import { type HistoryState, historyDouble } from "./history.js";
 import { type LedgerState, ledgerDouble } from "./ledger.js";
