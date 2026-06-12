@@ -28,3 +28,4 @@ export {
   IntersectionObserverStub,
   installIntersectionObserverStub,
 } from "./intersection-observer-stub.js";
+export { pickTransactionFormCategory } from "./transaction-category-picker.js";

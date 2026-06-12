@@ -56,7 +56,8 @@ test("a member records an expense and sees it in the live list", async ({ page }
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("12.50");
-  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("combobox", { name: "Categories" }).click();
+  await form.getByRole("option", { name: categoryName }).click();
   await form.getByRole("button", { name: "Add expense" }).click();
 
   // The reactive query flips to include the new Transaction with no reload.
@@ -132,7 +133,8 @@ test("the monthly ledger totals a month and navigates between months", async ({
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("12.50");
-  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("combobox", { name: "Categories" }).click();
+  await form.getByRole("option", { name: categoryName }).click();
   await form.getByRole("button", { name: "Add expense" }).click();
 
   // The row appears and the month's totals reflect exactly this one expense: a -$12.50 Net.
@@ -230,7 +232,8 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   const addForm = page.getByRole("form", { name: /add expense/i });
   await addForm.getByLabel("Title").fill(title);
   await addForm.getByLabel(/Amount/).fill("10.00");
-  await addForm.getByRole("button", { name: expenseCat }).click();
+  await addForm.getByRole("combobox", { name: "Categories" }).click();
+  await addForm.getByRole("option", { name: expenseCat }).click();
   await addForm.getByRole("button", { name: "Add expense" }).click();
   const row = page.getByRole("listitem").filter({ hasText: title });
   await expect(row).toBeVisible();
@@ -254,8 +257,11 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   await typeForm.getByRole("button", { name: "Income" }).click();
   await typeForm.getByRole("alertdialog").getByRole("button", { name: "Change type" }).click();
   // The old expense category is gone; pick the income one before saving.
-  await expect(typeForm.getByRole("button", { name: expenseCat })).toHaveCount(0);
-  await typeForm.getByRole("button", { name: incomeCat }).click();
+  await expect(
+    typeForm.getByRole("button", { name: new RegExp(`Remove ${expenseCat}`) }),
+  ).toHaveCount(0);
+  await typeForm.getByRole("combobox", { name: "Categories" }).click();
+  await typeForm.getByRole("option", { name: incomeCat }).click();
   await typeForm.getByRole("button", { name: "Save changes" }).click();
 
   const incomeRow = page.getByRole("listitem").filter({ hasText: editedTitle });
@@ -291,7 +297,8 @@ test("a member archives and restores a transaction", async ({ page }, testInfo) 
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("8.00");
-  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("combobox", { name: "Categories" }).click();
+  await form.getByRole("option", { name: categoryName }).click();
   await form.getByRole("button", { name: "Add expense" }).click();
 
   const row = page.getByRole("listitem").filter({ hasText: title });
@@ -369,7 +376,8 @@ test("the transactions page restores month, add form, and edit link across reloa
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("9.00");
-  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("combobox", { name: "Categories" }).click();
+  await form.getByRole("option", { name: categoryName }).click();
   await form.getByRole("button", { name: "Add expense" }).click();
 
   const row = page.getByRole("listitem").filter({ hasText: title });
@@ -419,7 +427,8 @@ test("the transaction detail shows audit metadata and history reflecting an edit
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("10.00");
-  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("combobox", { name: "Categories" }).click();
+  await form.getByRole("option", { name: categoryName }).click();
   await form.getByRole("button", { name: "Add expense" }).click();
 
   const row = page.getByRole("listitem").filter({ hasText: title });
@@ -489,7 +498,8 @@ test("editing from the transaction detail returns to the detail on cancel and on
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("10.00");
-  await form.getByRole("button", { name: categoryName }).click();
+  await form.getByRole("combobox", { name: "Categories" }).click();
+  await form.getByRole("option", { name: categoryName }).click();
   await form.getByRole("button", { name: "Add expense" }).click();
 
   const row = page.getByRole("listitem").filter({ hasText: title });

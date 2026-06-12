@@ -25,6 +25,7 @@ import {
   makeCircleView,
   makeMemberView,
   makeTransactionView,
+  pickTransactionFormCategory,
   renderCircleRoutes,
   testId,
 } from "~/test/convex-react.js";
@@ -353,7 +354,7 @@ describe("CircleTransactions", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Late entry");
     await user.type(within(form).getByLabelText(/Amount/), "10");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
 
     expect(await within(form).findByText("Circle is archived")).toBeInTheDocument();
@@ -370,7 +371,7 @@ describe("CircleTransactions", () => {
     const form = screen.getByRole("form", { name: /add expense/i });
     await user.type(within(form).getByLabelText("Title"), "Late entry");
     await user.type(within(form).getByLabelText(/Amount/), "10");
-    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await pickTransactionFormCategory(user, form, "Groceries");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
 
     expect(
