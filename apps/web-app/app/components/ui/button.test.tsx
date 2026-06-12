@@ -26,6 +26,9 @@ describe("Button", () => {
         </Link>
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: "Link styled as button" })).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Link styled as button" });
+    expect(link).toBeInTheDocument();
+    // Default variant + shared base — fails if `buttonVariants` stops emitting classes.
+    expect(link).toHaveClass("inline-flex", "bg-primary", "h-10");
   });
 });
