@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router";
 import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
 import { FilterPanel } from "~/components/ui/filter-panel.js";
-import { MultiSelect, type MultiSelectOption } from "~/components/ui/multi-select.js";
+import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-combobox.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import { useTransactionSearch, useTransactionSearchOptions } from "~/lib/data.js";
 import {
@@ -244,21 +244,21 @@ function SearchFilterForm({
           />
         </label>
       </div>
-      <MultiSelect
+      <MultiCombobox
         label="Categories"
         options={categoryOptions}
         value={draft.categories}
         disabled={optionsLoading}
         onChange={(categories) => setDraft({ ...draft, categories })}
       />
-      <MultiSelect
+      <MultiCombobox
         label="Recorded by"
         options={memberOptions}
         value={draft.recordedBy}
         disabled={optionsLoading}
         onChange={(recordedBy) => setDraft({ ...draft, recordedBy })}
       />
-      <MultiSelect
+      <MultiCombobox
         label="Paid by"
         options={memberOptions}
         value={draft.paidBy}
@@ -277,7 +277,7 @@ function toCategoryOptions(
     label: category.name,
     detail: category.status === "archived" ? "archived" : undefined,
     color: category.color,
-  })) satisfies MultiSelectOption[];
+  })) satisfies MultiComboboxOption[];
 }
 
 function toMemberOptions(
@@ -287,5 +287,5 @@ function toMemberOptions(
     value: member.id,
     label: member.displayName,
     detail: member.status === "removed" ? "removed" : undefined,
-  })) satisfies MultiSelectOption[];
+  })) satisfies MultiComboboxOption[];
 }

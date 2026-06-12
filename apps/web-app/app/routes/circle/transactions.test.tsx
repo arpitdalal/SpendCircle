@@ -25,6 +25,7 @@ import {
   makeCircleView,
   makeMemberView,
   makeTransactionView,
+  pickCombobox,
   pickTransactionFormCategory,
   renderCircleRoutes,
   testId,
@@ -174,6 +175,20 @@ describe("CircleTransactions", () => {
     );
     expect(screen.getByText("Rent payment")).toBeInTheDocument();
     expect(screen.getAllByText(/\$125\.00/)).toHaveLength(2);
+  });
+
+  it("applies a category filter from the combobox to the URL", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05`],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    await pickCombobox(user, dialog, "Categories", "Groceries");
+    await user.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    expect(location()).toMatch(/categories=cat-grocery/);
   });
 
   it("resets filters when the selected month changes", async () => {

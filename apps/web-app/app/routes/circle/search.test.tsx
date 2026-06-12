@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +19,7 @@ import {
   makeCircleView,
   makeMemberView,
   makeTransactionView,
+  pickCombobox,
   renderCircleRoutes,
   testId,
 } from "~/test/convex-react.js";
@@ -135,6 +136,20 @@ describe("CircleSearch", () => {
     expect(location()).toBe(
       `/circles/${REF}/search?type=expense&status=archived&from=2026-05-01&to=2026-05-31&min=10`,
     );
+  });
+
+  it("applies a category filter from the combobox to the URL", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
+    });
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    await pickCombobox(user, dialog, "Categories", "Groceries");
+    await user.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    expect(location()).toMatch(/categories=cat-grocery/);
   });
 
   it("resets immediately to canonical default search", async () => {
