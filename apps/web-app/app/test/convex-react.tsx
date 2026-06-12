@@ -23,3 +23,7 @@ export {
   renderWithRouter,
 } from "./convex/render.js";
 export { makeTransactionDetailView, makeTransactionView } from "./convex/transactions.js";
+export {
+  flushIntersectionObserverStub,
+  IntersectionObserverStub,
+} from "./intersection-observer-stub.js";
