@@ -526,7 +526,7 @@ export function TransactionForm({
                               : field.handleChange([...field.state.value, category.id])
                           }
                           className={cn(
-                            "max-w-full whitespace-normal break-words rounded-full border px-3 py-1 text-left text-sm transition-colors",
+                            "max-w-full whitespace-normal wrap-break-word rounded-full border px-3 py-1 text-left text-sm transition-colors",
                             selected
                               ? "border-primary bg-primary text-primary-foreground"
                               : "border-border text-muted-foreground hover:text-foreground",
@@ -544,7 +544,7 @@ export function TransactionForm({
                           type="button"
                           aria-pressed={true}
                           onClick={() => deselect(category.id)}
-                          className="max-w-full whitespace-normal break-words rounded-full border border-amber-600/70 bg-amber-950/40 px-3 py-1 text-left text-sm text-amber-300 transition-colors hover:text-amber-100"
+                          className="max-w-full whitespace-normal wrap-break-word rounded-full border border-amber-600/70 bg-amber-950/40 px-3 py-1 text-left text-sm text-amber-300 transition-colors hover:text-amber-100"
                         >
                           {category.name} · archived{blocking ? " ✕" : ""}
                         </button>
