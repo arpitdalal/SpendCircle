@@ -1,5 +1,6 @@
-import type { RefObject } from "react";
+import { useRef } from "react";
 import type { PaginationStatus } from "~/lib/data.js";
+import { useInfiniteScroll } from "~/lib/use-infinite-scroll.js";
 import { cn } from "~/lib/utils.js";
 
 /**
@@ -7,20 +8,24 @@ import { cn } from "~/lib/utils.js";
  * The region stays mounted with content toggling (`Loading…` ↔ nbsp) and `sr-only` when idle
  * so screen readers reliably announce pagination — mounting the region only while `LoadingMore`
  * makes announcements easy to miss (PR #111 / issue #98).
+ * The footer owns the observer wiring so consumers pass `loadMore` instead of threading a ref.
  */
 export function InfiniteScrollFooter({
   status,
+  loadMore,
   loadingCopy,
   listAriaLabel,
   sentinelTestId,
-  sentinelRef,
 }: {
   status: PaginationStatus;
+  loadMore: () => void;
   loadingCopy: string;
   listAriaLabel: string;
   sentinelTestId: string;
-  sentinelRef: RefObject<HTMLDivElement | null>;
 }) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useInfiniteScroll(sentinelRef, status, loadMore);
+
   return (
     <>
       <div

@@ -33,7 +33,6 @@ import {
   useUpdateCategory,
 } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
-import { useInfiniteScroll } from "~/lib/use-infinite-scroll.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -375,8 +374,6 @@ function CategoryList({
   const [editingId, setEditingId] = useState<Category["id"] | null>(null);
   const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
   const { categories, status, loadMore } = page;
-  const infiniteScrollSentinelRef = useRef<HTMLDivElement>(null);
-  useInfiniteScroll(infiniteScrollSentinelRef, status, loadMore);
 
   // The open-editor / open-history selection is only meaningful while its row is
   // ON the current page. The Category Filter (search, status, type) and reactive
@@ -422,10 +419,10 @@ function CategoryList({
 
       <InfiniteScrollFooter
         status={status}
+        loadMore={loadMore}
         loadingCopy="Loading more categories…"
         listAriaLabel="Category list"
         sentinelTestId="categories-infinite-scroll-sentinel"
-        sentinelRef={infiniteScrollSentinelRef}
       />
     </div>
   );
