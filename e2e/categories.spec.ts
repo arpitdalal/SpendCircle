@@ -169,14 +169,20 @@ test("the category filter searches, scopes by status, reloads from the URL, and 
   // Searching the nonce, not a shared term, keeps the parallel desktop/mobile
   // projects (same backend, same Personal Circle) out of each other's pages.
   await search.fill(nonce);
+  // Keep the sentinel below the 200px rootMargin prefetch zone so we do not assert
+  // visibility on an element that may already have auto-fired (short rows / smaller page size).
+  await page.evaluate(() => window.scrollTo(0, 0));
   const matchRows = page.getByRole("listitem").filter({ hasText: nonce });
   const sentinel = page.getByTestId("categories-infinite-scroll-sentinel");
-  await expect(sentinel).toBeVisible();
-  const firstPageCount = await matchRows.count();
-  expect(firstPageCount).toBeLessThanOrEqual(25); // the first page is bounded
+  const page2Row = matchRows.filter({ hasText: `Match 0 ${nonce}` });
+  await expect(sentinel.or(page2Row)).toBeVisible({ timeout: 15_000 });
 
-  await sentinel.scrollIntoViewIfNeeded();
-  await expect(matchRows.filter({ hasText: `Match 0 ${nonce}` })).toBeVisible({ timeout: 15_000 });
+  if (await sentinel.isVisible()) {
+    const firstPageCount = await matchRows.count();
+    expect(firstPageCount).toBeLessThanOrEqual(25); // the first page is bounded
+    await sentinel.scrollIntoViewIfNeeded();
+  }
+  await expect(page2Row).toBeVisible({ timeout: 15_000 });
 
   // Archive one row, then scope to active: it reactively leaves the list.
   await page.getByRole("button", { name: `Archive ${matchName(25)}` }).click();

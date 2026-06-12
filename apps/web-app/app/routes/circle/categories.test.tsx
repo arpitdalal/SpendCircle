@@ -6,6 +6,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { Category, CategoryHistoryEvent, Circle, PaginationStatus } from "~/lib/data.js";
 import {
   configureConvex,
+  flushIntersectionObserverStub,
+  IntersectionObserverStub,
   makeCategoryView,
   makeCircleView,
   makeHistoryEventView,
@@ -364,89 +366,20 @@ describe("CircleCategories — URL-owned filter state (CAT-4, ADR 0016)", () => 
   });
 });
 
-/**
- * jsdom has no IntersectionObserver — stub as a true browser boundary (ADR 0006).
- * Instances register in a live set; tests call {@link flushCategoriesInfiniteScrollIntersections}.
- */
-class CategoriesInfiniteScrollIntersectionObserverStub implements IntersectionObserver {
-  private static readonly live = new Set<CategoriesInfiniteScrollIntersectionObserverStub>();
-
-  static disconnectAllForTests() {
-    for (const io of [...CategoriesInfiniteScrollIntersectionObserverStub.live]) {
-      io.disconnect();
-    }
-  }
-
-  static flushAll(isIntersecting = true) {
-    for (const io of CategoriesInfiniteScrollIntersectionObserverStub.live) {
-      io.deliver(isIntersecting);
-    }
-  }
-
-  readonly root: Element | Document | null = null;
-  readonly rootMargin = "";
-  readonly thresholds: ReadonlyArray<number> = [0];
-  private readonly observed = new Set<Element>();
-
-  constructor(
-    private readonly intersectionCallback: IntersectionObserverCallback,
-    _init?: IntersectionObserverInit,
-  ) {
-    CategoriesInfiniteScrollIntersectionObserverStub.live.add(this);
-  }
-
-  observe(element: Element) {
-    this.observed.add(element);
-  }
-
-  unobserve(element: Element) {
-    this.observed.delete(element);
-  }
-
-  disconnect() {
-    CategoriesInfiniteScrollIntersectionObserverStub.live.delete(this);
-    this.observed.clear();
-  }
-
-  takeRecords(): IntersectionObserverEntry[] {
-    return [];
-  }
-
-  private deliver(isIntersecting: boolean) {
-    for (const target of this.observed) {
-      const boundingClientRect = target.getBoundingClientRect();
-      const entry: IntersectionObserverEntry = {
-        isIntersecting,
-        target,
-        boundingClientRect,
-        intersectionRect: boundingClientRect,
-        rootBounds: null,
-        intersectionRatio: isIntersecting ? 1 : 0,
-        time: performance.now(),
-      };
-      this.intersectionCallback([entry], this);
-    }
-  }
-}
-
-function flushCategoriesInfiniteScrollIntersections(isIntersecting = true) {
-  CategoriesInfiniteScrollIntersectionObserverStub.flushAll(isIntersecting);
-}
-
 describe("CircleCategories — pagination (CAT-4)", () => {
   const savedIntersectionObserver = globalThis.IntersectionObserver;
 
   beforeAll(() => {
-    globalThis.IntersectionObserver = CategoriesInfiniteScrollIntersectionObserverStub;
+    globalThis.IntersectionObserver = IntersectionObserverStub;
   });
 
   afterAll(() => {
-    CategoriesInfiniteScrollIntersectionObserverStub.disconnectAllForTests();
+    IntersectionObserverStub.disconnectAllForTests();
     globalThis.IntersectionObserver = savedIntersectionObserver;
   });
 
   beforeEach(() => {
-    CategoriesInfiniteScrollIntersectionObserverStub.disconnectAllForTests();
+    IntersectionObserverStub.disconnectAllForTests();
   });
 
   it("loads the next page when the infinite-scroll sentinel intersects (wires loadMore)", () => {
@@ -458,7 +391,7 @@ describe("CircleCategories — pagination (CAT-4)", () => {
     });
 
     expect(screen.getByTestId("categories-infinite-scroll-sentinel")).toBeInTheDocument();
-    flushCategoriesInfiniteScrollIntersections(true);
+    flushIntersectionObserverStub(true);
     expect(categoriesLoadMore).toHaveBeenCalledTimes(1);
   });
 
@@ -470,23 +403,25 @@ describe("CircleCategories — pagination (CAT-4)", () => {
       categoriesLoadMore,
     });
 
-    flushCategoriesInfiniteScrollIntersections(false);
+    flushIntersectionObserverStub(false);
     expect(categoriesLoadMore).not.toHaveBeenCalled();
   });
 
   it("shows a loading status line while LoadingMore and omits the manual Load-more control", () => {
     setup({ categories: [makeCategoryView()], categoriesPageStatus: "LoadingMore" });
-    expect(screen.getByRole("status", { name: "Loading more categories" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Category list" })).toHaveTextContent(
+      /loading more categories/i,
+    );
     expect(screen.queryByTestId("categories-infinite-scroll-sentinel")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 
-  it("hides sentinel and loading row when the stream is exhausted", () => {
+  it("hides sentinel when exhausted; live region stays without loading copy", () => {
     setup({ categories: [makeCategoryView()], categoriesPageStatus: "Exhausted" });
     expect(screen.queryByTestId("categories-infinite-scroll-sentinel")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("status", { name: "Loading more categories" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Category list" })).not.toHaveTextContent(
+      /loading more/i,
+    );
   });
 });
 

@@ -341,6 +341,52 @@ function ColorPicker({
 }
 
 /**
+ * Pins `status` and `loadMore` for the intersection callback in an effect — not during
+ * render — so concurrent React never observes ref values ahead of committed props.
+ * Observes the sentinel only while `status === "CanLoadMore"`.
+ */
+function useCategoryListInfiniteScroll(
+  sentinelRef: RefObject<HTMLElement | null>,
+  status: CategoriesPage["status"],
+  loadMore: CategoriesPage["loadMore"],
+) {
+  const statusRef = useRef(status);
+  const loadMoreRef = useRef(loadMore);
+
+  useEffect(() => {
+    statusRef.current = status;
+    loadMoreRef.current = loadMore;
+  }, [status, loadMore]);
+
+  useEffect(() => {
+    if (status !== "CanLoadMore") {
+      return;
+    }
+    const node = sentinelRef.current;
+    if (!node) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            continue;
+          }
+          if (statusRef.current !== "CanLoadMore") {
+            return;
+          }
+          loadMoreRef.current();
+          return;
+        }
+      },
+      { root: null, rootMargin: "0px 0px 200px 0px", threshold: 0 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [status, sentinelRef]);
+}
+
+/**
  * The Category Filter's result list — one source-paginated page stream of the
  * selected type, lifecycle scope, and search (CAT-4). Each row offers the
  * affordances the SERVER said this viewer may use (`canEditFields` / `canArchive`
@@ -352,6 +398,8 @@ function ColorPicker({
  * `rootMargin` so the next page starts while the user is still near the last rows).
  * The observer calls `loadMore` only when `status === "CanLoadMore"` so a page
  * already in `LoadingMore` never receives duplicate loads from repeated entries.
+ * A persistent `role="status"` live region (content toggles) announces loading more
+ * reliably than mounting the region only while `LoadingMore`.
  *
  * The two empty states are deliberately distinct: with no narrowing applied an
  * empty result means the type has no Categories yet; with a search or a
@@ -416,16 +464,19 @@ function CategoryList({
         ))}
       </ul>
 
-      {status === "LoadingMore" ? (
-        <p
-          role="status"
-          aria-live="polite"
-          aria-label="Loading more categories"
-          className="text-sm text-muted-foreground"
-        >
-          Loading more categories…
-        </p>
-      ) : null}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-label="Category list"
+        className={cn(
+          status === "LoadingMore"
+            ? "text-sm text-muted-foreground"
+            : "sr-only pointer-events-none",
+        )}
+      >
+        {status === "LoadingMore" ? "Loading more categories…" : "\u00a0"}
+      </div>
       {status === "CanLoadMore" ? (
         <div
           ref={infiniteScrollSentinelRef}
@@ -436,48 +487,6 @@ function CategoryList({
       ) : null}
     </div>
   );
-}
-
-/**
- * Pins `loadMore` to the latest closure while `IntersectionObserver` only runs when
- * more pages exist — avoids effect churn from an inline `loadMore` identity each render.
- */
-function useCategoryListInfiniteScroll(
-  sentinelRef: RefObject<HTMLElement | null>,
-  status: CategoriesPage["status"],
-  loadMore: CategoriesPage["loadMore"],
-) {
-  const statusRef = useRef(status);
-  const loadMoreRef = useRef(loadMore);
-  statusRef.current = status;
-  loadMoreRef.current = loadMore;
-
-  useEffect(() => {
-    if (status !== "CanLoadMore") {
-      return;
-    }
-    const node = sentinelRef.current;
-    if (!node) {
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) {
-            continue;
-          }
-          if (statusRef.current !== "CanLoadMore") {
-            return;
-          }
-          loadMoreRef.current();
-          return;
-        }
-      },
-      { root: null, rootMargin: "0px 0px 200px 0px", threshold: 0 },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [status, sentinelRef]);
 }
 
 function CategoryRow({
