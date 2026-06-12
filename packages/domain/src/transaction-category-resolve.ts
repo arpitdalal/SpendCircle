@@ -27,10 +27,7 @@ export function resolveCategories<Row extends CategoryResolveRow>(
   selectedIds: readonly string[],
   categoryById: ReadonlyMap<string, Row>,
   alreadyAttached: ReadonlySet<string>,
-):
-  | { ok: true; categoryIds: Array<Row["id"]> }
-  | { ok: false; reason: "unresolved" }
-  | { ok: false; reason: "newly_archived"; categories: CategoryResolveRow[] } {
+): ResolveCategoriesResult<Row["id"]> {
   const resolved: Row[] = [];
   for (const id of selectedIds) {
     const row = categoryById.get(id);

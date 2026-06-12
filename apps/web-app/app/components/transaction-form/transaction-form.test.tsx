@@ -209,6 +209,17 @@ describe("TransactionForm — create", () => {
     expect(within(form).queryByText("Title is required")).not.toBeInTheDocument();
   });
 
+  it("stays quiet when Amount is focused and blurred without typing (no dirty blur normalize)", async () => {
+    const user = userEvent.setup();
+    renderForm(createExpense, {
+      categories: [makeCategoryView({ name: "Groceries", type: "expense" })],
+    });
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await user.click(within(form).getByLabelText(/Amount/));
+    await user.tab();
+    expect(within(form).queryByText("Amount is required")).not.toBeInTheDocument();
+  });
+
   it("keeps a category archived mid-edit visible and blocks submit (PRD 57)", async () => {
     const user = userEvent.setup();
     const cats: Category[] = [

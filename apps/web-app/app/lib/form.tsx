@@ -10,6 +10,16 @@ const { fieldContext, formContext, useFieldContext, useFormContext } = createFor
 
 export { fieldContext, formContext, useFieldContext, useFormContext };
 
+/** ADR 0020: `(isBlurred && isDirty) || submissionAttempts > 0` — single contract for string fields. */
+function useFieldReveal() {
+  const field = useFieldContext<string>();
+  const form = useFormContext();
+  const showAllErrors = useStore(form.store, (s: AnyFormState) => s.submissionAttempts > 0);
+  const reveal = (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
+  const invalid = reveal && field.state.meta.errors.length > 0;
+  return { field, invalid, errors: field.state.meta.errors };
+}
+
 function TextField({
   id,
   label,
@@ -23,11 +33,7 @@ function TextField({
   maxLength?: number;
   autoComplete?: string;
 }) {
-  const field = useFieldContext<string>();
-  const form = useFormContext();
-  const showAllErrors = useStore(form.store, (s: AnyFormState) => s.submissionAttempts > 0);
-  const reveal = (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
-  const invalid = reveal && field.state.meta.errors.length > 0;
+  const { field, invalid, errors } = useFieldReveal();
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -41,7 +47,7 @@ function TextField({
         autoComplete={autoComplete}
         aria-invalid={invalid}
       />
-      <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+      <FieldError errors={invalid ? errors : undefined} />
     </Field>
   );
 }
@@ -53,13 +59,10 @@ function AmountField({
 }: {
   id: string;
   label: string;
-  onBlurNormalize: (raw: string) => string;
+  /** Return `null` to skip `handleChange` on blur (keeps untouched empty from going dirty). */
+  onBlurNormalize: (raw: string) => string | null;
 }) {
-  const field = useFieldContext<string>();
-  const form = useFormContext();
-  const showAllErrors = useStore(form.store, (s: AnyFormState) => s.submissionAttempts > 0);
-  const reveal = (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
-  const invalid = reveal && field.state.meta.errors.length > 0;
+  const { field, invalid, errors } = useFieldReveal();
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -70,23 +73,22 @@ function AmountField({
         onChange={(event) => field.handleChange(event.target.value)}
         onBlur={() => {
           field.handleBlur();
-          field.handleChange(onBlurNormalize(field.state.value));
+          const normalized = onBlurNormalize(field.state.value);
+          if (normalized !== null) {
+            field.handleChange(normalized);
+          }
         }}
         placeholder="0.00"
         autoComplete="off"
         aria-invalid={invalid}
       />
-      <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+      <FieldError errors={invalid ? errors : undefined} />
     </Field>
   );
 }
 
 function DateField({ id, label }: { id: string; label: string }) {
-  const field = useFieldContext<string>();
-  const form = useFormContext();
-  const showAllErrors = useStore(form.store, (s: AnyFormState) => s.submissionAttempts > 0);
-  const reveal = (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
-  const invalid = reveal && field.state.meta.errors.length > 0;
+  const { field, invalid, errors } = useFieldReveal();
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -98,7 +100,7 @@ function DateField({ id, label }: { id: string; label: string }) {
         onBlur={field.handleBlur}
         aria-invalid={invalid}
       />
-      <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+      <FieldError errors={invalid ? errors : undefined} />
     </Field>
   );
 }
@@ -118,11 +120,7 @@ function TextareaField({
   maxLength: number;
   placeholder?: string;
 }) {
-  const field = useFieldContext<string>();
-  const form = useFormContext();
-  const showAllErrors = useStore(form.store, (s: AnyFormState) => s.submissionAttempts > 0);
-  const reveal = (field.state.meta.isBlurred && field.state.meta.isDirty) || showAllErrors;
-  const invalid = reveal && field.state.meta.errors.length > 0;
+  const { field, invalid, errors } = useFieldReveal();
   return (
     <Field>
       <FieldLabel htmlFor={id}>
@@ -138,33 +136,40 @@ function TextareaField({
         placeholder={placeholder}
         aria-invalid={invalid}
       />
-      <FieldError errors={invalid ? field.state.meta.errors : undefined} />
+      <FieldError errors={invalid ? errors : undefined} />
     </Field>
   );
 }
 
+/** Shared `<select>` field kit. Add field-level validators when a select gets schema-backed errors. */
 function SelectField({
   id,
   label,
   options,
-  showLoadingPlaceholder,
+  showLoadingPlaceholder = false,
   displayValueFallback,
 }: {
   id: string;
   label: string;
   options: readonly { value: string; label: string }[];
-  showLoadingPlaceholder: boolean;
-  /** When the form field is empty, the select shows this member id (create Paid By default). */
-  displayValueFallback: string;
+  showLoadingPlaceholder?: boolean;
+  /** When set, empty field value displays as this option's value (e.g. default member id). */
+  displayValueFallback?: string;
 }) {
-  const field = useFieldContext<string>();
+  const { field, invalid, errors } = useFieldReveal();
+  const shownValue =
+    displayValueFallback !== undefined
+      ? field.state.value || displayValueFallback
+      : field.state.value;
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <select
         id={id}
-        value={field.state.value || displayValueFallback}
+        value={shownValue}
         onChange={(event) => field.handleChange(event.target.value)}
+        onBlur={field.handleBlur}
+        aria-invalid={invalid}
         className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
       >
         {showLoadingPlaceholder ? <option value="">Loading…</option> : null}
@@ -174,6 +179,7 @@ function SelectField({
           </option>
         ))}
       </select>
+      <FieldError errors={invalid ? errors : undefined} />
     </Field>
   );
 }
@@ -216,14 +222,14 @@ const spendCircleFormComponents = {
   SubmitRow,
 };
 
-const { useAppForm, withForm } = createFormHook({
+const { useAppForm, useTypedAppFormContext } = createFormHook({
   fieldContext,
   formContext,
   fieldComponents: spendCircleFieldComponents,
   formComponents: spendCircleFormComponents,
 });
 
-export { useAppForm, withForm };
+export { useAppForm, useTypedAppFormContext };
 
 export type SpendCircleFieldComponents = typeof spendCircleFieldComponents;
 export type SpendCircleFormComponents = typeof spendCircleFormComponents;
