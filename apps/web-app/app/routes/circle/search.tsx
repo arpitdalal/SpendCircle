@@ -1,12 +1,18 @@
+import { TRANSACTION_SEARCH_MAX_PAGE } from "@spend-circle/domain";
 import { Search, SlidersHorizontal } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
 import { FilterPanel } from "~/components/ui/filter-panel.js";
 import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-combobox.js";
+import { Pagination } from "~/components/ui/pagination.js";
 import { Segmented } from "~/components/ui/segmented.js";
-import { useTransactionSearch, useTransactionSearchOptions } from "~/lib/data.js";
+import {
+  TRANSACTIONS_PAGE_SIZE,
+  useTransactionSearch,
+  useTransactionSearchOptions,
+} from "~/lib/data.js";
 import {
   activeFilterCount,
   canonicalSearchParams,
@@ -25,9 +31,22 @@ export default function CircleSearch() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [draft, setDraft] = useState<SearchFilters>(filters);
   const options = useTransactionSearchOptions(circle.id, panelOpen ? draft.type : filters.type);
-  const results = useTransactionSearch(circle.id, toSearchQuery(filters));
+  const results = useTransactionSearch(circle.id, toSearchQuery(filters), {
+    page: filters.page,
+    pageSize: TRANSACTIONS_PAGE_SIZE,
+  });
   const filterCount = activeFilterCount(filters);
   const searchKey = searchParams.toString();
+
+  const totalPages = useMemo(() => {
+    if (results.isLoading || results.totalCount === 0) {
+      return 0;
+    }
+    return Math.min(
+      TRANSACTION_SEARCH_MAX_PAGE,
+      Math.max(1, Math.ceil(results.totalCount / results.pageSize)),
+    );
+  }, [results.isLoading, results.pageSize, results.totalCount]);
 
   useEffect(() => {
     const next = canonicalSearchParams(filters);
@@ -35,6 +54,25 @@ export default function CircleSearch() {
       setSearchParams(next, { replace: true });
     }
   }, [filters, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (results.isLoading) {
+      return;
+    }
+    if (results.totalCount === 0) {
+      if (filters.page > 1) {
+        setSearchParams(canonicalSearchParams({ ...filters, page: 1 }), { replace: true });
+      }
+      return;
+    }
+    const maxPage = Math.min(
+      TRANSACTION_SEARCH_MAX_PAGE,
+      Math.max(1, Math.ceil(results.totalCount / results.pageSize)),
+    );
+    if (filters.page > maxPage) {
+      setSearchParams(canonicalSearchParams({ ...filters, page: maxPage }), { replace: true });
+    }
+  }, [filters, results.isLoading, results.pageSize, results.totalCount, setSearchParams]);
 
   useEffect(() => {
     setDraft(readSearchFilters(new URLSearchParams(searchKey)));
@@ -57,7 +95,9 @@ export default function CircleSearch() {
       cleaned.recordedBy.join(",") !== filters.recordedBy.join(",") ||
       cleaned.paidBy.join(",") !== filters.paidBy.join(",")
     ) {
-      setSearchParams(canonicalSearchParams({ ...filters, ...cleaned }), { replace: true });
+      setSearchParams(canonicalSearchParams({ ...filters, ...cleaned, page: 1 }), {
+        replace: true,
+      });
     }
   }, [panelOpen, filters, options, setSearchParams]);
 
@@ -66,13 +106,19 @@ export default function CircleSearch() {
     if (hasReversedRange(draft)) {
       return;
     }
-    setSearchParams(canonicalSearchParams(draft), { replace: false });
+    setSearchParams(canonicalSearchParams({ ...draft, page: 1 }), { replace: false });
     setPanelOpen(false);
   };
 
   const reset = () => {
     setSearchParams(canonicalSearchParams(defaultSearchFilters()), { replace: false });
     setPanelOpen(false);
+  };
+
+  const paginatedList = {
+    transactions: results.transactions,
+    status: results.isLoading ? ("LoadingFirstPage" as const) : ("Exhausted" as const),
+    loadMore: () => {},
   };
 
   return (
@@ -102,11 +148,23 @@ export default function CircleSearch() {
       </form>
 
       <TransactionList
-        paginated={results}
+        paginated={paginatedList}
         circle={circle}
         emptyLabel="No matching transactions."
         canEdit={circle.status === "active"}
+        paginationMode="none"
       />
+
+      {!results.isLoading && totalPages > 1 ? (
+        <Pagination
+          currentPage={filters.page}
+          totalPages={totalPages}
+          totalCountCapped={results.totalCountCapped}
+          onSelectPage={(page) =>
+            setSearchParams(canonicalSearchParams({ ...filters, page }), { replace: false })
+          }
+        />
+      ) : null}
 
       <FilterPanel
         open={panelOpen}

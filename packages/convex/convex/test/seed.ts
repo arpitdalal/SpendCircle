@@ -21,6 +21,9 @@ import {
 /** First-page pagination opts for a `paginate`d query (cursor reset). */
 export const firstPage = (size: number) => ({ paginationOpts: { numItems: size, cursor: null } });
 
+/** Args for {@link api.search.searchTransactions} numbered URL pages (#97). */
+export const searchTransactionPage = (page: number, pageSize: number) => ({ page, pageSize });
+
 export async function makeUser(
   ctx: MutationCtx,
   email: string,

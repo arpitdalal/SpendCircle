@@ -59,10 +59,10 @@ test("transaction search finds circle transactions across months and opens detai
 
 /**
  * RPT-7 real-backend regression: sparse text matches over more than one source
- * page used to make `filterLedgerTransactions` / `searchTransactions` call
- * `.paginate()` twice in one query execution, which only the real backend
- * rejects. Seed in a dedicated Circle so the >25 rows do not bloat the shared
- * Personal Circle's form pickers.
+ * page used to make `filterLedgerTransactions` call `.paginate()` twice in one query
+ * execution, which only the real backend rejects. Transaction search (#97) now uses
+ * a single indexed or stream read per query with numbered URL pages. Seed in a
+ * dedicated Circle so the >25 rows do not bloat the shared Personal Circle's form pickers.
  */
 test("sparse transaction filters spanning multiple source pages do not crash", async ({
   page,

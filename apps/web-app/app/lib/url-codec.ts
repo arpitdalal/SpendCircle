@@ -44,3 +44,27 @@ export function writeIds(params: URLSearchParams, key: string, ids: string[]) {
     params.delete(key);
   }
 }
+
+/** 1-based page index from a URL param; invalid or out-of-range → 1. */
+export function readPositiveIntPageParam(value: string | null, maxPage: number) {
+  const raw = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(raw) || raw < 1) {
+    return 1;
+  }
+  return Math.min(maxPage, Math.floor(raw));
+}
+
+/** Writes `page` only when >1; clamps to `maxPage`. */
+export function writePositiveIntPageParam(
+  params: URLSearchParams,
+  key: string,
+  page: number,
+  maxPage: number,
+) {
+  const clamped = Math.min(maxPage, Math.max(1, Math.floor(page)));
+  if (clamped <= 1) {
+    params.delete(key);
+  } else {
+    params.set(key, String(clamped));
+  }
+}

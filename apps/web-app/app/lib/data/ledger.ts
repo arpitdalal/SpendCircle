@@ -3,12 +3,12 @@ import type { PlainMonth, TransactionType } from "@spend-circle/domain";
 import { useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 // The stream-pagination variant of usePaginatedQuery. Queries that paginate a
-// convex-helpers STREAM (Category Filter, Ledger Filter, Transaction Search) have
-// no journal to pin page bounds, so the reactive client must pass `endCursor`
-// back itself or pages develop holes / duplicates at their boundaries once the
-// underlying rows change after a loadMore. This hook does exactly that;
-// convex/react's version is only correct for queries that call ctx.db's own
-// .paginate().
+// convex-helpers STREAM (Category Filter, Ledger Filter) have no journal to pin page
+// bounds, so the reactive client must pass `endCursor` back itself or pages develop
+// holes / duplicates at their boundaries once the underlying rows change after a
+// loadMore. This hook does exactly that; convex/react's version is only correct for
+// queries that call ctx.db's own .paginate(). Transaction Search (#97) uses numbered
+// pages and `useQuery` instead.
 import { usePaginatedQuery as useStreamPaginatedQuery } from "convex-helpers/react";
 import { MOCKS } from "../env.js";
 import {
@@ -25,6 +25,12 @@ import {
   type TransactionStatus,
   useTransactions,
 } from "./transactions.js";
+
+export type TransactionSearchPage = NonNullable<
+  FunctionReturnType<typeof api.search.searchTransactions>
+>;
+
+export type TransactionSearchResult = TransactionSearchPage & { isLoading: boolean };
 
 /**
  * The Monthly Ledger's per-month financial summary, derived from `getMonthlyLedger`
@@ -119,25 +125,47 @@ export function useLedgerTransactionFilter(
   };
 }
 
-export function useTransactionSearch(circleId: Circle["id"], filters: TransactionSearchFilters) {
-  const paginated = useStreamPaginatedQuery(
+export function useTransactionSearch(
+  circleId: Circle["id"],
+  filters: TransactionSearchFilters,
+  opts?: { page?: number; pageSize?: number },
+) {
+  const page = opts?.page ?? 1;
+  const pageSize = opts?.pageSize ?? TRANSACTIONS_PAGE_SIZE;
+  const data = useQuery(
     api.search.searchTransactions,
-    MOCKS ? "skip" : { circleId, ...filters },
-    { initialNumItems: TRANSACTIONS_PAGE_SIZE },
+    MOCKS
+      ? "skip"
+      : {
+          circleId,
+          ...filters,
+          page,
+          pageSize,
+        },
   );
   if (MOCKS) {
-    const status: PaginationStatus = "Exhausted";
+    const all = mockFilterTransactions(filters);
+    const start = (page - 1) * pageSize;
     return {
-      transactions: mockFilterTransactions(filters),
-      status,
-      loadMore: () => {},
-    };
+      transactions: all.slice(start, start + pageSize),
+      pageNumber: page,
+      pageSize,
+      totalCount: all.length,
+      totalCountCapped: false,
+      isLoading: false,
+    } satisfies TransactionSearchResult;
   }
-  return {
-    transactions: paginated.results,
-    status: paginated.status,
-    loadMore: () => paginated.loadMore(TRANSACTIONS_PAGE_SIZE),
-  };
+  if (data === undefined) {
+    return {
+      transactions: [],
+      pageNumber: page,
+      pageSize,
+      totalCount: 0,
+      totalCountCapped: false,
+      isLoading: true,
+    } satisfies TransactionSearchResult;
+  }
+  return { ...data, isLoading: false } satisfies TransactionSearchResult;
 }
 
 export function useLedgerFilterOptions(

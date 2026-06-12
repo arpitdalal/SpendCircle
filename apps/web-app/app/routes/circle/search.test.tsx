@@ -2,19 +2,16 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  type Category,
-  type Circle,
-  type Member,
-  type PaginationStatus,
-  TRANSACTIONS_PAGE_SIZE,
-  type Transaction,
-  type TransactionFilterOptions,
+import type {
+  Category,
+  Circle,
+  Member,
+  PaginationStatus,
+  Transaction,
+  TransactionFilterOptions,
 } from "~/lib/data.js";
 import {
   configureConvex,
-  flushIntersectionObserverStub,
-  installIntersectionObserverStub,
   makeCategoryView,
   makeCircleView,
   makeMemberView,
@@ -33,8 +30,6 @@ vi.mock(
 import CircleSearch from "./search.js";
 
 const REF = "trip-c1";
-
-const searchPaginatedLoadMore = vi.fn();
 
 const ROUTES = (
   <>
@@ -55,7 +50,7 @@ function setup(
       | null
       | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
     initialEntries?: string[];
-    searchStatus?: PaginationStatus;
+    ledgerFilterStatus?: PaginationStatus;
     loadMore?: () => void;
   } = {},
 ) {
@@ -63,7 +58,7 @@ function setup(
   configureConvex({
     searchTransactions: opts.searchTransactions,
     transactionSearchOptions: opts.options ?? makeSearchOptions(),
-    searchStatus: opts.searchStatus,
+    ledgerFilterStatus: opts.ledgerFilterStatus,
     loadMore: opts.loadMore,
   });
   const initialEntries = opts.initialEntries ?? [`/circles/${REF}/search`];
@@ -209,31 +204,50 @@ describe("CircleSearch", () => {
     await user.click(screen.getByRole("link", { name: "View Rent" }));
     expect(location()).toBe(`/circles/${REF}/transactions/rent-t1`);
   });
-});
 
-describe("CircleSearch — infinite scroll pagination", () => {
-  installIntersectionObserverStub();
-
-  it("loads the next page when the sentinel intersects (searchTransactions)", () => {
+  it("shows numbered page 2 slice and updates the URL when Page 1 is chosen", async () => {
+    const user = userEvent.setup();
+    const searchTransactions = Array.from({ length: 30 }, (_, index) =>
+      makeTransactionView({ ref: `t-${index}`, title: `Row ${index}` }),
+    );
     setup({
-      searchTransactions: [makeTransactionView()],
-      searchStatus: "CanLoadMore",
-      loadMore: searchPaginatedLoadMore,
+      initialEntries: [`/circles/${REF}/search?type=all&status=all&page=2`],
+      searchTransactions,
     });
-    expect(screen.getByTestId("transactions-infinite-scroll-sentinel")).toBeInTheDocument();
-    flushIntersectionObserverStub(true);
-    expect(searchPaginatedLoadMore).toHaveBeenCalledWith(TRANSACTIONS_PAGE_SIZE);
+
+    await waitFor(() => expect(screen.getByText("Row 25")).toBeInTheDocument());
+    expect(screen.queryByText("Row 0")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Page 1" }));
+    await waitFor(() => expect(screen.getByText("Row 0")).toBeInTheDocument());
   });
 
-  it("shows loading status while LoadingMore on search results", () => {
-    setup({
-      searchTransactions: [makeTransactionView()],
-      searchStatus: "LoadingMore",
-      loadMore: searchPaginatedLoadMore,
+  it("resets page to 1 when filters are applied from the panel", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all&page=2`],
+      searchTransactions: [makeTransactionView({ title: "Only" })],
     });
-    expect(screen.getByRole("status", { name: "Transaction list" })).toHaveTextContent(
-      /loading more transactions/i,
-    );
-    expect(screen.queryByTestId("transactions-infinite-scroll-sentinel")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    await user.click(screen.getByRole("button", { name: "Expense" }));
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/search?type=expense&status=all`));
+    expect(location()).not.toMatch(/page=/);
+  });
+
+  it("resets page to 1 when submitting a new query from the search box", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all&q=old&page=3`],
+    });
+
+    await user.clear(screen.getByRole("searchbox", { name: "Search title or note" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "new");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    await waitFor(() => expect(location()).toMatch(/q=new/));
+    expect(location()).not.toMatch(/page=/);
   });
 });

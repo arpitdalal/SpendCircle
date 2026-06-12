@@ -1,4 +1,5 @@
 import { api } from "@spend-circle/convex";
+import { TRANSACTION_SEARCH_MAX_PAGE } from "@spend-circle/domain";
 import { getFunctionName } from "convex/server";
 import type {
   MonthlySummary,
@@ -22,7 +23,8 @@ export interface LedgerState {
   ledgerFilterTransactions?: Transaction[];
   ledgerFilterStatus?: PaginationStatus;
   searchTransactions?: Transaction[];
-  searchStatus?: PaginationStatus;
+  /** When true, doubles {@link api.search.searchTransactions} `totalCountCapped`. */
+  searchTotalCountCapped?: boolean;
   /** `getLedgerFilterOptions` / `getTransactionSearchOptions` result; `undefined` ≡ loading,
    * `null` ≡ inaccessible. A function resolves per query args (e.g. by `type`) so a test can
    * model the type-scoped Category option set the panel narrows to as the draft type flips. */
@@ -34,8 +36,8 @@ export interface LedgerState {
     | TransactionFilterOptions
     | null
     | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
-  /** Paginated `loadMore` for ledger filter / search doubles — same knob as the TXN
-   * list's `loadMore` in merged test state. */
+  /** Paginated `loadMore` for ledger filter doubles — same knob as the TXN list's
+   * `loadMore` in merged test state. */
   loadMore?: () => void;
 }
 
@@ -45,7 +47,7 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
     ledgerFilterTransactions = [],
     ledgerFilterStatus = "Exhausted",
     searchTransactions = [],
-    searchStatus = "Exhausted",
+    searchTotalCountCapped = false,
     ledgerFilterOptions,
     transactionSearchOptions,
     loadMore = () => {},
@@ -57,16 +59,28 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
         resolveWith(ledgerFilterOptions, args),
       [getFunctionName(api.search.getTransactionSearchOptions)]: (args) =>
         resolveWith(transactionSearchOptions, args),
+      [getFunctionName(api.search.searchTransactions)]: (args) => {
+        const rawPage = typeof args.page === "number" && Number.isFinite(args.page) ? args.page : 1;
+        const page = Math.min(TRANSACTION_SEARCH_MAX_PAGE, Math.max(1, Math.floor(rawPage)));
+        const rawSize = args.pageSize;
+        const pageSize =
+          typeof rawSize === "number" && Number.isFinite(rawSize)
+            ? Math.min(100, Math.max(1, Math.floor(rawSize)))
+            : 25;
+        const start = (page - 1) * pageSize;
+        return {
+          transactions: searchTransactions.slice(start, start + pageSize),
+          pageNumber: page,
+          pageSize,
+          totalCount: searchTransactions.length,
+          totalCountCapped: searchTotalCountCapped,
+        };
+      },
     },
     paginatedQueries: {
       [getFunctionName(api.search.filterLedgerTransactions)]: () => ({
         results: ledgerFilterTransactions,
         status: ledgerFilterStatus,
-        loadMore,
-      }),
-      [getFunctionName(api.search.searchTransactions)]: () => ({
-        results: searchTransactions,
-        status: searchStatus,
         loadMore,
       }),
     },

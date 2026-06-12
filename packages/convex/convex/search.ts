@@ -4,6 +4,8 @@ import {
   isValidPlainMonth,
   MAX_AMOUNT_MINOR,
   normalizeSearchText,
+  TRANSACTION_LIST_PAGE_SIZE,
+  TRANSACTION_SEARCH_MAX_PAGE,
   transactionSearchText,
   transactionTextMatches,
 } from "@spend-circle/domain";
@@ -324,10 +326,9 @@ function onlySelectedId<T>(ids: Set<T>) {
   return ids.values().next().value;
 }
 
-async function collectSearchTransactionViews(
+function buildIndexedSearchSource(
   ctx: QueryCtx,
-  args: Parameters<typeof collectTransactionViews>[1],
-  viewCaches: ReturnType<typeof newViewCaches>,
+  args: Omit<Parameters<typeof collectTransactionViews>[1], "paginationOpts">,
 ) {
   const paidByMemberId = onlySelectedId(args.paidByMemberIds);
   const recordedByMemberId = onlySelectedId(args.recordedByMemberIds);
@@ -396,6 +397,15 @@ async function collectSearchTransactionViews(
     );
   }
 
+  return source;
+}
+
+async function collectSearchTransactionViews(
+  ctx: QueryCtx,
+  args: Parameters<typeof collectTransactionViews>[1],
+  viewCaches: ReturnType<typeof newViewCaches>,
+) {
+  const source = buildIndexedSearchSource(ctx, args);
   const result = await source.paginate(args.paginationOpts);
   const page = [];
   for (const searchDoc of result.page) {
@@ -411,6 +421,104 @@ async function collectSearchTransactionViews(
     page,
     isDone: result.isDone,
     continueCursor: result.continueCursor,
+  };
+}
+
+function clampSearchPageSize(value: number | undefined) {
+  if (value === undefined) {
+    return TRANSACTION_LIST_PAGE_SIZE;
+  }
+  if (!Number.isFinite(value)) {
+    return TRANSACTION_LIST_PAGE_SIZE;
+  }
+  return Math.min(100, Math.max(1, Math.floor(value)));
+}
+
+function clampSearchPage(value: number) {
+  if (!Number.isFinite(value) || value < 1) {
+    return 1;
+  }
+  return Math.min(TRANSACTION_SEARCH_MAX_PAGE, Math.floor(value));
+}
+
+async function searchTransactionsOffsetPage(
+  ctx: QueryCtx,
+  args: Omit<Parameters<typeof collectTransactionViews>[1], "paginationOpts"> & {
+    page: number;
+    pageSize: number;
+  },
+) {
+  const viewCaches = newViewCaches();
+  const searchCaches = newSearchCaches();
+  const { page, pageSize } = args;
+  const scanCap = TRANSACTION_SEARCH_MAX_PAGE * pageSize + 1;
+  const takeLimit = Math.max(page * pageSize, scanCap);
+
+  if (args.filters.queryText && (await transactionSearchBackfillComplete(ctx))) {
+    const source = buildIndexedSearchSource(ctx, args);
+    const numItems = Math.min(1024, takeLimit);
+    const result = await source.paginate({ numItems, cursor: null });
+    const allDocs = result.page;
+    const docSlice = allDocs.slice((page - 1) * pageSize, page * pageSize);
+    const transactions = [];
+    for (const searchDoc of docSlice) {
+      const txn = await ctx.db.get(searchDoc.transactionId);
+      if (txn) {
+        transactions.push(
+          await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
+        );
+      }
+    }
+    return {
+      transactions,
+      pageNumber: page,
+      pageSize,
+      totalCount: allDocs.length,
+      totalCountCapped: !result.isDone,
+    };
+  }
+
+  const source = streamByWindow(ctx, {
+    circleId: args.circleId,
+    status: args.status,
+    paidByMemberIds: args.paidByMemberIds,
+    recordedByMemberIds: args.recordedByMemberIds,
+    start: args.start,
+    endExclusive: args.endExclusive,
+  }).filterWith((txn) =>
+    matchesFilters(
+      ctx,
+      txn,
+      {
+        type: args.filters.type,
+        status: args.status,
+        categoryIds: args.filters.categoryIds,
+        recordedByMemberIds: args.recordedByMemberIds,
+        paidByMemberIds: args.paidByMemberIds,
+        amountMin: args.filters.amountMin,
+        amountMax: args.filters.amountMax,
+        queryText: args.filters.queryText,
+      },
+      searchCaches,
+    ),
+  );
+
+  const matched = await source.take(takeLimit);
+  const totalCountCapped = matched.length === takeLimit;
+  const totalCount = totalCountCapped ? takeLimit : matched.length;
+  const pageDocs = matched.slice((page - 1) * pageSize, page * pageSize);
+  const transactions = await Promise.all(
+    pageDocs.map((txn) =>
+      toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
+    ),
+  );
+
+  return {
+    transactions,
+    pageNumber: page,
+    pageSize,
+    totalCount,
+    totalCountCapped,
   };
 }
 
@@ -486,12 +594,24 @@ export const searchTransactions = query({
     dateTo: v.optional(v.string()),
     amountMin: v.optional(v.number()),
     amountMax: v.optional(v.number()),
-    paginationOpts: paginationOptsValidator,
+    page: v.number(),
+    pageSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const pageSize = clampSearchPageSize(args.pageSize);
+    const page = clampSearchPage(args.page);
+
+    const emptySearch = () => ({
+      transactions: [],
+      pageNumber: page,
+      pageSize,
+      totalCount: 0,
+      totalCountCapped: false,
+    });
+
     const access = await resolveCircleAccess(ctx, args.circleId);
     if (!access) {
-      return emptyPage();
+      return emptySearch();
     }
     const window = resolveSearchWindow(args);
     if (
@@ -502,22 +622,22 @@ export const searchTransactions = query({
       throw new Error("Invalid search filters");
     }
     if ("empty" in window && window.empty) {
-      return emptyPage();
+      return emptySearch();
     }
     if (
       args.amountMin !== undefined &&
       args.amountMax !== undefined &&
       args.amountMin > args.amountMax
     ) {
-      return emptyPage();
+      return emptySearch();
     }
 
     const filters = normalizeCommonFilters(ctx, args);
     if (filters.hasOnlyUnknownIds) {
-      return emptyPage();
+      return emptySearch();
     }
 
-    return await collectTransactionViews(ctx, {
+    return await searchTransactionsOffsetPage(ctx, {
       circleId: args.circleId,
       viewerMemberId: access.membership._id,
       viewerIsOwner: access.isOwner,
@@ -526,7 +646,8 @@ export const searchTransactions = query({
       recordedByMemberIds: filters.recordedByMemberIds.ids,
       start: window.start,
       endExclusive: window.endExclusive,
-      paginationOpts: args.paginationOpts,
+      page,
+      pageSize,
       filters: {
         type: filters.type,
         categoryIds: filters.categoryIds.ids,

@@ -8,6 +8,7 @@ import {
   makeCategory,
   makeUser,
   markTransactionSearchBackfillComplete,
+  searchTransactionPage,
   seedFixture,
   seedTransaction,
 } from "./test/seed.js";
@@ -591,9 +592,11 @@ describe("searchTransactions", () => {
       circleId: f.circleId,
       type: "all",
       status: "active",
-      ...firstPage(25),
+      ...searchTransactionPage(1, 25),
     });
-    expect(result.page.map((txn) => txn.title)).toEqual(["June row", "May row"]);
+    expect(result.transactions.map((txn) => txn.title)).toEqual(["June row", "May row"]);
+    expect(result.totalCount).toBe(2);
+    expect(result.totalCountCapped).toBe(false);
   });
 
   it("supports status all, inclusive dates, and inclusive amount range", async () => {
@@ -627,9 +630,10 @@ describe("searchTransactions", () => {
       dateTo: "2026-05-31",
       amountMin: 1_000,
       amountMax: 2_000,
-      ...firstPage(25),
+      ...searchTransactionPage(1, 25),
     });
-    expect(result.page.map((txn) => txn.title)).toEqual(["End archived", "Start"]);
+    expect(result.transactions.map((txn) => txn.title)).toEqual(["End archived", "Start"]);
+    expect(result.totalCount).toBe(2);
   });
 
   it("uses indexed whole-word text search with final-term prefix matching", async () => {
@@ -648,18 +652,18 @@ describe("searchTransactions", () => {
       type: "all",
       status: "active",
       query: "off",
-      ...firstPage(25),
+      ...searchTransactionPage(1, 25),
     });
-    expect(substring.page.map((txn) => txn.title)).toEqual(["Office supplies"]);
+    expect(substring.transactions.map((txn) => txn.title)).toEqual(["Office supplies"]);
 
     const prefix = await t.query(api.search.searchTransactions, {
       circleId: f.circleId,
       type: "all",
       status: "active",
       query: "coffee fi",
-      ...firstPage(25),
+      ...searchTransactionPage(1, 25),
     });
-    expect(prefix.page.map((txn) => txn.title).sort()).toEqual(["Cafe", "Coffee beans"]);
+    expect(prefix.transactions.map((txn) => txn.title).sort()).toEqual(["Cafe", "Coffee beans"]);
   });
 
   it("returns an empty page for reversed date or amount ranges", async () => {
@@ -674,9 +678,9 @@ describe("searchTransactions", () => {
       status: "active",
       dateFrom: "2026-05-31",
       dateTo: "2026-05-01",
-      ...firstPage(25),
+      ...searchTransactionPage(1, 25),
     });
-    expect(reversedDates.page).toEqual([]);
+    expect(reversedDates.transactions).toEqual([]);
 
     const reversedAmount = await t.query(api.search.searchTransactions, {
       circleId: f.circleId,
@@ -684,9 +688,9 @@ describe("searchTransactions", () => {
       status: "active",
       amountMin: 2_000,
       amountMax: 1_000,
-      ...firstPage(25),
+      ...searchTransactionPage(1, 25),
     });
-    expect(reversedAmount.page).toEqual([]);
+    expect(reversedAmount.transactions).toEqual([]);
   });
 
   it("paginates sparse text matches across an unscoped date window", async () => {
@@ -708,11 +712,12 @@ describe("searchTransactions", () => {
       dateFrom: "2026-06-01",
       dateTo: "2026-06-30",
       query: "global",
-      ...firstPage(5),
+      ...searchTransactionPage(1, 5),
     });
-    expect(first.page).toHaveLength(5);
-    expect(first.page.every((txn) => txn.title.includes("global"))).toBe(true);
-    expect(first.isDone).toBe(false);
+    expect(first.transactions).toHaveLength(5);
+    expect(first.transactions.every((txn) => txn.title.includes("global"))).toBe(true);
+    expect(first.totalCount).toBe(6);
+    expect(first.totalCountCapped).toBe(false);
 
     const second = await t.query(api.search.searchTransactions, {
       circleId: f.circleId,
@@ -721,17 +726,11 @@ describe("searchTransactions", () => {
       dateFrom: "2026-06-01",
       dateTo: "2026-06-30",
       query: "global",
-      paginationOpts: { numItems: 5, cursor: first.continueCursor },
+      ...searchTransactionPage(2, 5),
     });
-    expect([...first.page, ...second.page].map((txn) => txn.title).sort()).toEqual([
-      "global 0",
-      "global 10",
-      "global 2",
-      "global 4",
-      "global 6",
-      "global 8",
-    ]);
-    expect(second.isDone).toBe(true);
+    expect(second.transactions.map((txn) => txn.title).sort()).toEqual(["global 10"]);
+    expect(second.totalCount).toBe(6);
+    expect(second.totalCountCapped).toBe(false);
   });
 });
 
@@ -825,8 +824,8 @@ describe("search options", () => {
       circleId: f.circleId,
       type: "all",
       status: "active",
-      ...firstPage(25),
+      ...searchTransactionPage(1, 25),
     });
-    expect(result.page.map((txn) => txn.title)).toEqual(["Archived circle row"]);
+    expect(result.transactions.map((txn) => txn.title)).toEqual(["Archived circle row"]);
   });
 });

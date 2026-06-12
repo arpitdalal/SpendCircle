@@ -24,6 +24,7 @@ export function TransactionList({
   canEdit,
   ledgerMonth,
   showLifecycle,
+  paginationMode = "infinite",
 }: {
   paginated: PaginatedTransactions;
   circle: Circle;
@@ -37,6 +38,8 @@ export function TransactionList({
    * still shows Archive on active rows and Restore on archived rows (not a dead view).
    */
   showLifecycle?: boolean;
+  /** Search uses numbered pages; ledger and filters keep infinite scroll. */
+  paginationMode?: "infinite" | "none";
 }) {
   const { transactions, status, loadMore } = paginated;
 
@@ -115,13 +118,15 @@ export function TransactionList({
         ))}
       </ul>
 
-      <InfiniteScrollFooter
-        status={status}
-        loadMore={loadMore}
-        loadingCopy="Loading more transactions…"
-        listAriaLabel="Transaction list"
-        sentinelTestId="transactions-infinite-scroll-sentinel"
-      />
+      {paginationMode === "infinite" ? (
+        <InfiniteScrollFooter
+          status={status}
+          loadMore={loadMore}
+          loadingCopy="Loading more transactions…"
+          listAriaLabel="Transaction list"
+          sentinelTestId="transactions-infinite-scroll-sentinel"
+        />
+      ) : null}
     </div>
   );
 }
