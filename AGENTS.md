@@ -19,3 +19,14 @@ Use the default five-label triage vocabulary. See `docs/agents/triage-labels.md`
 ### Domain docs
 
 Multi-context layout: `CONTEXT-MAP.md` points to context-specific docs. See `docs/agents/domain.md`.
+
+## Cursor Cloud specific instructions
+
+Standard commands live in `README.md` / root `package.json` (`pnpm lint`, `typecheck`, `test`, `build`). Cloud-specific gotchas:
+
+- **Deps**: startup update script runs `pnpm install --frozen-lockfile --ignore-scripts` then `pnpm rebuild esbuild @biomejs/biome msw`. The root `prepare` (`lefthook install`) is skipped on purpose — it fails under the agent's custom `core.hooksPath` and git hooks aren't needed here.
+- **No cloud Convex / Google OAuth here.** The only way to run the app/backend end-to-end is the self-hosted Convex Docker backend + the flag-gated email+password test-auth bypass (ADR 0019), same path as CI E2E.
+- **Docker** is installed in the snapshot but the daemon isn't auto-started. Start it before E2E or running a local backend: `sudo dockerd >/tmp/dockerd.log 2>&1 &` then `sudo chmod 666 /var/run/docker.sock`. `daemon.json` is preconfigured (`fuse-overlayfs`, `containerd-snapshotter` disabled — required for Docker 29 in this VM).
+- **E2E**: `pnpm test:e2e:local` boots an ephemeral backend, deploys, runs Playwright, tears down (needs Docker running). Playwright browsers + system deps are in the snapshot.
+- **Run app live** (manual/GUI testing): boot a backend + deploy like `scripts/e2e-local.sh` does (image pinned in `.github/workflows/e2e.yml`, ports 3210/3211; `convex env set … E2E_TEST_AUTH 1` + `convex deploy -y`), then `VITE_E2E=true VITE_CONVEX_URL=http://127.0.0.1:3210 VITE_CONVEX_SITE_URL=http://127.0.0.1:3211 pnpm dev`. `build`/`dev` need those two `VITE_CONVEX_*` vars (root `.env.local` or inline).
+- **Sign in without Google** (only when `VITE_E2E=true`): in the browser console run `await window.__scE2E.signIn("you@example.com","Passw0rd-123","Name")` — signs up + creates the user's Personal Circle, then reload. Recording an expense first requires creating a category.
