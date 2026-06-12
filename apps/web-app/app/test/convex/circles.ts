@@ -1,0 +1,46 @@
+import { api } from "@spend-circle/convex";
+import { getFunctionName } from "convex/server";
+import type { Mock } from "vitest";
+import type { Circle } from "~/lib/data.js";
+import type { EntityDouble } from "./contract.js";
+import { testId } from "./ids.js";
+
+export interface CirclesState {
+  /** `listMyCircles` — `undefined` ≡ loading. */
+  circles?: Circle[] | null;
+  /** The `createCircle` mutation spy the test owns (CS-0). Returns the new Circle's id,
+   * so a test configures `vi.fn().mockResolvedValue(testId("c-new"))` to drive the
+   * create flow's navigation to the canonical ref. */
+  createCircle?: Mock;
+  completeCircleSetup?: Mock;
+}
+
+export function circlesDouble(state: CirclesState): EntityDouble {
+  const { circles, createCircle, completeCircleSetup } = state;
+  return {
+    queries: {
+      [getFunctionName(api.circles.listMyCircles)]: () => circles,
+    },
+    mutations: {
+      [getFunctionName(api.circles.createCircle)]: createCircle,
+      [getFunctionName(api.circles.completeCircleSetup)]: completeCircleSetup,
+    },
+  };
+}
+
+/** Default `Circle` fixture for shell and Circle-scoped route tests. */
+export function makeCircleView(over: Partial<Circle> = {}): Circle {
+  return {
+    id: testId<Circle["id"]>("c1"),
+    ref: "trip-c1",
+    name: "Trip",
+    kind: "regular",
+    currency: "USD",
+    color: "blue",
+    mark: "T",
+    status: "active",
+    setupAnswers: undefined,
+    currencyLocked: false,
+    ...over,
+  };
+}
