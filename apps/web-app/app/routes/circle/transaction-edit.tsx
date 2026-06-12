@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { Splash } from "~/components/splash.js";
-import { TransactionForm } from "~/components/transaction-form.js";
+import { TransactionForm } from "~/components/transaction-form/index.js";
 import { EDIT_RETURN_PARAM, parseEditReturn, withQuery } from "~/lib/ledger-url.js";
 import { useResolvedTransaction } from "~/lib/use-resolved-transaction.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
