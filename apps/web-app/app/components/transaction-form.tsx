@@ -33,6 +33,7 @@ import {
   useMembers,
   useUpdateTransaction,
 } from "~/lib/data.js";
+import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { cn } from "~/lib/utils.js";
 
 export const TYPE_LABEL: Record<TransactionType, string> = {
@@ -307,11 +308,10 @@ export function TransactionForm({
         }
         onClose();
       } catch (error) {
-        // Known rejections are already mirrored by the schema, so anything reaching
-        // here is unexpected — surface it (Sentry once it lands, ADR 0012) rather than
-        // swallow it, and show the user a generic retry message.
         console.error("saveTransaction failed", error);
-        setSubmitError("Couldn't save the transaction. Please try again.");
+        setSubmitError(
+          mutationErrorMessageForUser(error, "Couldn't save the transaction. Please try again."),
+        );
       }
     },
   });

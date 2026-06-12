@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ConvexError } from "convex/values";
 import { Route, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category, CategoryHistoryEvent, Circle, PaginationStatus } from "~/lib/data.js";
@@ -493,7 +494,7 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
     expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
   });
 
-  it("shows a generic error for an unexpected save failure", async () => {
+  it('shows generic save copy when mutation rejects with plain Error("Circle is archived")', async () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategoryView()] });
     updateCategory.mockRejectedValueOnce(new Error("Circle is archived"));
@@ -508,6 +509,21 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/Couldn't save the category/i);
     expect(alert).not.toHaveTextContent(/Circle is archived/);
+  });
+
+  it("surfaces ConvexError archived guard on category save inline", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategoryView()] });
+    updateCategory.mockRejectedValueOnce(new ConvexError("Circle is archived"));
+
+    await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
+    const form = screen.getByRole("form", { name: "Edit Groceries" });
+    const input = within(form).getByLabelText("Name");
+    await user.clear(input);
+    await user.type(input, "Food");
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+
+    expect(await within(form).findByText("Circle is archived")).toBeInTheDocument();
   });
 });
 
@@ -678,7 +694,21 @@ describe("CircleCategories — archive / restore (CAT-2)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("surfaces an inline alert when archiving fails, and never swallows it", async () => {
+  it("surfaces ConvexError archived guard when archive fails", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategoryView()] });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    archiveCategory.mockRejectedValueOnce(new ConvexError("Circle is archived"));
+
+    await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Circle is archived");
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('shows generic archive copy when mutation rejects with plain Error("Circle is archived")', async () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategoryView()] });
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -688,7 +718,9 @@ describe("CircleCategories — archive / restore (CAT-2)", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/Couldn't archive the category/i);
+    expect(alert).not.toHaveTextContent(/Circle is archived/);
     expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });
 

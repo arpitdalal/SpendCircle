@@ -3,6 +3,7 @@ import { addMonths, currentMonth } from "@spend-circle/domain";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { getFunctionName } from "convex/server";
+import { ConvexError } from "convex/values";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -37,6 +38,8 @@ import CircleTransactions from "./transactions.js";
 const REF = "trip-c1";
 const NOW_MONTH = currentMonth(new Date());
 const FILTER_LEDGER = getFunctionName(api.search.filterLedgerTransactions);
+/** Matches `assertWritable` in `packages/convex/convex/guard.ts` — realistic prod rejection. */
+const ARCHIVED_CIRCLE_ERROR = new ConvexError("Circle is archived");
 
 const createTransaction = vi.fn();
 const archiveTransaction = vi.fn();
@@ -345,5 +348,74 @@ describe("CircleTransactions", () => {
     expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
     expect(screen.getByText(/circle is archived/i)).toBeInTheDocument();
     expect(within(screen.getByRole("listitem")).queryByRole("link", { name: /Edit/ })).toBeNull();
+  });
+
+  it("surfaces archived-circle rejection on create submit and re-enables the form", async () => {
+    const user = userEvent.setup();
+    setup();
+    createTransaction.mockRejectedValue(ARCHIVED_CIRCLE_ERROR);
+    await user.click(screen.getByRole("button", { name: "Add expense" }));
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await user.type(within(form).getByLabelText("Title"), "Late entry");
+    await user.type(within(form).getByLabelText(/Amount/), "10");
+    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await user.click(within(form).getByRole("button", { name: "Add expense" }));
+
+    expect(await within(form).findByText("Circle is archived")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(form).getByRole("button", { name: "Add expense" })).toBeEnabled(),
+    );
+  });
+
+  it("treats plain Error with archived message on create as generic fallback", async () => {
+    const user = userEvent.setup();
+    setup();
+    createTransaction.mockRejectedValue(new Error("Circle is archived"));
+    await user.click(screen.getByRole("button", { name: "Add expense" }));
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await user.type(within(form).getByLabelText("Title"), "Late entry");
+    await user.type(within(form).getByLabelText(/Amount/), "10");
+    await user.click(within(form).getByRole("button", { name: "Groceries" }));
+    await user.click(within(form).getByRole("button", { name: "Add expense" }));
+
+    expect(
+      await within(form).findByText("Couldn't save the transaction. Please try again."),
+    ).toBeInTheDocument();
+    expect(within(form).queryByText("Circle is archived", { exact: true })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(form).getByRole("button", { name: "Add expense" })).toBeEnabled(),
+    );
+  });
+
+  it("surfaces archived-circle rejection on archive and re-enables the button", async () => {
+    const user = userEvent.setup();
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: [
+        makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
+      ],
+    });
+    archiveTransaction.mockRejectedValue(ARCHIVED_CIRCLE_ERROR);
+    await user.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    expect(await screen.findByText("Circle is archived")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Archive Weekly shop" })).toBeEnabled(),
+    );
+  });
+
+  it("surfaces archived-circle rejection on restore and re-enables the button", async () => {
+    const user = userEvent.setup();
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=archived`],
+      filteredTransactions: [
+        makeTransactionView({ title: "Old buy", status: "archived", canArchive: true }),
+      ],
+    });
+    restoreTransaction.mockRejectedValue(ARCHIVED_CIRCLE_ERROR);
+    await user.click(screen.getByRole("button", { name: "Restore Old buy" }));
+    expect(await screen.findByText("Circle is archived")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Restore Old buy" })).toBeEnabled(),
+    );
   });
 });
