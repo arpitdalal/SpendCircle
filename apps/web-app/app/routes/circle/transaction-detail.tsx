@@ -2,7 +2,7 @@ import { formatMoney, isValidPlainMonth, money, toCurrencyCode } from "@spend-ci
 import { Link, useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { Splash } from "~/components/splash.js";
-import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
 import { type Circle, type TransactionDetail, useTransactionHistory } from "~/lib/data.js";
 import { formatAuditTimestamp } from "~/lib/datetime.js";
 import { editSearch, ledgerSearch, withQuery } from "~/lib/ledger-url.js";
@@ -70,11 +70,13 @@ function TransactionDetailView({
           ‹ Back to transactions
         </Link>
         {writable && transaction.canEditFields && !isArchived ? (
-          <Button asChild variant="outline">
-            <Link to={editUrl} aria-label={`Edit ${transaction.title}`}>
-              Edit
-            </Link>
-          </Button>
+          <Link
+            to={editUrl}
+            aria-label={`Edit ${transaction.title}`}
+            className={buttonVariants({ variant: "outline", size: "default" })}
+          >
+            Edit
+          </Link>
         ) : null}
       </div>
 

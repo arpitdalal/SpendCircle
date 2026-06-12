@@ -1,15 +1,14 @@
-import * as LabelPrimitive from "@radix-ui/react-label";
 import type { ComponentProps } from "react";
 import { cn } from "~/lib/utils.js";
 
 /**
- * Form label (shadcn/ui style, ADR 0005) on Radix's Label primitive, so a click
- * forwards focus to the associated control and `htmlFor`/nesting wires up assistive
- * tech. Composed by `FieldLabel`; usable on its own.
+ * Form label (shadcn/ui-style, ADR 0005). Native `<label>`: `htmlFor` / nesting
+ * wires focus and assistive tech. Composed by `FieldLabel`; usable on its own.
  */
-export function Label({ className, ...props }: ComponentProps<typeof LabelPrimitive.Root>) {
+export function Label({ className, ...props }: ComponentProps<"label">) {
   return (
-    <LabelPrimitive.Root
+    // biome-ignore lint/a11y/noLabelWithoutControl: shadcn-style wrapper; callers pass htmlFor or nest the control.
+    <label
       data-slot="label"
       className={cn(
         "flex w-fit select-none items-center gap-2 text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",

@@ -1,14 +1,18 @@
-import { Slot } from "@radix-ui/react-slot";
+import { Button as BaseButton } from "@base-ui/react/button";
+import type { ComponentProps } from "react";
 import { cn } from "~/lib/utils.js";
 import { type ButtonVariantProps, buttonVariants } from "./button-variants.js";
 
-export interface ButtonProps extends React.ComponentProps<"button">, ButtonVariantProps {
-  asChild?: boolean;
+type BaseButtonProps = ComponentProps<typeof BaseButton>;
+
+export interface ButtonProps extends Omit<BaseButtonProps, "className">, ButtonVariantProps {
+  className?: string;
 }
 
-export function Button({ className, variant, size, asChild = false, ref, ...props }: ButtonProps) {
-  const Comp = asChild ? Slot : "button";
-  return <Comp ref={ref} className={cn(buttonVariants({ variant, size }), className)} {...props} />;
+export function Button({ className, variant, size, ref, ...props }: ButtonProps) {
+  return (
+    <BaseButton ref={ref} className={cn(buttonVariants({ variant, size }), className)} {...props} />
+  );
 }
 
 Button.displayName = "Button";
