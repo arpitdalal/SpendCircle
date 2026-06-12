@@ -441,6 +441,18 @@ function clampSearchPage(value: number) {
   return Math.min(TRANSACTION_SEARCH_MAX_PAGE, Math.floor(value));
 }
 
+function searchOffsetScanBounds(page: number, pageSize: number) {
+  const scanCap = TRANSACTION_SEARCH_MAX_PAGE * pageSize + 1;
+  const takeLimit = Math.max(page * pageSize, scanCap);
+  return { scanCap, takeLimit };
+}
+
+function searchOffsetTotalCount(matchCount: number, takeLimit: number, hasMoreBeyondTake: boolean) {
+  const totalCountCapped = hasMoreBeyondTake || matchCount >= takeLimit;
+  const totalCount = totalCountCapped ? takeLimit : matchCount;
+  return { totalCount, totalCountCapped };
+}
+
 async function searchTransactionsOffsetPage(
   ctx: QueryCtx,
   args: Omit<Parameters<typeof collectTransactionViews>[1], "paginationOpts"> & {
@@ -451,8 +463,7 @@ async function searchTransactionsOffsetPage(
   const viewCaches = newViewCaches();
   const searchCaches = newSearchCaches();
   const { page, pageSize } = args;
-  const scanCap = TRANSACTION_SEARCH_MAX_PAGE * pageSize + 1;
-  const takeLimit = Math.max(page * pageSize, scanCap);
+  const { takeLimit } = searchOffsetScanBounds(page, pageSize);
 
   if (args.filters.queryText && (await transactionSearchBackfillComplete(ctx))) {
     const source = buildIndexedSearchSource(ctx, args);
@@ -469,12 +480,17 @@ async function searchTransactionsOffsetPage(
         );
       }
     }
+    const { totalCount, totalCountCapped } = searchOffsetTotalCount(
+      allDocs.length,
+      takeLimit,
+      !result.isDone,
+    );
     return {
       transactions,
       pageNumber: page,
       pageSize,
-      totalCount: allDocs.length,
-      totalCountCapped: !result.isDone,
+      totalCount,
+      totalCountCapped,
     };
   }
 
@@ -504,8 +520,7 @@ async function searchTransactionsOffsetPage(
   );
 
   const matched = await source.take(takeLimit);
-  const totalCountCapped = matched.length === takeLimit;
-  const totalCount = totalCountCapped ? takeLimit : matched.length;
+  const { totalCount, totalCountCapped } = searchOffsetTotalCount(matched.length, takeLimit, false);
   const pageDocs = matched.slice((page - 1) * pageSize, page * pageSize);
   const transactions = await Promise.all(
     pageDocs.map((txn) =>

@@ -1,3 +1,4 @@
+import { TRANSACTION_SEARCH_MAX_PAGE } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
@@ -731,6 +732,36 @@ describe("searchTransactions", () => {
     expect(second.transactions.map((txn) => txn.title).sort()).toEqual(["global 10"]);
     expect(second.totalCount).toBe(6);
     expect(second.totalCountCapped).toBe(false);
+  });
+
+  it("marks indexed search capped when scan sentinel row is hit", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const pageSize = 1;
+    const scanCap = TRANSACTION_SEARCH_MAX_PAGE * pageSize + 1;
+    const needle = "sentinel";
+    await t.run(async (ctx) => {
+      for (let index = 0; index < scanCap; index += 1) {
+        const day = (index % 28) + 1;
+        await seedTransaction(ctx, f, {
+          title: `${needle} ${index}`,
+          date: `2026-06-${day.toString().padStart(2, "0")}`,
+        });
+      }
+      await markTransactionSearchBackfillComplete(ctx);
+    });
+
+    const result = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      query: needle,
+      ...searchTransactionPage(1, pageSize),
+    });
+    expect(result.transactions).toHaveLength(1);
+    expect(result.totalCount).toBe(scanCap);
+    expect(result.totalCountCapped).toBe(true);
   });
 });
 
