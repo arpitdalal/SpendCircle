@@ -9,7 +9,6 @@ import {
   type TransactionType,
   toMutationArgs,
   transactionFieldSchemas,
-  transactionFormSchema,
 } from "@spend-circle/domain";
 import { useEffect, useRef, useState } from "react";
 import { FieldError, FieldGroup } from "~/components/ui/field.js";
@@ -27,6 +26,7 @@ import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { resolvePaidBy } from "./resolve-paid-by.js";
 import { TransactionFormCategorySection } from "./transaction-form-category-section.js";
 import { TYPE_LABEL } from "./transaction-form-constants.js";
+import { emptyTransactionFormValues, transactionFormOptions } from "./transaction-form-options.js";
 import { TransactionFormTypeEditSection } from "./transaction-form-type-section.js";
 
 const STALE_PAID_BY_ERROR =
@@ -127,13 +127,9 @@ export function TransactionForm({
   const defaultValues: TransactionFormValues =
     mode.kind === "create"
       ? {
+          ...emptyTransactionFormValues,
           type: initialType,
-          title: "",
-          amount: "",
-          note: "",
           date: defaultDateInMonth(mode.selectedMonth, new Date()),
-          categoryIds: [],
-          paidByMemberId: "",
         }
       : {
           type: mode.transaction.type,
@@ -146,8 +142,7 @@ export function TransactionForm({
         };
 
   const form = useAppForm({
-    defaultValues,
-    validators: { onSubmit: transactionFormSchema },
+    ...transactionFormOptions(defaultValues),
     onSubmit: async ({ value }) => {
       setSubmitError(null);
       const categoryResolution = resolveCategories(

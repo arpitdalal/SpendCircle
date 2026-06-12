@@ -3,7 +3,7 @@ import { FieldError, FieldLegend, FieldSet } from "~/components/ui/field.js";
 import type { Category } from "~/lib/data.js";
 import { useTypedAppFormContext } from "~/lib/form.js";
 import { cn } from "~/lib/utils.js";
-import { transactionFormContextProbe } from "./transaction-form-context-probe.js";
+import { transactionFormContextOptions } from "./transaction-form-options.js";
 
 export function TransactionFormCategorySection({
   categoryById,
@@ -16,7 +16,7 @@ export function TransactionFormCategorySection({
   activeCategories: Category[];
   activeType: TransactionType;
 }) {
-  const form = useTypedAppFormContext(transactionFormContextProbe);
+  const form = useTypedAppFormContext(transactionFormContextOptions);
 
   return (
     <form.Subscribe selector={(state) => state.submissionAttempts > 0}>
