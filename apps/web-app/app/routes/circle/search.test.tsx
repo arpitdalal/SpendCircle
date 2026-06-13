@@ -6,7 +6,6 @@ import type {
   Category,
   Circle,
   Member,
-  PaginationStatus,
   Transaction,
   TransactionFilterOptions,
 } from "~/lib/data.js";
@@ -50,16 +49,12 @@ function setup(
       | null
       | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
     initialEntries?: string[];
-    ledgerFilterStatus?: PaginationStatus;
-    loadMore?: () => void;
   } = {},
 ) {
   const circle = makeCircleView(opts.circle);
   configureConvex({
     searchTransactions: opts.searchTransactions,
     transactionSearchOptions: opts.options ?? makeSearchOptions(),
-    ledgerFilterStatus: opts.ledgerFilterStatus,
-    loadMore: opts.loadMore,
   });
   const initialEntries = opts.initialEntries ?? [`/circles/${REF}/search`];
   return { circle, ...renderCircleRoutes(circle, ROUTES, { initialEntries }) };

@@ -1,11 +1,14 @@
 import {
+  clampSearchPage,
+  clampSearchPageSize,
   currentMonth,
+  indexedSearchOffsetTakeLimit,
   isValidPlainDate,
   isValidPlainMonth,
   MAX_AMOUNT_MINOR,
   normalizeSearchText,
-  TRANSACTION_LIST_PAGE_SIZE,
-  TRANSACTION_SEARCH_MAX_PAGE,
+  searchOffsetTakeLimit,
+  searchOffsetTotalCount,
   transactionSearchText,
   transactionTextMatches,
 } from "@spend-circle/domain";
@@ -424,35 +427,6 @@ async function collectSearchTransactionViews(
   };
 }
 
-function clampSearchPageSize(value: number | undefined) {
-  if (value === undefined) {
-    return TRANSACTION_LIST_PAGE_SIZE;
-  }
-  if (!Number.isFinite(value)) {
-    return TRANSACTION_LIST_PAGE_SIZE;
-  }
-  return Math.min(100, Math.max(1, Math.floor(value)));
-}
-
-function clampSearchPage(value: number) {
-  if (!Number.isFinite(value) || value < 1) {
-    return 1;
-  }
-  return Math.min(TRANSACTION_SEARCH_MAX_PAGE, Math.floor(value));
-}
-
-function searchOffsetScanBounds(page: number, pageSize: number) {
-  const scanCap = TRANSACTION_SEARCH_MAX_PAGE * pageSize + 1;
-  const takeLimit = Math.max(page * pageSize, scanCap);
-  return { scanCap, takeLimit };
-}
-
-function searchOffsetTotalCount(matchCount: number, takeLimit: number, hasMoreBeyondTake: boolean) {
-  const totalCountCapped = hasMoreBeyondTake || matchCount >= takeLimit;
-  const totalCount = totalCountCapped ? takeLimit : matchCount;
-  return { totalCount, totalCountCapped };
-}
-
 async function searchTransactionsOffsetPage(
   ctx: QueryCtx,
   args: Omit<Parameters<typeof collectTransactionViews>[1], "paginationOpts"> & {
@@ -463,12 +437,12 @@ async function searchTransactionsOffsetPage(
   const viewCaches = newViewCaches();
   const searchCaches = newSearchCaches();
   const { page, pageSize } = args;
-  const { takeLimit } = searchOffsetScanBounds(page, pageSize);
+  const takeLimit = searchOffsetTakeLimit(pageSize);
 
   if (args.filters.queryText && (await transactionSearchBackfillComplete(ctx))) {
     const source = buildIndexedSearchSource(ctx, args);
-    const numItems = Math.min(1024, takeLimit);
-    const result = await source.paginate({ numItems, cursor: null });
+    const indexedTakeLimit = indexedSearchOffsetTakeLimit(pageSize);
+    const result = await source.paginate({ numItems: indexedTakeLimit, cursor: null });
     const allDocs = result.page;
     const docSlice = allDocs.slice((page - 1) * pageSize, page * pageSize);
     const transactions = [];
@@ -482,7 +456,7 @@ async function searchTransactionsOffsetPage(
     }
     const { totalCount, totalCountCapped } = searchOffsetTotalCount(
       allDocs.length,
-      takeLimit,
+      indexedTakeLimit,
       !result.isDone,
     );
     return {
@@ -520,7 +494,11 @@ async function searchTransactionsOffsetPage(
   );
 
   const matched = await source.take(takeLimit);
-  const { totalCount, totalCountCapped } = searchOffsetTotalCount(matched.length, takeLimit, false);
+  const { totalCount, totalCountCapped } = searchOffsetTotalCount(
+    matched.length,
+    takeLimit,
+    matched.length >= takeLimit,
+  );
   const pageDocs = matched.slice((page - 1) * pageSize, page * pageSize);
   const transactions = await Promise.all(
     pageDocs.map((txn) =>

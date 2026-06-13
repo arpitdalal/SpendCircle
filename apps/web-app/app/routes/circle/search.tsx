@@ -1,4 +1,4 @@
-import { TRANSACTION_SEARCH_MAX_PAGE } from "@spend-circle/domain";
+import { searchResultTotalPages } from "@spend-circle/domain";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -38,15 +38,10 @@ export default function CircleSearch() {
   const filterCount = activeFilterCount(filters);
   const searchKey = searchParams.toString();
 
-  const totalPages = useMemo(() => {
-    if (results.isLoading || results.totalCount === 0) {
-      return 0;
-    }
-    return Math.min(
-      TRANSACTION_SEARCH_MAX_PAGE,
-      Math.max(1, Math.ceil(results.totalCount / results.pageSize)),
-    );
-  }, [results.isLoading, results.pageSize, results.totalCount]);
+  const totalPages = useMemo(
+    () => (results.isLoading ? 0 : searchResultTotalPages(results.totalCount, results.pageSize)),
+    [results.isLoading, results.pageSize, results.totalCount],
+  );
 
   useEffect(() => {
     const next = canonicalSearchParams(filters);
@@ -65,10 +60,7 @@ export default function CircleSearch() {
       }
       return;
     }
-    const maxPage = Math.min(
-      TRANSACTION_SEARCH_MAX_PAGE,
-      Math.max(1, Math.ceil(results.totalCount / results.pageSize)),
-    );
+    const maxPage = searchResultTotalPages(results.totalCount, results.pageSize);
     if (filters.page > maxPage) {
       setSearchParams(canonicalSearchParams({ ...filters, page: maxPage }), { replace: true });
     }
@@ -155,7 +147,7 @@ export default function CircleSearch() {
         paginationMode="none"
       />
 
-      {!results.isLoading && totalPages > 1 ? (
+      {!results.isLoading && results.totalCount > 0 ? (
         <Pagination
           currentPage={filters.page}
           totalPages={totalPages}

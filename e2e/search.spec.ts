@@ -124,3 +124,58 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
   await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toBeVisible();
   await expect(page.getByText("Something went wrong")).toHaveCount(0);
 });
+
+test("transaction search pagination updates URL and result slice", async ({ page }, testInfo) => {
+  test.slow();
+
+  const projectCode = testInfo.project.name === "mobile-chromium" ? "m" : "d";
+  const nonce = `${Date.now()}-${projectCode}`;
+  const circleName = `E2E Pages ${nonce}`;
+  const categoryName = `E2E PgCat ${nonce}`;
+  const month = projectCode === "m" ? "2995-06" : "2995-05";
+  const queryText = "Paged Needle";
+  const matchingTitle = (index: number) => `E2E Paged Needle ${index} ${nonce}`;
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Circles" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Create circle" }).click();
+  await page.getByLabel("Name").fill(circleName);
+  await page.getByRole("button", { name: "Create circle" }).click();
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+
+  await page.getByRole("link", { name: "Categories" }).click();
+  await page.getByLabel(/New expense category/).fill(categoryName);
+  await page.getByRole("button", { name: "Add category" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
+
+  await page.getByRole("link", { name: "Transactions" }).click();
+  const monthInput = page.getByLabel("Month", { exact: true });
+  await monthInput.fill(month);
+  await monthInput.blur();
+
+  for (let index = 0; index < 30; index += 1) {
+    const day = (index + 1).toString().padStart(2, "0");
+    await page.getByRole("button", { name: "Add expense" }).click();
+    const form = page.getByRole("form", { name: /add expense/i });
+    await form.getByLabel("Title").fill(matchingTitle(index));
+    await form.getByLabel(/Amount/).fill("1.00");
+    await form.getByLabel("Date").fill(`${month}-${day}`);
+    await pickFormCategory(page, form, categoryName);
+    await form.getByRole("button", { name: "Add expense" }).click();
+    await expect(form).toHaveCount(0);
+  }
+
+  await page.getByRole("link", { name: "Search", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Search title or note" }).fill(queryText);
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/q=Paged\+Needle/);
+  await expect(page.getByRole("button", { name: "Page 2" })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(25) })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Page 2" }).click();
+  await expect(page).toHaveURL(/page=2/);
+  await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(25) })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toHaveCount(0);
+});

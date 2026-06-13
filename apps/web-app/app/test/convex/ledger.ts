@@ -1,5 +1,5 @@
 import { api } from "@spend-circle/convex";
-import { TRANSACTION_SEARCH_MAX_PAGE } from "@spend-circle/domain";
+import { clampSearchPage, clampSearchPageSize } from "@spend-circle/domain";
 import { getFunctionName } from "convex/server";
 import type {
   MonthlySummary,
@@ -60,13 +60,12 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
       [getFunctionName(api.search.getTransactionSearchOptions)]: (args) =>
         resolveWith(transactionSearchOptions, args),
       [getFunctionName(api.search.searchTransactions)]: (args) => {
-        const rawPage = typeof args.page === "number" && Number.isFinite(args.page) ? args.page : 1;
-        const page = Math.min(TRANSACTION_SEARCH_MAX_PAGE, Math.max(1, Math.floor(rawPage)));
-        const rawSize = args.pageSize;
-        const pageSize =
-          typeof rawSize === "number" && Number.isFinite(rawSize)
-            ? Math.min(100, Math.max(1, Math.floor(rawSize)))
-            : 25;
+        const page = clampSearchPage(
+          typeof args.page === "number" && Number.isFinite(args.page) ? args.page : 1,
+        );
+        const pageSize = clampSearchPageSize(
+          typeof args.pageSize === "number" ? args.pageSize : undefined,
+        );
         const start = (page - 1) * pageSize;
         return {
           transactions: searchTransactions.slice(start, start + pageSize),

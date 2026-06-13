@@ -1,12 +1,57 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampSearchPage,
+  clampSearchPageSize,
+  indexedSearchOffsetTakeLimit,
+  searchOffsetTakeLimit,
+  searchOffsetTotalCount,
+  searchResultTotalPages,
   TRANSACTION_LIST_PAGE_SIZE,
+  TRANSACTION_SEARCH_INDEXED_RESULT_CEILING,
   TRANSACTION_SEARCH_MAX_PAGE,
+  TRANSACTION_SEARCH_MAX_PUBLIC_PAGE_SIZE,
 } from "./transaction-search-pagination.js";
 
-describe("transaction search pagination constants", () => {
-  it("exports stable caps aligned with Convex search", () => {
-    expect(TRANSACTION_SEARCH_MAX_PAGE).toBe(40);
-    expect(TRANSACTION_LIST_PAGE_SIZE).toBe(25);
+describe("transaction search pagination", () => {
+  it("clamps page and page size to the public contract", () => {
+    expect(clampSearchPageSize(undefined)).toBe(TRANSACTION_LIST_PAGE_SIZE);
+    expect(clampSearchPageSize(Number.NaN)).toBe(TRANSACTION_LIST_PAGE_SIZE);
+    expect(clampSearchPageSize(0)).toBe(1);
+    expect(clampSearchPageSize(100)).toBe(TRANSACTION_SEARCH_MAX_PUBLIC_PAGE_SIZE);
+    expect(clampSearchPageSize(250)).toBe(TRANSACTION_SEARCH_MAX_PUBLIC_PAGE_SIZE);
+
+    expect(clampSearchPage(0)).toBe(1);
+    expect(clampSearchPage(-3)).toBe(1);
+    expect(clampSearchPage(99)).toBe(TRANSACTION_SEARCH_MAX_PAGE);
+  });
+
+  it("derives scan bounds from max page and indexed ceiling", () => {
+    expect(searchOffsetTakeLimit(25)).toBe(TRANSACTION_SEARCH_MAX_PAGE * 25 + 1);
+    expect(indexedSearchOffsetTakeLimit(25)).toBe(TRANSACTION_SEARCH_MAX_PAGE * 25 + 1);
+    expect(indexedSearchOffsetTakeLimit(100)).toBe(TRANSACTION_SEARCH_INDEXED_RESULT_CEILING);
+  });
+
+  it("marks totals capped at the take sentinel or when more rows exist", () => {
+    const takeLimit = searchOffsetTakeLimit(25);
+    expect(searchOffsetTotalCount(10, takeLimit, false)).toEqual({
+      totalCount: 10,
+      totalCountCapped: false,
+    });
+    expect(searchOffsetTotalCount(takeLimit, takeLimit, false)).toEqual({
+      totalCount: takeLimit,
+      totalCountCapped: true,
+    });
+    expect(searchOffsetTotalCount(5, takeLimit, true)).toEqual({
+      totalCount: takeLimit,
+      totalCountCapped: true,
+    });
+  });
+
+  it("computes exposed page count from total count", () => {
+    expect(searchResultTotalPages(0, 25)).toBe(0);
+    expect(searchResultTotalPages(1, 25)).toBe(1);
+    expect(searchResultTotalPages(25, 25)).toBe(1);
+    expect(searchResultTotalPages(26, 25)).toBe(2);
+    expect(searchResultTotalPages(searchOffsetTakeLimit(25), 25)).toBe(TRANSACTION_SEARCH_MAX_PAGE);
   });
 });

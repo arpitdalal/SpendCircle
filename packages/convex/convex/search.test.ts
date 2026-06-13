@@ -1,4 +1,4 @@
-import { TRANSACTION_SEARCH_MAX_PAGE } from "@spend-circle/domain";
+import { searchOffsetTakeLimit } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
@@ -739,7 +739,7 @@ describe("searchTransactions", () => {
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
     const pageSize = 1;
-    const scanCap = TRANSACTION_SEARCH_MAX_PAGE * pageSize + 1;
+    const scanCap = searchOffsetTakeLimit(pageSize);
     const needle = "sentinel";
     await t.run(async (ctx) => {
       for (let index = 0; index < scanCap; index += 1) {
@@ -762,6 +762,63 @@ describe("searchTransactions", () => {
     expect(result.transactions).toHaveLength(1);
     expect(result.totalCount).toBe(scanCap);
     expect(result.totalCountCapped).toBe(true);
+  });
+
+  it("marks stream search capped when take sentinel row is hit", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const pageSize = 1;
+    const takeLimit = searchOffsetTakeLimit(pageSize);
+    await t.run(async (ctx) => {
+      for (let index = 0; index < takeLimit; index += 1) {
+        const day = (index % 28) + 1;
+        await seedTransaction(ctx, f, {
+          title: `stream cap ${index}`,
+          date: `2026-06-${day.toString().padStart(2, "0")}`,
+        });
+      }
+    });
+
+    const result = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      ...searchTransactionPage(1, pageSize),
+    });
+    expect(result.transactions).toHaveLength(1);
+    expect(result.totalCount).toBe(takeLimit);
+    expect(result.totalCountCapped).toBe(true);
+  });
+
+  it("bounds indexed totalCount by the search-result ceiling for large pageSize", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    const pageSize = 100;
+    const needle = "wide-page";
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 30; index += 1) {
+        const day = (index % 28) + 1;
+        await seedTransaction(ctx, f, {
+          title: `${needle} ${index}`,
+          date: `2026-06-${day.toString().padStart(2, "0")}`,
+        });
+      }
+      await markTransactionSearchBackfillComplete(ctx);
+    });
+
+    const result = await t.query(api.search.searchTransactions, {
+      circleId: f.circleId,
+      type: "all",
+      status: "active",
+      query: needle,
+      ...searchTransactionPage(1, pageSize),
+    });
+    expect(result.transactions).toHaveLength(30);
+    expect(result.totalCount).toBe(30);
+    expect(result.totalCountCapped).toBe(false);
+    expect(result.totalCount).toBeLessThan(searchOffsetTakeLimit(pageSize));
   });
 });
 

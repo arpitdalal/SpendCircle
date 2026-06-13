@@ -34,11 +34,7 @@ export function Pagination({
   className?: string;
 }) {
   if (totalPages <= 1) {
-    return totalCountCapped ? (
-      <p className={cn("text-center text-xs text-muted-foreground", className)}>
-        Additional matches may exist beyond the scanned range.
-      </p>
-    ) : null;
+    return null;
   }
 
   const items = visiblePageItems(currentPage, totalPages);
