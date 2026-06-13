@@ -135,6 +135,7 @@ test("transaction search pagination updates URL and result slice", async ({ page
   const month = projectCode === "m" ? "2995-06" : "2995-05";
   const queryText = "Paged Needle";
   const matchingTitle = (index: number) => `E2E Paged Needle ${index} ${nonce}`;
+  const rowCount = 26;
 
   await page.goto("/");
   await page.getByRole("button", { name: "Circles" }).click();
@@ -154,7 +155,7 @@ test("transaction search pagination updates URL and result slice", async ({ page
   await monthInput.fill(month);
   await monthInput.blur();
 
-  for (let index = 0; index < 30; index += 1) {
+  for (let index = 0; index < rowCount; index += 1) {
     const day = (index + 1).toString().padStart(2, "0");
     await page.getByRole("button", { name: "Add expense" }).click();
     const form = page.getByRole("form", { name: /add expense/i });
@@ -167,15 +168,24 @@ test("transaction search pagination updates URL and result slice", async ({ page
   }
 
   await page.getByRole("link", { name: "Search", exact: true }).click();
-  await page.getByRole("searchbox", { name: "Search title or note" }).fill(queryText);
-  await page.getByRole("button", { name: "Search" }).click();
-  await expect(page).toHaveURL(/q=Paged\+Needle/);
+  await expect(page).toHaveURL(/\/search\?/);
+
+  const searchbox = page.getByRole("searchbox", { name: "Search title or note" });
+  await expect(searchbox).toBeVisible();
+  await searchbox.fill(queryText);
+  await expect(searchbox).toHaveValue(queryText);
+  await searchbox.press("Enter");
+  await expect(page).toHaveURL(/q=Paged/);
+
+  // Results sort by date descending — newest row is on page 1, oldest on page 2.
+  const newest = matchingTitle(rowCount - 1);
+  const oldest = matchingTitle(0);
+  await expect(page.getByRole("listitem").filter({ hasText: newest })).toBeVisible();
   await expect(page.getByRole("button", { name: "Page 2" })).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(25) })).toHaveCount(0);
+  await expect(page.getByRole("listitem").filter({ hasText: oldest })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Page 2" }).click();
   await expect(page).toHaveURL(/page=2/);
-  await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(25) })).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toHaveCount(0);
+  await expect(page.getByRole("listitem").filter({ hasText: oldest })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: newest })).toHaveCount(0);
 });
