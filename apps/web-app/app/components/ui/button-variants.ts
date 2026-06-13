@@ -16,6 +16,8 @@ export const buttonVariants = cva(
         default: "h-10 px-4 py-2",
         sm: "h-9 px-3",
         lg: "h-11 px-6",
+        /** Square icon-only control with a comfortable tap target (row overflow menu). */
+        icon: "size-9 shrink-0 rounded-md p-0 [&_svg]:size-4",
         /** Dense icon-only control (combobox chip remove, input-group adornments). */
         "icon-xs": "size-7 shrink-0 rounded-md p-0 [&_svg]:size-3.5",
       },

@@ -333,6 +333,31 @@ describe("CircleTransactions", () => {
     expect(marker.closest("li")).toHaveTextContent("Archived buy");
   });
 
+  it("reaches the same row actions through the overflow menu (narrow layout)", async () => {
+    const user = userEvent.setup();
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: [
+        makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
+      ],
+    });
+
+    // The overflow trigger collapses Edit + Archive on narrow containers; it carries its own
+    // name so it never collides with the inline controls.
+    await user.click(screen.getByRole("button", { name: "Actions for Weekly shop" }));
+    const menu = await screen.findByRole("menu");
+
+    // Same accessible names as the inline buttons, so callers/tests reach them identically.
+    expect(within(menu).getByRole("menuitem", { name: "Edit Weekly shop" })).toHaveAttribute(
+      "href",
+      `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05`,
+    );
+    await user.click(within(menu).getByRole("menuitem", { name: "Archive Weekly shop" }));
+    expect(archiveTransaction).toHaveBeenCalledWith({
+      transactionId: testId<Transaction["id"]>("t1"),
+    });
+  });
+
   it("does not rewrite applied filters when the open panel's draft type changes the options", async () => {
     const user = userEvent.setup();
     const url = `/circles/${REF}/transactions?month=2026-05&type=expense&status=active&categories=cat-grocery`;
