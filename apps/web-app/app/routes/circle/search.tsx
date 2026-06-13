@@ -1,6 +1,6 @@
 import { searchResultTotalPages } from "@spend-circle/domain";
 import { Search, SlidersHorizontal } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
@@ -38,10 +38,21 @@ export default function CircleSearch() {
   const filterCount = activeFilterCount(filters);
   const searchKey = searchParams.toString();
 
-  const totalPages = useMemo(
-    () => (results.isLoading ? 0 : searchResultTotalPages(results.totalCount, results.pageSize)),
-    [results.isLoading, results.pageSize, results.totalCount],
-  );
+  // Hold the last LOADED pagination shape so the control stays mounted while the next
+  // page is in flight (useQuery returns undefined on arg change) — unmounting it would
+  // drop keyboard focus from the just-clicked page button and announce nothing. Adjust
+  // during render guarded by a primitive compare so it converges (no effect/flash).
+  const [lastPaging, setLastPaging] = useState({ totalPages: 0, totalCountCapped: false });
+  if (!results.isLoading) {
+    const totalPages = searchResultTotalPages(results.totalCount, results.pageSize);
+    if (
+      totalPages !== lastPaging.totalPages ||
+      results.totalCountCapped !== lastPaging.totalCountCapped
+    ) {
+      setLastPaging({ totalPages, totalCountCapped: results.totalCountCapped });
+    }
+  }
+  const { totalPages, totalCountCapped } = lastPaging;
 
   useEffect(() => {
     const next = canonicalSearchParams(filters);
@@ -147,16 +158,15 @@ export default function CircleSearch() {
         paginationMode="none"
       />
 
-      {!results.isLoading && results.totalCount > 0 ? (
-        <Pagination
-          currentPage={filters.page}
-          totalPages={totalPages}
-          totalCountCapped={results.totalCountCapped}
-          onSelectPage={(page) =>
-            setSearchParams(canonicalSearchParams({ ...filters, page }), { replace: false })
-          }
-        />
-      ) : null}
+      <Pagination
+        currentPage={filters.page}
+        totalPages={totalPages}
+        totalCountCapped={totalCountCapped}
+        loading={results.isLoading}
+        onSelectPage={(page) =>
+          setSearchParams(canonicalSearchParams({ ...filters, page }), { replace: false })
+        }
+      />
 
       <FilterPanel
         open={panelOpen}

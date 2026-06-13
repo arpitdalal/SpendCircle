@@ -22,7 +22,11 @@ export interface LedgerState {
   monthlySummary?: MonthlySummary | null;
   ledgerFilterTransactions?: Transaction[];
   ledgerFilterStatus?: PaginationStatus;
-  searchTransactions?: Transaction[];
+  /** {@link api.search.searchTransactions} rows before page slicing. A function resolves
+   * per query args (e.g. by `page`); returning `undefined` models that page in flight. */
+  searchTransactions?:
+    | Transaction[]
+    | ((args: Record<string, unknown>) => Transaction[] | undefined);
   /** When true, doubles {@link api.search.searchTransactions} `totalCountCapped`. */
   searchTotalCountCapped?: boolean;
   /** `getLedgerFilterOptions` / `getTransactionSearchOptions` result; `undefined` ≡ loading,
@@ -60,6 +64,10 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
       [getFunctionName(api.search.getTransactionSearchOptions)]: (args) =>
         resolveWith(transactionSearchOptions, args),
       [getFunctionName(api.search.searchTransactions)]: (args) => {
+        const rows = resolveWith(searchTransactions, args);
+        if (rows === undefined) {
+          return undefined;
+        }
         const page = clampSearchPage(
           typeof args.page === "number" && Number.isFinite(args.page) ? args.page : 1,
         );
@@ -68,10 +76,10 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
         );
         const start = (page - 1) * pageSize;
         return {
-          transactions: searchTransactions.slice(start, start + pageSize),
+          transactions: rows.slice(start, start + pageSize),
           pageNumber: page,
           pageSize,
-          totalCount: searchTransactions.length,
+          totalCount: rows.length,
           totalCountCapped: searchTotalCountCapped,
         };
       },

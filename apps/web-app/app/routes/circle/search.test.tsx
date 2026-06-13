@@ -2,14 +2,9 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  Category,
-  Circle,
-  Member,
-  Transaction,
-  TransactionFilterOptions,
-} from "~/lib/data.js";
+import type { Category, Circle, Member, TransactionFilterOptions } from "~/lib/data.js";
 import {
+  type ConvexState,
   configureConvex,
   makeCategoryView,
   makeCircleView,
@@ -43,7 +38,7 @@ const ROUTES = (
 function setup(
   opts: {
     circle?: Partial<Circle>;
-    searchTransactions?: Transaction[];
+    searchTransactions?: ConvexState["searchTransactions"];
     options?:
       | TransactionFilterOptions
       | null
@@ -215,6 +210,29 @@ describe("CircleSearch", () => {
 
     await user.click(screen.getByRole("button", { name: "Page 1" }));
     await waitFor(() => expect(screen.getByText("Row 0")).toBeInTheDocument());
+    expect(screen.getByRole("status", { name: "Search results page" })).toHaveTextContent(
+      "Page 1 of 2",
+    );
+  });
+
+  it("keeps pagination mounted and focused while the next page loads", async () => {
+    const user = userEvent.setup();
+    const rows = Array.from({ length: 30 }, (_, index) =>
+      makeTransactionView({ ref: `t-${index}`, title: `Row ${index}` }),
+    );
+    setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
+      // Page 2 never resolves — models the in-flight window after a page click.
+      searchTransactions: (args) => (args.page === 2 ? undefined : rows),
+    });
+    await waitFor(() => expect(screen.getByText("Row 0")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Page 2" }));
+
+    expect(screen.getByRole("button", { name: "Page 2" })).toHaveFocus();
+    expect(screen.getByRole("status", { name: "Search results page" })).toHaveTextContent(
+      "Loading page 2…",
+    );
   });
 
   it("resets page to 1 when filters are applied from the panel", async () => {

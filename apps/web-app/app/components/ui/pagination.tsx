@@ -25,12 +25,16 @@ export function Pagination({
   totalPages,
   onSelectPage,
   totalCountCapped,
+  loading,
   className,
 }: {
   currentPage: number;
   totalPages: number;
   onSelectPage: (page: number) => void;
   totalCountCapped?: boolean;
+  /** The selected page is in flight — the caller keeps the last loaded `totalPages` so
+   * the control (and the just-clicked button's focus) survives the transition. */
+  loading?: boolean;
   className?: string;
 }) {
   if (totalPages <= 1) {
@@ -43,6 +47,7 @@ export function Pagination({
     <div className={cn("space-y-2", className)}>
       <nav
         aria-label="Search results pages"
+        aria-busy={loading || undefined}
         className="flex flex-wrap items-center justify-center gap-1"
       >
         <Button
@@ -98,6 +103,17 @@ export function Pagination({
           <ChevronRight className="size-4" />
         </Button>
       </nav>
+      {/* Stays mounted with content toggling (same rationale as InfiniteScrollFooter,
+          issue #98): a region mounted only during the transition is easy to miss. */}
+      <p
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-label="Search results page"
+        className="sr-only"
+      >
+        {loading ? `Loading page ${currentPage}…` : `Page ${currentPage} of ${totalPages}`}
+      </p>
       {totalCountCapped ? (
         <p className="text-center text-xs text-muted-foreground">
           Result total is capped — refine filters for a narrower set.
