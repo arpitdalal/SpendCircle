@@ -61,8 +61,12 @@ test("transaction search finds circle transactions across months and opens detai
  * RPT-7 real-backend regression: sparse text matches over more than one source
  * page used to make `filterLedgerTransactions` call `.paginate()` twice in one query
  * execution, which only the real backend rejects. Transaction search (#97) now uses
- * a single indexed or stream read per query with numbered URL pages. Seed in a
- * dedicated Circle so the >25 rows do not bloat the shared Personal Circle's form pickers.
+ * a single indexed or stream read per query with numbered URL pages. With a text
+ * query the indexed path ranks by relevance with a creation-time tie-break, not
+ * strictly by transaction date; here seeded dates ascend in lockstep with creation
+ * order, so the observable order matches what date-desc stream ordering would show.
+ * Seed in a dedicated Circle so the >25 rows do not bloat the shared Personal Circle's
+ * form pickers.
  */
 test("sparse transaction filters spanning multiple source pages do not crash", async ({
   page,
@@ -177,7 +181,8 @@ test("transaction search pagination updates URL and result slice", async ({ page
   await searchbox.press("Enter");
   await expect(page).toHaveURL(/q=Paged/);
 
-  // Results sort by date descending — newest row is on page 1, oldest on page 2.
+  // Indexed text search ranks by relevance with a creation-time tie-break (not pure date
+  // sort). Seeded dates ascend with creation order, so newest vs oldest still land on page 1 vs 2.
   const newest = matchingTitle(rowCount - 1);
   const oldest = matchingTitle(0);
   await expect(page.getByRole("listitem").filter({ hasText: newest })).toBeVisible();

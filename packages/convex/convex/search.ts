@@ -494,11 +494,7 @@ async function searchTransactionsOffsetPage(
   );
 
   const matched = await source.take(takeLimit);
-  const { totalCount, totalCountCapped } = searchOffsetTotalCount(
-    matched.length,
-    takeLimit,
-    matched.length >= takeLimit,
-  );
+  const { totalCount, totalCountCapped } = searchOffsetTotalCount(matched.length, takeLimit);
   const pageDocs = matched.slice((page - 1) * pageSize, page * pageSize);
   const transactions = await Promise.all(
     pageDocs.map((txn) =>

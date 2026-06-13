@@ -41,6 +41,10 @@ describe("transaction search pagination", () => {
       totalCount: takeLimit,
       totalCountCapped: true,
     });
+    expect(searchOffsetTotalCount(takeLimit, takeLimit)).toEqual({
+      totalCount: takeLimit,
+      totalCountCapped: true,
+    });
     expect(searchOffsetTotalCount(5, takeLimit, true)).toEqual({
       totalCount: takeLimit,
       totalCountCapped: true,

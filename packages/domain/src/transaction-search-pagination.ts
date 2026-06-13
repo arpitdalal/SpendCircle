@@ -38,10 +38,15 @@ export function indexedSearchOffsetTakeLimit(pageSize: number) {
   return Math.min(TRANSACTION_SEARCH_INDEXED_RESULT_CEILING, searchOffsetTakeLimit(pageSize));
 }
 
+/**
+ * @param hasMoreBeyondTake Indexed search: true when `.paginate` is not done while under
+ * `numItems` (more hits exist without filling the page). Stream `take()` path: omit — cap
+ * is already `matchCount >= takeLimit`.
+ */
 export function searchOffsetTotalCount(
   matchCount: number,
   takeLimit: number,
-  hasMoreBeyondTake: boolean,
+  hasMoreBeyondTake = false,
 ) {
   const totalCountCapped = hasMoreBeyondTake || matchCount >= takeLimit;
   const totalCount = totalCountCapped ? takeLimit : matchCount;
