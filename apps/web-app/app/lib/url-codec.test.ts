@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { cleanText, readIds, readLifecycleStatus, writeIds } from "./url-codec.js";
+import {
+  cleanText,
+  readIds,
+  readLifecycleStatus,
+  readPositiveIntPageParam,
+  writeIds,
+  writePositiveIntPageParam,
+} from "./url-codec.js";
 
 describe("cleanText", () => {
   it("treats null as empty", () => {
@@ -50,5 +57,19 @@ describe("writeIds", () => {
     const params = new URLSearchParams("categories=old");
     writeIds(params, "categories", ["  ", ""]);
     expect(params.has("categories")).toBe(false);
+  });
+});
+
+describe("readPositiveIntPageParam and writePositiveIntPageParam", () => {
+  it("clamps invalid values and omits page 1 on write", () => {
+    expect(readPositiveIntPageParam(null, 10)).toBe(1);
+    expect(readPositiveIntPageParam("0", 10)).toBe(1);
+    expect(readPositiveIntPageParam("5", 10)).toBe(5);
+    expect(readPositiveIntPageParam("99", 10)).toBe(10);
+    const params = new URLSearchParams("page=3");
+    writePositiveIntPageParam(params, "page", 1, 10);
+    expect(params.get("page")).toBeNull();
+    writePositiveIntPageParam(params, "page", 4, 10);
+    expect(params.get("page")).toBe("4");
   });
 });

@@ -7,4 +7,5 @@ export * from "./ref.js";
 export * from "./setup.js";
 export * from "./text.js";
 export * from "./transaction-category-resolve.js";
+export * from "./transaction-search-pagination.js";
 export * from "./validation.js";

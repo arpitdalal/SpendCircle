@@ -1,5 +1,5 @@
 import { api } from "@spend-circle/convex";
-import type { PlainMonth } from "@spend-circle/domain";
+import { type PlainMonth, TRANSACTION_LIST_PAGE_SIZE } from "@spend-circle/domain";
 import { useMutation, usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "../env.js";
@@ -42,7 +42,7 @@ export type TransactionHistoryEvent = FunctionReturnType<
 export type TransactionHistoryChange = TransactionHistoryEvent["changes"][number];
 
 /** How many Transactions to fetch per page (initial load and each "load more"). */
-export const TRANSACTIONS_PAGE_SIZE = 25;
+export const TRANSACTIONS_PAGE_SIZE = TRANSACTION_LIST_PAGE_SIZE;
 
 /** Convex's paginated-query lifecycle status, re-exported so the route needn't import Convex. */
 export type PaginationStatus = "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted";

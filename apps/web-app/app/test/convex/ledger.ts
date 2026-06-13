@@ -1,4 +1,5 @@
 import { api } from "@spend-circle/convex";
+import { clampSearchPage, clampSearchPageSize } from "@spend-circle/domain";
 import { getFunctionName } from "convex/server";
 import type {
   MonthlySummary,
@@ -21,8 +22,13 @@ export interface LedgerState {
   monthlySummary?: MonthlySummary | null;
   ledgerFilterTransactions?: Transaction[];
   ledgerFilterStatus?: PaginationStatus;
-  searchTransactions?: Transaction[];
-  searchStatus?: PaginationStatus;
+  /** {@link api.search.searchTransactions} rows before page slicing. A function resolves
+   * per query args (e.g. by `page`); returning `undefined` models that page in flight. */
+  searchTransactions?:
+    | Transaction[]
+    | ((args: Record<string, unknown>) => Transaction[] | undefined);
+  /** When true, doubles {@link api.search.searchTransactions} `totalCountCapped`. */
+  searchTotalCountCapped?: boolean;
   /** `getLedgerFilterOptions` / `getTransactionSearchOptions` result; `undefined` ≡ loading,
    * `null` ≡ inaccessible. A function resolves per query args (e.g. by `type`) so a test can
    * model the type-scoped Category option set the panel narrows to as the draft type flips. */
@@ -34,8 +40,8 @@ export interface LedgerState {
     | TransactionFilterOptions
     | null
     | ((args: Record<string, unknown>) => TransactionFilterOptions | null | undefined);
-  /** Paginated `loadMore` for ledger filter / search doubles — same knob as the TXN
-   * list's `loadMore` in merged test state. */
+  /** Paginated `loadMore` for ledger filter doubles — same knob as the TXN list's
+   * `loadMore` in merged test state. */
   loadMore?: () => void;
 }
 
@@ -45,7 +51,7 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
     ledgerFilterTransactions = [],
     ledgerFilterStatus = "Exhausted",
     searchTransactions = [],
-    searchStatus = "Exhausted",
+    searchTotalCountCapped = false,
     ledgerFilterOptions,
     transactionSearchOptions,
     loadMore = () => {},
@@ -57,16 +63,31 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
         resolveWith(ledgerFilterOptions, args),
       [getFunctionName(api.search.getTransactionSearchOptions)]: (args) =>
         resolveWith(transactionSearchOptions, args),
+      [getFunctionName(api.search.searchTransactions)]: (args) => {
+        const rows = resolveWith(searchTransactions, args);
+        if (rows === undefined) {
+          return undefined;
+        }
+        const page = clampSearchPage(
+          typeof args.page === "number" && Number.isFinite(args.page) ? args.page : 1,
+        );
+        const pageSize = clampSearchPageSize(
+          typeof args.pageSize === "number" ? args.pageSize : undefined,
+        );
+        const start = (page - 1) * pageSize;
+        return {
+          transactions: rows.slice(start, start + pageSize),
+          pageNumber: page,
+          pageSize,
+          totalCount: rows.length,
+          totalCountCapped: searchTotalCountCapped,
+        };
+      },
     },
     paginatedQueries: {
       [getFunctionName(api.search.filterLedgerTransactions)]: () => ({
         results: ledgerFilterTransactions,
         status: ledgerFilterStatus,
-        loadMore,
-      }),
-      [getFunctionName(api.search.searchTransactions)]: () => ({
-        results: searchTransactions,
-        status: searchStatus,
         loadMore,
       }),
     },

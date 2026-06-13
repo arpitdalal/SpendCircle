@@ -4,10 +4,18 @@ import {
   isValidPlainMonth,
   type PlainMonth,
   parseAmountToMinorUnits,
+  TRANSACTION_SEARCH_MAX_PAGE,
   type TransactionType,
 } from "@spend-circle/domain";
 
-import { cleanText, readIds, readLifecycleStatus, writeIds } from "./url-codec.js";
+import {
+  cleanText,
+  readIds,
+  readLifecycleStatus,
+  readPositiveIntPageParam,
+  writeIds,
+  writePositiveIntPageParam,
+} from "./url-codec.js";
 
 export type TypeFilter = "all" | TransactionType;
 export type LifecycleFilter = "active" | "archived" | "all";
@@ -30,6 +38,8 @@ export interface SearchFilters extends BaseTransactionFilters {
   to: string;
   min: string;
   max: string;
+  /** 1-based; omitted from URL when 1. */
+  page: number;
 }
 
 export const DEFAULT_TYPE: TypeFilter = "all";
@@ -46,6 +56,7 @@ export const SEARCH_FILTER_PARAMS = [
   "to",
   "min",
   "max",
+  "page",
 ];
 
 function readType(value: string | null): TypeFilter {
@@ -99,6 +110,7 @@ export function readSearchFilters(searchParams: URLSearchParams) {
     to: isValidPlainDate(searchParams.get("to")) ? (searchParams.get("to") ?? "") : "",
     min: validAmountInput(searchParams.get("min")),
     max: validAmountInput(searchParams.get("max")),
+    page: readPositiveIntPageParam(searchParams.get("page"), TRANSACTION_SEARCH_MAX_PAGE),
   };
 }
 
@@ -121,6 +133,7 @@ export function writeSearchFilters(params: URLSearchParams, filters: SearchFilte
   }
   writeAmount(params, "min", filters.min);
   writeAmount(params, "max", filters.max);
+  writePositiveIntPageParam(params, "page", filters.page, TRANSACTION_SEARCH_MAX_PAGE);
 }
 
 export function canonicalLedgerParams(filters: LedgerFilters, preserve?: URLSearchParams) {
@@ -164,6 +177,7 @@ export function defaultSearchFilters(): SearchFilters {
     to: "",
     min: "",
     max: "",
+    page: 1,
   };
 }
 

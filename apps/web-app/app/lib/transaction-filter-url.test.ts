@@ -156,6 +156,7 @@ describe("canonicalSearchParams", () => {
     expect(empty.get("to")).toBeNull();
     expect(empty.get("min")).toBeNull();
     expect(empty.get("max")).toBeNull();
+    expect(empty.get("page")).toBeNull();
 
     const withDates = canonicalSearchParams({
       ...defaultSearchFilters(),
@@ -183,8 +184,17 @@ describe("canonicalSearchParams", () => {
       to: "2026-05-31",
       min: "10",
       max: "20.00",
+      page: 1,
     };
     expect(readSearchFilters(canonicalSearchParams(filters))).toEqual(filters);
+  });
+
+  it("clamps page from the URL and omits page=1 from canonical params", () => {
+    expect(readSearchFilters(new URLSearchParams("page=0")).page).toBe(1);
+    expect(readSearchFilters(new URLSearchParams("page=abc")).page).toBe(1);
+    expect(readSearchFilters(new URLSearchParams("page=999")).page).toBe(40);
+    expect(canonicalSearchParams(defaultSearchFilters()).get("page")).toBeNull();
+    expect(canonicalSearchParams({ ...defaultSearchFilters(), page: 4 }).get("page")).toBe("4");
   });
 });
 
