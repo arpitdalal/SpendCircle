@@ -123,28 +123,6 @@ describe("CircleSearch", () => {
     );
   });
 
-  it("applies advanced filters when Enter is pressed in a panel field (same as Apply)", async () => {
-    const user = userEvent.setup();
-    const { location } = setup({
-      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
-      searchTransactions: [makeTransactionView({ title: "Archived rent", status: "archived" })],
-    });
-
-    await user.click(screen.getByRole("button", { name: "Filters" }));
-    const dialog = screen.getByRole("dialog", { name: "Filters" });
-    await user.click(within(dialog).getByRole("button", { name: "Archived" }));
-    await user.click(within(dialog).getByRole("button", { name: "Expense" }));
-    await user.type(within(dialog).getByLabelText("From"), "2026-05-01");
-    await user.type(within(dialog).getByLabelText("To"), "2026-05-31");
-    await user.type(within(dialog).getByLabelText("Amount min"), "10");
-    await user.keyboard("{Enter}");
-
-    expect(location()).toBe(
-      `/circles/${REF}/search?type=expense&status=archived&from=2026-05-01&to=2026-05-31&min=10`,
-    );
-    expect(screen.queryByRole("dialog", { name: "Filters" })).not.toBeInTheDocument();
-  });
-
   it("applies a category filter from the combobox to the URL", async () => {
     const user = userEvent.setup();
     const { location } = setup({
@@ -270,25 +248,6 @@ describe("CircleSearch", () => {
 
     await waitFor(() => expect(location()).toBe(`/circles/${REF}/search?type=expense&status=all`));
     expect(location()).not.toMatch(/page=/);
-  });
-
-  it("does not apply filters on Enter when the amount range is reversed (Apply disabled)", async () => {
-    const user = userEvent.setup();
-    const { location } = setup({
-      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
-    });
-    const start = location();
-
-    await user.click(screen.getByRole("button", { name: /Filters/ }));
-    const dialog = screen.getByRole("dialog", { name: "Filters" });
-    await user.type(within(dialog).getByLabelText("Amount min"), "20");
-    await user.type(within(dialog).getByLabelText("Amount max"), "10");
-    const min = within(dialog).getByLabelText("Amount min");
-    await user.click(min);
-    await user.keyboard("{Enter}");
-
-    expect(location()).toBe(start);
-    expect(within(dialog).getByRole("button", { name: "Apply" })).toBeDisabled();
   });
 
   it("resets page to 1 when submitting a new query from the search box", async () => {

@@ -177,30 +177,6 @@ describe("CircleTransactions", () => {
     expect(screen.getAllByText(/\$125\.00/)).toHaveLength(2);
   });
 
-  it("applies ledger filters when Enter is pressed in the panel search field (same as Apply)", async () => {
-    const user = userEvent.setup();
-    const { location } = setup({
-      filteredTransactions: [makeTransactionView({ title: "Rent payment" })],
-      monthlySummary: {
-        totals: { incomeMinor: 0, expenseMinor: 12_500, netMinor: -12_500 },
-        currency: "USD",
-      },
-    });
-
-    await user.click(screen.getByRole("button", { name: "Filters" }));
-    const dialog = screen.getByRole("dialog", { name: "Filters" });
-    const searchbox = within(dialog).getByRole("searchbox", { name: "Search title or note" });
-    await user.click(searchbox);
-    await user.clear(searchbox);
-    await user.type(searchbox, "rent{Enter}");
-
-    expect(location()).toBe(
-      `/circles/${REF}/transactions?month=2026-05&type=all&status=all&q=rent`,
-    );
-    expect(screen.getByText("Rent payment")).toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "Filters" })).not.toBeInTheDocument();
-  });
-
   it("applies a category filter from the combobox to the URL", async () => {
     const user = userEvent.setup();
     const { location } = setup({

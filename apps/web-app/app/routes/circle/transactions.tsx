@@ -24,7 +24,6 @@ import {
 } from "~/lib/data.js";
 import { formatMonthLabel } from "~/lib/datetime.js";
 import { viewerLocale } from "~/lib/locale.js";
-import { requestSubmitFilterFormOnEnter } from "~/lib/request-submit-filter-form-on-enter.js";
 import {
   activeFilterCount,
   canonicalLedgerParams,
@@ -258,12 +257,7 @@ function LedgerFilterForm({
   const categoryOptions = toCategoryOptions(options?.categories ?? []);
   const memberOptions = toMemberOptions(options?.members ?? []);
   return (
-    <form
-      id="ledger-filter-form"
-      className="space-y-4"
-      onSubmit={onSubmit}
-      onKeyDown={requestSubmitFilterFormOnEnter}
-    >
+    <form id="ledger-filter-form" className="space-y-4" onSubmit={onSubmit}>
       <label className="block text-xs text-muted-foreground">
         Search title or note
         <input

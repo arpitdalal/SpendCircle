@@ -13,7 +13,6 @@ import {
   useTransactionSearch,
   useTransactionSearchOptions,
 } from "~/lib/data.js";
-import { requestSubmitFilterFormOnEnter } from "~/lib/request-submit-filter-form-on-enter.js";
 import {
   activeFilterCount,
   canonicalSearchParams,
@@ -241,12 +240,7 @@ function SearchFilterForm({
   const categoryOptions = toCategoryOptions(options?.categories ?? []);
   const memberOptions = toMemberOptions(options?.members ?? []);
   return (
-    <form
-      id="search-filter-form"
-      className="space-y-4"
-      onSubmit={onSubmit}
-      onKeyDown={requestSubmitFilterFormOnEnter}
-    >
+    <form id="search-filter-form" className="space-y-4" onSubmit={onSubmit}>
       <Segmented
         label="Type"
         value={draft.type}
