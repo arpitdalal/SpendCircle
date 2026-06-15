@@ -46,7 +46,8 @@ test("transaction search finds circle transactions across months and opens detai
   // Picking inside the dialog also proves the combobox popup stacks above the
   // filter sheet: Playwright's click fails if the option doesn't receive events.
   await pickFormCategory(page, dialog, categoryName);
-  await dialog.getByRole("button", { name: "Apply" }).click();
+  // Commit with Enter from a panel field instead of clicking Apply: proves native implicit
+  await dialog.getByLabel("Amount max").press("Enter");
   await expect(page).toHaveURL(/type=expense/);
   await expect(page).toHaveURL(/min=14.00/);
   await expect(page).toHaveURL(/categories=/);
@@ -115,8 +116,10 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
 
   await page.getByRole("button", { name: /Filters/ }).click();
   const ledgerDialog = page.getByRole("dialog", { name: "Filters" });
-  await ledgerDialog.getByRole("searchbox", { name: "Search title or note" }).fill(queryText);
-  await ledgerDialog.getByRole("button", { name: "Apply" }).click();
+  const ledgerSearch = ledgerDialog.getByRole("searchbox", { name: "Search title or note" });
+  await ledgerSearch.fill(queryText);
+  // Enter from a panel field applies the ledger filters via the associated
+  await ledgerSearch.press("Enter");
   await expect(page).toHaveURL(/q=Sparse\+Needle/);
   await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toBeVisible();
   await expect(page.getByText("Something went wrong")).toHaveCount(0);
