@@ -1,5 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
-import { useNavigate } from "react-router";
+import { Link } from "react-router";
 import { Avatar } from "~/components/ui/avatar.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
 import { signOut } from "~/lib/auth-client.js";
@@ -14,8 +14,6 @@ const menuItemClass =
  * Settings navigation, and optional Sign out (ADR 0019 / issue #124).
  */
 export function AccountMenu({ user, showSignOut }: { user: SessionUser; showSignOut: boolean }) {
-  const navigate = useNavigate();
-
   return (
     <Menu.Root modal={false}>
       <Menu.Trigger
@@ -31,16 +29,16 @@ export function AccountMenu({ user, showSignOut }: { user: SessionUser; showSign
         <Menu.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
           <Menu.Popup
             className={cn(
-              "min-w-[220px] origin-[var(--transform-origin)] animate-pop-in rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-xl outline-none",
+              "min-w-[220px] origin-(--transform-origin) animate-pop-in rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-xl outline-none",
             )}
           >
             <div className="border-b border-border px-3 py-2">
               <p className="text-sm font-medium text-foreground">{user.displayName}</p>
               <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
-            <Menu.Item className={menuItemClass} onClick={() => navigate("/settings")}>
+            <Menu.LinkItem className={menuItemClass} closeOnClick render={<Link to="/settings" />}>
               Settings
-            </Menu.Item>
+            </Menu.LinkItem>
             {showSignOut ? (
               <Menu.Item className={menuItemClass} onClick={() => void signOut()}>
                 Sign out

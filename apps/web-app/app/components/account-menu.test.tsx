@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountMenu } from "~/components/account-menu.js";
 import { renderRoutes } from "~/test/convex-react.js";
 
+// Mock only the true boundary: Better Auth's network client. Our own `signOut`
+// wrapper in `~/lib/auth-client.js` still runs for real against this fake client.
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
-vi.mock("~/lib/auth-client.js", () => ({
-  signOut: signOutMock,
+vi.mock("better-auth/react", () => ({
+  createAuthClient: () => ({ signOut: signOutMock }),
 }));
 
 afterEach(() => {

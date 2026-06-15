@@ -72,26 +72,39 @@ async function signUpUserAndSaveStorageState(opts: {
     }
 
     await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });
-    const result = await page.evaluate(
-      async ([e, p]) => {
-        const helper = Reflect.get(globalThis, "__scE2E");
-        if (typeof helper !== "object" || helper === null) {
-          return `error: missing __scE2E`;
-        }
-        const signIn = Reflect.get(helper, "signIn");
-        if (typeof signIn !== "function") {
-          return `error: bad signIn`;
-        }
-        try {
-          await Reflect.apply(signIn, helper, [e, p]);
-          return "ok";
-        } catch (err) {
-          return `error: ${String(err instanceof Error ? err.message : err)}`;
-        }
-      },
-      [email, password],
-    );
-    if (result !== "ok") throw new Error(`E2E sign-in failed: ${result}`);
+
+    let signInResult: string | undefined;
+    try {
+      signInResult = await page.evaluate(
+        async ([e, p]) => {
+          const helper = Reflect.get(globalThis, "__scE2E");
+          if (typeof helper !== "object" || helper === null) {
+            return "error: missing __scE2E";
+          }
+          const signIn = Reflect.get(helper, "signIn");
+          if (typeof signIn !== "function") {
+            return "error: bad signIn";
+          }
+          try {
+            await Reflect.apply(signIn, helper, [e, p]);
+            return "ok";
+          } catch (err) {
+            return `error: ${String(err instanceof Error ? err.message : err)}`;
+          }
+        },
+        [email, password],
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Better Auth can reload mid-sign-in; awaiting the in-page promise then loses
+      // the realm → Playwright throws here. Continue: locator wait below survives nav.
+      if (!msg.includes("Execution context was destroyed")) {
+        throw err;
+      }
+    }
+    if (signInResult !== undefined && signInResult !== "ok") {
+      throw new Error(`E2E sign-in failed: ${signInResult}`);
+    }
 
     await page.goto(opts.baseURL, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Your circles" }).waitFor({ timeout: 30_000 });
@@ -126,8 +139,9 @@ export const test = base.extend<object, { workerStorageState: string }>({
       });
       await use(pathToState);
     },
-    { scope: "worker" },
+    // Cold Convex + 5 parallel worker sign-ups can exceed default 30s fixture budget.
+    { scope: "worker", timeout: 120_000 },
   ],
 });
 
-export { clickCircleChromeTab, expect };
+export { expect };
