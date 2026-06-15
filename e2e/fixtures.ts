@@ -4,6 +4,40 @@ import { fileURLToPath } from "node:url";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { test as base, expect } from "@playwright/test";
 
+const SM_BREAKPOINT_PX = 640;
+
+export type CircleChromeTab = "Dashboard" | "Transactions" | "Search" | "Categories" | "Members";
+
+/**
+ * Circle tab navigation: desktop horizontal tabs vs mobile bottom bar + More sheet
+ * (issue #124). Use instead of bare `getByRole("link", { name: … })` for Circle chrome.
+ */
+export async function clickCircleChromeTab(page: Page, tab: CircleChromeTab) {
+  const width = page.viewportSize()?.width ?? SM_BREAKPOINT_PX;
+  if (width >= SM_BREAKPOINT_PX) {
+    await page
+      .getByRole("navigation", { name: "Circle tabs" })
+      .getByRole("link", { name: tab, exact: true })
+      .click();
+    return;
+  }
+  if (tab === "Dashboard" || tab === "Transactions" || tab === "Search") {
+    await page
+      .getByRole("navigation", { name: "Circle" })
+      .getByRole("link", { name: tab, exact: true })
+      .click();
+    return;
+  }
+  await page
+    .getByRole("navigation", { name: "Circle" })
+    .getByRole("button", { name: "More" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "More" })
+    .getByRole("link", { name: tab, exact: true })
+    .click();
+}
+
 /**
  * Pick from a "Categories" combobox inside `scope` (a form or filter dialog).
  * Base UI portals options to `body`; never scope the option lookup to `scope`.
@@ -38,26 +72,39 @@ async function signUpUserAndSaveStorageState(opts: {
     }
 
     await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });
-    const result = await page.evaluate(
-      async ([e, p]) => {
-        const helper = Reflect.get(globalThis, "__scE2E");
-        if (typeof helper !== "object" || helper === null) {
-          return `error: missing __scE2E`;
-        }
-        const signIn = Reflect.get(helper, "signIn");
-        if (typeof signIn !== "function") {
-          return `error: bad signIn`;
-        }
-        try {
-          await Reflect.apply(signIn, helper, [e, p]);
-          return "ok";
-        } catch (err) {
-          return `error: ${String(err instanceof Error ? err.message : err)}`;
-        }
-      },
-      [email, password],
-    );
-    if (result !== "ok") throw new Error(`E2E sign-in failed: ${result}`);
+
+    let signInResult: string | undefined;
+    try {
+      signInResult = await page.evaluate(
+        async ([e, p]) => {
+          const helper = Reflect.get(globalThis, "__scE2E");
+          if (typeof helper !== "object" || helper === null) {
+            return "error: missing __scE2E";
+          }
+          const signIn = Reflect.get(helper, "signIn");
+          if (typeof signIn !== "function") {
+            return "error: bad signIn";
+          }
+          try {
+            await Reflect.apply(signIn, helper, [e, p]);
+            return "ok";
+          } catch (err) {
+            return `error: ${String(err instanceof Error ? err.message : err)}`;
+          }
+        },
+        [email, password],
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Better Auth can reload mid-sign-in; awaiting the in-page promise then loses
+      // the realm → Playwright throws here. Continue: locator wait below survives nav.
+      if (!msg.includes("Execution context was destroyed")) {
+        throw err;
+      }
+    }
+    if (signInResult !== undefined && signInResult !== "ok") {
+      throw new Error(`E2E sign-in failed: ${signInResult}`);
+    }
 
     await page.goto(opts.baseURL, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Your circles" }).waitFor({ timeout: 30_000 });
@@ -92,7 +139,8 @@ export const test = base.extend<object, { workerStorageState: string }>({
       });
       await use(pathToState);
     },
-    { scope: "worker" },
+    // Cold Convex + 5 parallel worker sign-ups can exceed default 30s fixture budget.
+    { scope: "worker", timeout: 120_000 },
   ],
 });
 

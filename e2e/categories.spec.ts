@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures.js";
+import { clickCircleChromeTab, expect, test } from "./fixtures.js";
 
 /**
  * TRUE-E2E (ADR 0019): create a Category through the real frontend → Convex
@@ -20,7 +20,7 @@ test("a member creates a category and sees it in the live list", async ({ page }
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
   await page.getByRole("link", { name: /Personal/ }).click();
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await expect(page.getByRole("heading", { name: "Categories" })).toBeVisible();
 
   await page.getByLabel(/New expense category/).fill(name);
@@ -37,7 +37,7 @@ test("the server rejects a duplicate name inline", async ({ page }) => {
 
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
 
   const nameField = page.getByLabel(/New expense category/);
   const addButton = page.getByRole("button", { name: "Add category" });
@@ -65,7 +65,7 @@ test("a member edits, archives, and restores a category and sees its history", a
 
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
 
   await page.getByLabel(/New expense category/).fill(name);
   await page.getByRole("button", { name: "Add category" }).click();
@@ -139,7 +139,7 @@ test("the category filter searches, scopes by status, reloads from the URL, and 
   await page.getByRole("button", { name: "Create circle" }).click();
   await page.getByRole("button", { name: "Skip" }).click();
   await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
 
   // Seed 26 matching + 1 non-matching expense Categories (page size is 25).
   const nameField = page.getByLabel(/New expense category/);

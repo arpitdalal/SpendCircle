@@ -1,4 +1,4 @@
-import { expect, pickFormCategory, test } from "./fixtures.js";
+import { clickCircleChromeTab, expect, pickFormCategory, test } from "./fixtures.js";
 
 /**
  * RPT-3 true-E2E (ADR 0019): the per-Circle Dashboard (the Circle index route) shows
@@ -25,13 +25,13 @@ test("the dashboard shows recent activity and a working Paid By filter", async (
   await page.getByRole("link", { name: /Personal/ }).click();
 
   // Seed an expense Category to attach (CAT-1's flow).
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   // Record an expense into the current month (the form defaults the date to today).
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await page.getByRole("button", { name: "Add expense" }).click();
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
@@ -42,7 +42,7 @@ test("the dashboard shows recent activity and a working Paid By filter", async (
 
   // The Dashboard is the Circle index tab. Its recent feed reflects the new
   // Transaction (newest by record time) with no reload.
-  await page.getByRole("link", { name: "Dashboard" }).click();
+  await clickCircleChromeTab(page, "Dashboard");
   await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
   const recent = page.getByRole("region", { name: /recent activity/i });
   const row = recent.getByRole("listitem").filter({ hasText: title });

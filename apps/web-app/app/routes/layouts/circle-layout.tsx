@@ -1,6 +1,8 @@
-import { href, NavLink, Outlet, useOutletContext } from "react-router";
+import { NavLink, Outlet, useOutletContext } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
+import { CircleMobileBottomNav } from "~/components/circle-mobile-bottom-nav.js";
 import { Splash } from "~/components/splash.js";
+import { circleNavItems } from "~/lib/circle-nav.js";
 import { type Circle, useResolvedCircle } from "~/lib/use-resolved-circle.js";
 import { cn } from "~/lib/utils.js";
 
@@ -25,29 +27,7 @@ export default function CircleLayout() {
   }
 
   const circle = resolution.value;
-  const tabs = [
-    { to: href("/circles/:circleRef", { circleRef: circle.ref }), label: "Dashboard", end: true },
-    {
-      to: href("/circles/:circleRef/transactions", { circleRef: circle.ref }),
-      label: "Transactions",
-      end: false,
-    },
-    {
-      to: href("/circles/:circleRef/search", { circleRef: circle.ref }),
-      label: "Search",
-      end: false,
-    },
-    {
-      to: href("/circles/:circleRef/categories", { circleRef: circle.ref }),
-      label: "Categories",
-      end: false,
-    },
-    {
-      to: href("/circles/:circleRef/members", { circleRef: circle.ref }),
-      label: "Members",
-      end: false,
-    },
-  ];
+  const tabs = circleNavItems(circle.ref);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -61,7 +41,10 @@ export default function CircleLayout() {
         </div>
       </div>
 
-      <nav className="-mx-4 flex gap-1 overflow-x-auto border-b border-border px-4">
+      <nav
+        aria-label="Circle tabs"
+        className="-mx-4 hidden gap-1 overflow-x-auto border-b border-border px-4 sm:flex"
+      >
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}
@@ -80,6 +63,8 @@ export default function CircleLayout() {
           </NavLink>
         ))}
       </nav>
+
+      <CircleMobileBottomNav circle={circle} />
 
       <Outlet context={{ circle } satisfies CircleOutletContext} />
     </div>

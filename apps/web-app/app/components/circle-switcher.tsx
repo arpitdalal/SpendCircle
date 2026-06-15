@@ -15,8 +15,8 @@ import { cn } from "~/lib/utils.js";
  * Member of, which is exactly what `listMyCircles` returns — the switcher never
  * queries or exposes anyone else's Circles.
  *
- * Hand-built (not a Radix menu — the project has no popover primitive yet) but kept
- * accessible: the trigger carries `aria-haspopup`/`aria-expanded`/`aria-controls`,
+ * Hand-built disclosure (not Base UI `Menu`) to avoid pulling floating-ui into this
+ * older control; kept accessible: the trigger carries `aria-haspopup`/`aria-expanded`/`aria-controls`,
  * the panel is a labelled menu of links, Escape closes and returns focus to the
  * trigger, and an outside click closes it. Selecting an item navigates (a real
  * Link) and closes the menu.
