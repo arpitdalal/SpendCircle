@@ -24,18 +24,29 @@ describe("isCircleRoute", () => {
 });
 
 describe("layout navigation partition", () => {
-  it("the Circle layout covers only in-Circle navigations (chrome stays mounted)", () => {
+  it("the Circle layout covers only SAME-Circle navigations (chrome stays correct)", () => {
     expect(coversCircleNavigation("/circles/trip-c1", "/circles/trip-c1/transactions")).toBe(true);
+    expect(coversCircleNavigation("/circles/trip-c1/transactions", "/circles/trip-c1/search")).toBe(
+      true,
+    );
     // Crossing a Circle boundary or staying outside is NOT the Circle layout's.
     expect(coversCircleNavigation("/circles/trip-c1", "/settings")).toBe(false);
     expect(coversCircleNavigation("/", "/circles/trip-c1")).toBe(false);
     expect(coversCircleNavigation("/", "/settings")).toBe(false);
   });
 
+  it("treats a switch BETWEEN Circles as a shell navigation (avoids stale source chrome)", () => {
+    // Both are Circle routes, but different refs — the source Circle's chrome would be
+    // wrong for the destination, so the shell (not the Circle layout) owns the swap.
+    expect(coversCircleNavigation("/circles/trip-c1/transactions", "/circles/home-c2")).toBe(false);
+    expect(coversShellNavigation("/circles/trip-c1/transactions", "/circles/home-c2")).toBe(true);
+  });
+
   it("the shell layout covers exactly the complement", () => {
     // Every case is owned by exactly one layout — they never both swap at once.
     const cases: [string, string][] = [
       ["/circles/trip-c1", "/circles/trip-c1/transactions"],
+      ["/circles/trip-c1/transactions", "/circles/home-c2"],
       ["/circles/trip-c1", "/settings"],
       ["/", "/circles/trip-c1"],
       ["/", "/settings"],

@@ -8,24 +8,35 @@ import { useLocation, useNavigation } from "react-router";
  */
 export const SKELETON_DELAY_MS = 120;
 
-/** Whether a pathname is a Circle-scoped route (`/circles/:ref…`). The static
- * `/circles/new` create flow lives ABOVE the Circle guard, so it is NOT one — it is
- * a direct child of the protected layout like Home/Settings. */
+/** The Circle ref a pathname is scoped to (`/circles/:ref/…` → `:ref`), or `null` if
+ * it is not Circle-scoped. The static `/circles/new` create flow lives ABOVE the
+ * Circle guard, so it is NOT Circle-scoped — it is a direct child of the protected
+ * layout like Home/Settings. The single source of truth for both predicates below. */
+export function circleRefOf(pathname: string): string | null {
+  const ref = pathname.match(/^\/circles\/([^/]+)/)?.[1];
+  return ref == null || ref === "new" ? null : ref;
+}
+
+/** Whether a pathname is a Circle-scoped route (`/circles/:ref…`). */
 export function isCircleRoute(pathname: string) {
-  return /^\/circles\/(?!new(?:\/|$))[^/]+/.test(pathname);
+  return circleRefOf(pathname) !== null;
 }
 
 /**
- * The route-tree partition between the two shell layouts (issue #121). When BOTH
- * sides of a navigation are Circle routes, the Circle layout stays mounted and owns
- * the content swap (chrome — header, tabs, bottom bar — stays put); so the Circle
- * layout covers exactly those, and the protected layout covers everything else
- * (its direct children — Home/Settings/Onboarding/Create Circle — and crossing
- * into/out of a Circle). The two are complementary, so a single navigation is ever
- * covered by exactly one layout — they never both swap to a skeleton at once.
+ * The route-tree partition between the two shell layouts (issue #121). The Circle
+ * layout covers a navigation ONLY when it stays within the SAME Circle: there the
+ * layout stays mounted and its chrome (header, tabs, bottom bar) is still correct,
+ * so only the child outlet need skeleton. The protected layout covers everything
+ * else — its direct children (Home/Settings/Onboarding/Create Circle), crossing
+ * into/out of a Circle, AND switching BETWEEN Circles. A cross-Circle switch must
+ * fall through to the shell: the Circle chrome is derived from the params, which RR
+ * has not committed yet during the pending nav, so leaving the Circle layout in
+ * charge would render the SOURCE Circle's name/nav over the destination's slow
+ * load. The two predicates are complementary, so exactly one layout ever swaps.
  */
 export function coversCircleNavigation(from: string, to: string) {
-  return isCircleRoute(from) && isCircleRoute(to);
+  const ref = circleRefOf(from);
+  return ref !== null && ref === circleRefOf(to);
 }
 
 export function coversShellNavigation(from: string, to: string) {
