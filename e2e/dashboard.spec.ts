@@ -48,6 +48,7 @@ test("the dashboard shows recent activity and a working Paid By filter", async (
   const row = recent.getByRole("listitem").filter({ hasText: title });
   await expect(row).toBeVisible();
   await expect(row).toContainText("18.25");
+  await expect(recent.getByRole("link", { name: `View ${title}` })).toBeVisible();
 
   // The Paid By filter exists and is operable. Narrowing to the sole current Member
   // (Paid By defaults to the recorder) keeps the Transaction visible; back to All too.

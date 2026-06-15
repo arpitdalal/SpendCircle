@@ -80,6 +80,7 @@ describe("Dashboard recent feed", () => {
         id: testId<Transaction["id"]>("t-income"),
         type: "income",
         title: "Paycheck",
+        ref: "paycheck-t1",
         amountMinorUnits: 500_000,
         paidBy: { id: testId<Member["id"]>("mem-you"), displayName: "You", image: undefined },
       }),
@@ -87,6 +88,7 @@ describe("Dashboard recent feed", () => {
         id: testId<Transaction["id"]>("t-expense"),
         type: "expense",
         title: "Groceries",
+        ref: "groceries-t1",
         amountMinorUnits: 7_350,
         paidBy: { id: testId<Member["id"]>("mem-alex"), displayName: "Alex", image: undefined },
       }),
@@ -95,7 +97,14 @@ describe("Dashboard recent feed", () => {
     renderInCircle(makeCircleView(), <CircleDashboard />);
 
     const feed = screen.getByRole("region", { name: /recent activity/i });
-    expect(within(feed).getByText("Paycheck")).toBeInTheDocument();
+    expect(within(feed).getByRole("link", { name: /view paycheck/i })).toHaveAttribute(
+      "href",
+      "/circles/trip-c1/transactions/paycheck-t1?month=2026-06",
+    );
+    expect(within(feed).getByRole("link", { name: /view groceries/i })).toHaveAttribute(
+      "href",
+      "/circles/trip-c1/transactions/groceries-t1?month=2026-06",
+    );
     expect(within(feed).getByText("+$5,000.00")).toBeInTheDocument();
     expect(within(feed).getByText("Groceries")).toBeInTheDocument();
     expect(within(feed).getByText("-$73.50")).toBeInTheDocument();

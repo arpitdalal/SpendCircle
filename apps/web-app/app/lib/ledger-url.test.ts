@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { editSearch, ledgerSearch, parseEditReturn, withQuery } from "./ledger-url.js";
+import {
+  editSearch,
+  ledgerSearch,
+  parseEditReturn,
+  transactionDetailHref,
+  withQuery,
+} from "./ledger-url.js";
+
+describe("transactionDetailHref", () => {
+  it("builds the detail path with month when provided", () => {
+    expect(transactionDetailHref({ ref: "c1" }, { ref: "rent-t1" }, "2026-05")).toBe(
+      "/circles/c1/transactions/rent-t1?month=2026-05",
+    );
+  });
+
+  it("omits query when month is absent", () => {
+    expect(transactionDetailHref({ ref: "c1" }, { ref: "rent-t1" })).toBe(
+      "/circles/c1/transactions/rent-t1",
+    );
+  });
+});
 
 describe("ledgerSearch", () => {
   it("encodes the month", () => {

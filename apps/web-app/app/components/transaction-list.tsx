@@ -11,7 +11,7 @@ import {
   useArchiveTransaction,
   useRestoreTransaction,
 } from "~/lib/data.js";
-import { ledgerSearch, withQuery } from "~/lib/ledger-url.js";
+import { transactionDetailHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useSnackbar } from "~/lib/snackbar.js";
@@ -129,11 +129,6 @@ export function TransactionList({
       ) : null}
     </div>
   );
-}
-
-function transactionDetailHref(circle: Circle, txn: Transaction, ledgerMonth?: PlainMonth) {
-  const base = `/circles/${circle.ref}/transactions/${txn.ref}`;
-  return ledgerMonth ? withQuery(base, ledgerSearch({ month: ledgerMonth })) : base;
 }
 
 const LIFECYCLE_COPY = {

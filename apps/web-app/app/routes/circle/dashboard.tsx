@@ -9,7 +9,7 @@ import {
   toCurrencyCode,
 } from "@spend-circle/domain";
 import { useEffect } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   Bar,
   CartesianGrid,
@@ -38,6 +38,7 @@ import {
   usePaidByFilterOptions,
 } from "~/lib/data.js";
 import { formatMonthLabel, formatMonthTick } from "~/lib/datetime.js";
+import { transactionDetailHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -403,10 +404,9 @@ function ComparisonChart({ comparison }: { comparison: MonthlyComparison }) {
 
 /**
  * The recent-Transactions feed (PRD 75): the latest active Transactions by record
- * time, money formatted in the Circle Currency. Rows are display-only for now — the
- * Transaction detail route they will deep-link to is TXN-4, and object routes land
- * WITH their feature (README §4), so this does not link to a route that does not yet
- * exist. `dashboard` is `undefined` while loading; an empty feed reads as "no recent
+ * time, money formatted in the Circle Currency. Each row's title links to the TXN-4
+ * detail route with the dashboard month in the query (ADR 0017), matching the Ledger
+ * row links. `dashboard` is `undefined` while loading; an empty feed reads as "no recent
  * activity" for the selected scope (which the Paid By filter may have narrowed).
  */
 function RecentTransactions({
@@ -432,7 +432,13 @@ function RecentTransactions({
       ) : (
         <ul className="space-y-2">
           {dashboard.recent.map((txn) => (
-            <RecentRow key={txn.id} txn={txn} currency={currency} />
+            <RecentRow
+              key={txn.id}
+              circle={circle}
+              txn={txn}
+              currency={currency}
+              month={dashboard.month}
+            />
           ))}
         </ul>
       )}
@@ -441,16 +447,28 @@ function RecentTransactions({
 }
 
 function RecentRow({
+  circle,
   txn,
   currency,
+  month,
 }: {
+  circle: Circle;
   txn: Transaction;
   currency: ReturnType<typeof toCurrencyCode>;
+  month: Dashboard["month"];
 }) {
   return (
     <li className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{txn.title}</p>
+        <p className="truncate text-sm font-medium">
+          <Link
+            to={transactionDetailHref(circle, txn, month)}
+            className="hover:underline"
+            aria-label={`View ${txn.title}`}
+          >
+            {txn.title}
+          </Link>
+        </p>
         <p className="truncate text-xs text-muted-foreground">
           {txn.date} · {txn.categories.map((category) => category.name).join(", ")} ·{" "}
           {txn.paidBy.displayName}

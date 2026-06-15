@@ -23,6 +23,26 @@ export function withQuery(path: string, query: string): string {
 }
 
 /**
+ * Minimal shape for building a Transaction detail URL — keeps this helper free of the
+ * data barrel (ADR 0003 view types stay at call sites).
+ */
+type ObjectRef = { ref: string };
+
+/**
+ * Read-only Transaction detail path for a Circle object route, optionally preserving
+ * the Ledger/Dashboard month slice (ADR 0017) so the detail page and Back navigation
+ * stay consistent with the Monthly Ledger row links.
+ */
+export function transactionDetailHref(
+  circle: ObjectRef,
+  transaction: ObjectRef,
+  ledgerMonth?: PlainMonth,
+) {
+  const base = `/circles/${circle.ref}/transactions/${transaction.ref}`;
+  return ledgerMonth ? withQuery(base, ledgerSearch({ month: ledgerMonth })) : base;
+}
+
+/**
  * Where an edit object route returns on close — Cancel OR a successful save (ADR 0017).
  * The default `"ledger"` lands on the Monthly Ledger (the edit's `month` context);
  * `"detail"` returns to the Transaction detail page the edit was opened from, so a
