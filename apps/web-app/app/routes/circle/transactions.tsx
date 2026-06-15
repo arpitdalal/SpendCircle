@@ -8,7 +8,7 @@ import {
   toCurrencyCode,
 } from "@spend-circle/domain";
 import { SlidersHorizontal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { TransactionForm } from "~/components/transaction-form/index.js";
 import { TransactionList } from "~/components/transaction-list.js";
@@ -117,6 +117,11 @@ export default function CircleTransactions() {
     setPanelOpen(false);
   };
 
+  const submitLedgerFilters = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    applyFilters();
+  };
+
   const resetFilters = () => {
     setSearchParams(canonicalLedgerParams(defaultLedgerFilters(filters.month), searchParams), {
       replace: false,
@@ -206,7 +211,7 @@ export default function CircleTransactions() {
             <Button type="button" variant="outline" onClick={resetFilters}>
               Reset
             </Button>
-            <Button type="button" className="ml-auto" onClick={applyFilters}>
+            <Button type="submit" form="ledger-filter-form" className="ml-auto">
               Apply
             </Button>
           </>
@@ -217,6 +222,7 @@ export default function CircleTransactions() {
           setDraft={setDraft}
           options={options}
           optionsLoading={options === undefined}
+          onSubmit={submitLedgerFilters}
         />
       </FilterPanel>
     </div>
@@ -240,16 +246,18 @@ function LedgerFilterForm({
   setDraft,
   options,
   optionsLoading,
+  onSubmit,
 }: {
   draft: LedgerFilters;
   setDraft: (filters: LedgerFilters) => void;
   options: ReturnType<typeof useLedgerFilterOptions>;
   optionsLoading: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const categoryOptions = toCategoryOptions(options?.categories ?? []);
   const memberOptions = toMemberOptions(options?.members ?? []);
   return (
-    <div className="space-y-4">
+    <form id="ledger-filter-form" className="space-y-4" onSubmit={onSubmit}>
       <label className="block text-xs text-muted-foreground">
         Search title or note
         <input
@@ -300,7 +308,7 @@ function LedgerFilterForm({
         disabled={optionsLoading}
         onChange={(paidBy) => setDraft({ ...draft, paidBy })}
       />
-    </div>
+    </form>
   );
 }
 

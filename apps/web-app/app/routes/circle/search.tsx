@@ -178,10 +178,10 @@ export default function CircleSearch() {
               Reset
             </Button>
             <Button
-              type="button"
+              type="submit"
+              form="search-filter-form"
               className="ml-auto"
               disabled={hasReversedRange(draft)}
-              onClick={() => submit()}
             >
               Apply
             </Button>
@@ -193,6 +193,7 @@ export default function CircleSearch() {
           setDraft={setDraft}
           options={options}
           optionsLoading={options === undefined}
+          onSubmit={submit}
         />
       </FilterPanel>
     </div>
@@ -228,16 +229,18 @@ function SearchFilterForm({
   setDraft,
   options,
   optionsLoading,
+  onSubmit,
 }: {
   draft: SearchFilters;
   setDraft: (filters: SearchFilters) => void;
   options: ReturnType<typeof useTransactionSearchOptions>;
   optionsLoading: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const categoryOptions = toCategoryOptions(options?.categories ?? []);
   const memberOptions = toMemberOptions(options?.members ?? []);
   return (
-    <div className="space-y-4">
+    <form id="search-filter-form" className="space-y-4" onSubmit={onSubmit}>
       <Segmented
         label="Type"
         value={draft.type}
@@ -325,7 +328,7 @@ function SearchFilterForm({
         disabled={optionsLoading}
         onChange={(paidBy) => setDraft({ ...draft, paidBy })}
       />
-    </div>
+    </form>
   );
 }
 
