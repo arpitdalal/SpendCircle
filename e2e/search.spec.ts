@@ -122,9 +122,13 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
   await expect(page.getByText("Something went wrong")).toHaveCount(0);
 
   await page.getByRole("link", { name: "Search", exact: true }).click();
-  await page.getByRole("searchbox", { name: "Search title or note" }).fill(queryText);
-  await page.getByRole("button", { name: "Search" }).click();
-  await expect(page).toHaveURL(/q=Sparse\+Needle/);
+  await expect(page).toHaveURL(/\/search/);
+  const sparseSearchbox = page.getByRole("searchbox", { name: "Search title or note" });
+  await expect(sparseSearchbox).toBeVisible();
+  await sparseSearchbox.fill(queryText);
+  await expect(sparseSearchbox).toHaveValue(queryText);
+  await sparseSearchbox.press("Enter");
+  await expect(page).toHaveURL(/q=Sparse(\+|%20)Needle/);
   await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toBeVisible();
   await expect(page.getByText("Something went wrong")).toHaveCount(0);
 });
