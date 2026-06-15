@@ -1,4 +1,4 @@
-import { expect, pickFormCategory, test } from "./fixtures.js";
+import { clickCircleChromeTab, expect, pickFormCategory, test } from "./fixtures.js";
 
 test("transaction search finds circle transactions across months and opens detail", async ({
   page,
@@ -11,12 +11,12 @@ test("transaction search finds circle transactions across months and opens detai
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   const monthInput = page.getByLabel("Month", { exact: true });
   await monthInput.fill(month);
   await monthInput.blur();
@@ -29,7 +29,7 @@ test("transaction search finds circle transactions across months and opens detai
   await form.getByRole("button", { name: "Add expense" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
 
-  await page.getByRole("link", { name: "Search", exact: true }).click();
+  await clickCircleChromeTab(page, "Search");
   await expect(page).toHaveURL(/\/search\?type=all&status=all/);
   await page.getByRole("searchbox", { name: "Search title or note" }).fill(title);
   await page.getByRole("button", { name: "Search" }).click();
@@ -91,12 +91,12 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
   await page.getByRole("button", { name: "Skip" }).click();
   await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   const monthInput = page.getByLabel("Month", { exact: true });
   await monthInput.fill(month);
   await monthInput.blur();
@@ -121,7 +121,7 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
   await expect(page.getByRole("listitem").filter({ hasText: matchingTitle(0) })).toBeVisible();
   await expect(page.getByText("Something went wrong")).toHaveCount(0);
 
-  await page.getByRole("link", { name: "Search", exact: true }).click();
+  await clickCircleChromeTab(page, "Search");
   await expect(page).toHaveURL(/\/search/);
   const sparseSearchbox = page.getByRole("searchbox", { name: "Search title or note" });
   await expect(sparseSearchbox).toBeVisible();
@@ -153,12 +153,12 @@ test("transaction search pagination updates URL and result slice", async ({ page
   await page.getByRole("button", { name: "Skip" }).click();
   await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   const monthInput = page.getByLabel("Month", { exact: true });
   await monthInput.fill(month);
   await monthInput.blur();
@@ -175,7 +175,7 @@ test("transaction search pagination updates URL and result slice", async ({ page
     await expect(form).toHaveCount(0);
   }
 
-  await page.getByRole("link", { name: "Search", exact: true }).click();
+  await clickCircleChromeTab(page, "Search");
   await expect(page).toHaveURL(/\/search\?/);
 
   const searchbox = page.getByRole("searchbox", { name: "Search title or note" });

@@ -1,5 +1,6 @@
 import { href, NavLink, Outlet, useOutletContext } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
+import { CircleMobileBottomNav } from "~/components/circle-mobile-bottom-nav.js";
 import { Splash } from "~/components/splash.js";
 import { type Circle, useResolvedCircle } from "~/lib/use-resolved-circle.js";
 import { cn } from "~/lib/utils.js";
@@ -61,7 +62,10 @@ export default function CircleLayout() {
         </div>
       </div>
 
-      <nav className="-mx-4 flex gap-1 overflow-x-auto border-b border-border px-4">
+      <nav
+        aria-label="Circle tabs"
+        className="-mx-4 hidden gap-1 overflow-x-auto border-b border-border px-4 sm:flex"
+      >
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}
@@ -80,6 +84,8 @@ export default function CircleLayout() {
           </NavLink>
         ))}
       </nav>
+
+      <CircleMobileBottomNav circle={circle} />
 
       <Outlet context={{ circle } satisfies CircleOutletContext} />
     </div>

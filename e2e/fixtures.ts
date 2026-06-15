@@ -4,6 +4,40 @@ import { fileURLToPath } from "node:url";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { test as base, expect } from "@playwright/test";
 
+const SM_BREAKPOINT_PX = 640;
+
+export type CircleChromeTab = "Dashboard" | "Transactions" | "Search" | "Categories" | "Members";
+
+/**
+ * Circle tab navigation: desktop horizontal tabs vs mobile bottom bar + More sheet
+ * (issue #124). Use instead of bare `getByRole("link", { name: … })` for Circle chrome.
+ */
+export async function clickCircleChromeTab(page: Page, tab: CircleChromeTab) {
+  const width = page.viewportSize()?.width ?? SM_BREAKPOINT_PX;
+  if (width >= SM_BREAKPOINT_PX) {
+    await page
+      .getByRole("navigation", { name: "Circle tabs" })
+      .getByRole("link", { name: tab, exact: true })
+      .click();
+    return;
+  }
+  if (tab === "Dashboard" || tab === "Transactions" || tab === "Search") {
+    await page
+      .getByRole("navigation", { name: "Circle" })
+      .getByRole("link", { name: tab, exact: true })
+      .click();
+    return;
+  }
+  await page
+    .getByRole("navigation", { name: "Circle" })
+    .getByRole("button", { name: "More" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "More" })
+    .getByRole("link", { name: tab, exact: true })
+    .click();
+}
+
 /**
  * Pick from a "Categories" combobox inside `scope` (a form or filter dialog).
  * Base UI portals options to `body`; never scope the option lookup to `scope`.
@@ -96,4 +130,4 @@ export const test = base.extend<object, { workerStorageState: string }>({
   ],
 });
 
-export { expect };
+export { clickCircleChromeTab, expect };

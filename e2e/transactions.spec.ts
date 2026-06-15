@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, pickFormCategory, test } from "./fixtures.js";
+import { clickCircleChromeTab, expect, pickFormCategory, test } from "./fixtures.js";
 
 /**
  * Select a Ledger month through the native month input the way the UI commits it:
@@ -43,13 +43,13 @@ test("a member records an expense and sees it in the live list", async ({ page }
   await page.getByRole("link", { name: /Personal/ }).click();
 
   // Seed an expense Category to attach.
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   // Record the expense.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
   await page.getByRole("button", { name: "Add expense" }).click();
 
@@ -73,7 +73,7 @@ test("the expense form blocks submit and explains a missing category", async ({
 
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await page.getByRole("button", { name: "Add expense" }).click();
 
   const form = page.getByRole("form", { name: /add expense/i });
@@ -114,14 +114,14 @@ test("the monthly ledger totals a month and navigates between months", async ({
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   // Select the private month FIRST — it starts empty, so server totals are zero, and the
   // create form will default its date into this month.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await selectMonth(page, ledger.month);
   await expect(page.getByText(`No transactions in ${ledger.label}.`)).toBeVisible();
   const totals = page.getByRole("group", { name: "Monthly totals" });
@@ -173,7 +173,7 @@ test("the month input registers a whole multi-digit year typed digit-by-digit", 
 
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await expect(page).toHaveURL(/\/transactions\?month=\d{4}-\d{2}/);
 
   // Drive the native segments with real, separate keystrokes — the exact path that lost
@@ -213,7 +213,7 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   await page.getByRole("link", { name: /Personal/ }).click();
 
   // Seed one Category of each type to work with.
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(expenseCat);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: expenseCat })).toBeVisible();
@@ -224,7 +224,7 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   await expect(page.getByRole("listitem").filter({ hasText: incomeCat })).toBeVisible();
 
   // Record an expense to edit, into the private month.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await selectMonth(page, month);
   await page.getByRole("button", { name: "Add expense" }).click();
   const addForm = page.getByRole("form", { name: /add expense/i });
@@ -281,13 +281,13 @@ test("a member archives and restores a transaction", async ({ page }, testInfo) 
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   // Record an expense into the private month.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await selectMonth(page, month);
   await page.getByRole("button", { name: "Add expense" }).click();
   const form = page.getByRole("form", { name: /add expense/i });
@@ -346,13 +346,13 @@ test("the transactions page restores month, add form, and edit link across reloa
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   // A bare Transactions route normalizes to a month in the URL.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await expect(page).toHaveURL(/\/transactions\?month=\d{4}-\d{2}/);
 
   // Select the private month; the URL owns it and survives reload.
@@ -409,13 +409,13 @@ test("the transaction detail shows audit metadata and history reflecting an edit
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   // Record an expense into the private month.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await selectMonth(page, month);
   await page.getByRole("button", { name: "Add expense" }).click();
   const form = page.getByRole("form", { name: /add expense/i });
@@ -479,13 +479,13 @@ test("editing from the transaction detail returns to the detail on cancel and on
   await page.goto("/");
   await page.getByRole("link", { name: /Personal/ }).click();
 
-  await page.getByRole("link", { name: "Categories" }).click();
+  await clickCircleChromeTab(page, "Categories");
   await page.getByLabel(/New expense category/).fill(categoryName);
   await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   // Record an expense into the private month, then open its detail page.
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await clickCircleChromeTab(page, "Transactions");
   await selectMonth(page, month);
   await page.getByRole("button", { name: "Add expense" }).click();
   const form = page.getByRole("form", { name: /add expense/i });

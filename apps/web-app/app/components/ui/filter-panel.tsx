@@ -2,6 +2,10 @@ import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { buttonVariants } from "~/components/ui/button-variants.js";
+import {
+  mobileSheetBackdropClassName,
+  mobileSheetPopupBaseClassName,
+} from "~/components/ui/mobile-sheet-primitives.js";
 import { cn } from "~/lib/utils.js";
 
 export function FilterPanel({
@@ -20,11 +24,10 @@ export function FilterPanel({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] data-open:animate-fade-in" />
+        <Dialog.Backdrop className={mobileSheetBackdropClassName} />
         <Dialog.Popup
           className={cn(
-            "fixed z-50 flex flex-col border-border bg-card shadow-xl outline-none",
-            "inset-x-0 bottom-0 max-h-[86vh] rounded-t-xl border-t data-open:animate-panel-up",
+            mobileSheetPopupBaseClassName,
             "md:inset-y-0 md:right-0 md:left-auto md:h-dvh md:max-h-none md:w-[380px] md:rounded-none md:border-t-0 md:border-l md:data-open:animate-panel-side",
           )}
         >

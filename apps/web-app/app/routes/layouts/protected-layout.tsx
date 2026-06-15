@@ -1,8 +1,7 @@
 import { Link, Navigate, Outlet, useLocation } from "react-router";
+import { AccountMenu } from "~/components/account-menu.js";
 import { CircleSwitcher } from "~/components/circle-switcher.js";
 import { Splash } from "~/components/splash.js";
-import { Button } from "~/components/ui/button.js";
-import { signOut } from "~/lib/auth-client.js";
 import { MOCKS } from "~/lib/env.js";
 import { useAppSession } from "~/lib/session.js";
 
@@ -43,17 +42,7 @@ export default function ProtectedLayout() {
           </Link>
           <CircleSwitcher />
         </div>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <span className="hidden sm:inline">{session.user.displayName}</span>
-          <Link to="/settings" className="transition-colors hover:text-foreground">
-            Settings
-          </Link>
-          {!MOCKS && (
-            <Button variant="ghost" size="sm" onClick={() => void signOut()}>
-              Sign out
-            </Button>
-          )}
-        </div>
+        <AccountMenu user={session.user} showSignOut={!MOCKS} />
       </header>
       <main className="flex-1 px-4 pb-24 pt-6 sm:pb-6">
         <Outlet />

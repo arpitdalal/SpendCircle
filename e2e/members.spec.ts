@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures.js";
+import { clickCircleChromeTab, expect, test } from "./fixtures.js";
 
 /**
  * TRUE-E2E (ADR 0019): open the Member List through the real frontend → Convex
@@ -16,7 +16,7 @@ test("a member views the Member List with their own identity and Owner badge", a
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
   await page.getByRole("link", { name: /Personal/ }).click();
 
-  await page.getByRole("link", { name: "Members" }).click();
+  await clickCircleChromeTab(page, "Members");
   await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
 
   // The Personal Circle is always solo: exactly one Member, who is the Owner.
