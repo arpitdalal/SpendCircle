@@ -15,6 +15,24 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   };
 }
 
+// jsdom ships no IntersectionObserver; React Router's `<Link prefetch="viewport">`
+// (the mobile bottom bar — issue #121) wires one on mount. A no-op satisfies it —
+// nothing ever scrolls into view in jsdom, so no prefetch fires. Tests that need to
+// DELIVER intersections install the richer `IntersectionObserverStub` over this.
+if (typeof globalThis.IntersectionObserver === "undefined") {
+  globalThis.IntersectionObserver = class {
+    readonly root = null;
+    readonly rootMargin = "";
+    readonly thresholds: ReadonlyArray<number> = [];
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  };
+}
+
 // The MSW node server is enabled unconditionally for the whole unit/integration
 // suite so tests never reach real vendors (ADR 0006).
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));

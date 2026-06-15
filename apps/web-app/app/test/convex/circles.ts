@@ -8,6 +8,10 @@ import { testId } from "./ids.js";
 export interface CirclesState {
   /** `listMyCircles` — `undefined` ≡ loading. */
   circles?: Circle[] | null;
+  /** `getCircle` (the Circle guard's by-id subscription) — `undefined` ≡ loading,
+   * `null` ≡ inaccessible/missing (ADR 0016). Lets a test drive the REAL Circle
+   * layout (its `useResolvedCircle`) rather than only the Outlet-context bypass. */
+  circle?: Circle | null;
   /** The `createCircle` mutation spy the test owns (CS-0). Returns the new Circle's id,
    * so a test configures `vi.fn().mockResolvedValue(testId("c-new"))` to drive the
    * create flow's navigation to the canonical ref. */
@@ -16,10 +20,11 @@ export interface CirclesState {
 }
 
 export function circlesDouble(state: CirclesState): EntityDouble {
-  const { circles, createCircle, completeCircleSetup } = state;
+  const { circles, circle, createCircle, completeCircleSetup } = state;
   return {
     queries: {
       [getFunctionName(api.circles.listMyCircles)]: () => circles,
+      [getFunctionName(api.circles.getCircle)]: () => circle,
     },
     mutations: {
       [getFunctionName(api.circles.createCircle)]: createCircle,

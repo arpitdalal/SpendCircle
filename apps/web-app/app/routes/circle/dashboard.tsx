@@ -21,6 +21,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { RowsSkeleton, Skeleton, SkeletonRegion } from "~/components/skeleton.js";
 import {
   canonicalDashboardParams,
   type DashboardSelection,
@@ -208,7 +209,7 @@ function DashboardTotalsCards({
   ];
 
   return (
-    <fieldset>
+    <fieldset aria-busy={totals === undefined}>
       <legend className="sr-only">This month's totals</legend>
       <dl className="grid grid-cols-3 gap-3">
         {stats.map((stat) => (
@@ -220,9 +221,11 @@ function DashboardTotalsCards({
                 stat.tone,
               )}
             >
-              {stat.amount === undefined
-                ? "…"
-                : formatMoney(money(stat.amount, currency), viewerLocale())}
+              {stat.amount === undefined ? (
+                <Skeleton className="mt-1 h-6 w-20" />
+              ) : (
+                formatMoney(money(stat.amount, currency), viewerLocale())
+              )}
             </dd>
           </div>
         ))}
@@ -287,7 +290,9 @@ function MonthlyComparisonSection({
       </div>
 
       {comparison === undefined ? (
-        <p className="text-sm text-muted-foreground">Loading comparison…</p>
+        <SkeletonRegion label="Loading comparison…" testId="comparison-skeleton">
+          <Skeleton className="h-72 w-full rounded-xl" />
+        </SkeletonRegion>
       ) : !comparison ? (
         <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
           No comparison available.
@@ -424,7 +429,9 @@ function RecentTransactions({
         Recent activity
       </h3>
       {dashboard === undefined ? (
-        <p className="text-sm text-muted-foreground">Loading recent activity…</p>
+        <SkeletonRegion label="Loading recent activity…" testId="recent-skeleton">
+          <RowsSkeleton rows={4} />
+        </SkeletonRegion>
       ) : !dashboard || dashboard.recent.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
           No recent activity.

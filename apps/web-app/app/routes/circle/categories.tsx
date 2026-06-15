@@ -11,6 +11,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
+import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Button } from "~/components/ui/button.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import {
@@ -391,7 +392,11 @@ function CategoryList({
   }, [categories, editingId, historyId]);
 
   if (status === "LoadingFirstPage") {
-    return <p className="text-sm text-muted-foreground">Loading categories…</p>;
+    return (
+      <SkeletonRegion label="Loading categories…" testId="categories-skeleton">
+        <RowsSkeleton rows={5} />
+      </SkeletonRegion>
+    );
   }
   if (categories.length === 0) {
     return (

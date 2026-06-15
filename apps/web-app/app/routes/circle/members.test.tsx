@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Member } from "~/lib/data.js";
 import {
@@ -83,9 +83,11 @@ describe("CircleMembers", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
   });
 
-  it("shows a loading state while members resolve", () => {
+  it("shows a skeleton while members resolve", () => {
     setup({ members: undefined });
-    expect(screen.getByText(/Loading members/)).toBeInTheDocument();
+    const skeleton = screen.getByTestId("members-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(within(skeleton).getByText(/Loading members/)).toBeInTheDocument();
   });
 
   it("shows an unavailable state when the query returns null (inaccessible)", () => {

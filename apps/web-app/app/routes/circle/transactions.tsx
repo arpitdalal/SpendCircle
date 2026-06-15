@@ -10,6 +10,7 @@ import {
 import { SlidersHorizontal } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import { Skeleton } from "~/components/skeleton.js";
 import { TransactionForm } from "~/components/transaction-form/index.js";
 import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
@@ -424,7 +425,7 @@ function MonthlyTotals({
   ];
 
   return (
-    <fieldset>
+    <fieldset aria-busy={totals === undefined}>
       <legend className="sr-only">{label}</legend>
       <dl className="grid grid-cols-3 gap-3">
         {stats.map((stat) => (
@@ -436,9 +437,11 @@ function MonthlyTotals({
                 stat.tone,
               )}
             >
-              {stat.amount === undefined
-                ? "…"
-                : formatMoney(money(stat.amount, currency), viewerLocale())}
+              {stat.amount === undefined ? (
+                <Skeleton className="mt-1 h-6 w-20" />
+              ) : (
+                formatMoney(money(stat.amount, currency), viewerLocale())
+              )}
             </dd>
           </div>
         ))}

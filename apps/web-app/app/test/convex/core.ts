@@ -9,6 +9,7 @@ import { type HistoryState, historyDouble } from "./history.js";
 import { type LedgerState, ledgerDouble } from "./ledger.js";
 import { type MembersState, membersDouble } from "./members.js";
 import { type TransactionsState, transactionsDouble } from "./transactions.js";
+import { type UsersState, usersDouble } from "./users.js";
 
 export type ConvexState = CirclesState &
   CategoriesState &
@@ -16,7 +17,8 @@ export type ConvexState = CirclesState &
   TransactionsState &
   LedgerState &
   DashboardState &
-  HistoryState;
+  HistoryState &
+  UsersState;
 
 const ENTITY_DOUBLES = [
   circlesDouble,
@@ -26,6 +28,7 @@ const ENTITY_DOUBLES = [
   ledgerDouble,
   dashboardDouble,
   historyDouble,
+  usersDouble,
 ];
 
 function mergeEntityDoubles(state: ConvexState) {

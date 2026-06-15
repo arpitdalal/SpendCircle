@@ -1,8 +1,10 @@
 import { NavLink, Outlet, useOutletContext } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { CircleMobileBottomNav } from "~/components/circle-mobile-bottom-nav.js";
+import { PageSkeleton } from "~/components/skeleton.js";
 import { Splash } from "~/components/splash.js";
 import { circleNavItems } from "~/lib/circle-nav.js";
+import { coversCircleNavigation, usePendingRouteSkeleton } from "~/lib/route-skeleton.js";
 import { type Circle, useResolvedCircle } from "~/lib/use-resolved-circle.js";
 import { cn } from "~/lib/utils.js";
 
@@ -21,6 +23,9 @@ export function useCircle(): Circle {
  */
 export default function CircleLayout() {
   const resolution = useResolvedCircle();
+  // Hooks run unconditionally (the Splash early-return is below), so the pending-
+  // navigation subscription is stable across the guard's pending → resolved flip.
+  const showSkeleton = usePendingRouteSkeleton(coversCircleNavigation);
 
   if (resolution.status === "pending") {
     return <Splash label="Opening circle…" />;
@@ -50,6 +55,7 @@ export default function CircleLayout() {
             key={tab.to}
             to={tab.to}
             end={tab.end}
+            prefetch="intent"
             className={({ isActive }) =>
               cn(
                 "shrink-0 border-b-2 px-3 py-2 text-sm transition-colors duration-150",
@@ -66,7 +72,11 @@ export default function CircleLayout() {
 
       <CircleMobileBottomNav circle={circle} />
 
-      <Outlet context={{ circle } satisfies CircleOutletContext} />
+      {showSkeleton ? (
+        <PageSkeleton />
+      ) : (
+        <Outlet context={{ circle } satisfies CircleOutletContext} />
+      )}
     </div>
   );
 }

@@ -1,8 +1,10 @@
 import { Link, Navigate, Outlet, useLocation } from "react-router";
 import { AccountMenu } from "~/components/account-menu.js";
 import { CircleSwitcher } from "~/components/circle-switcher.js";
+import { PageSkeleton } from "~/components/skeleton.js";
 import { Splash } from "~/components/splash.js";
 import { MOCKS } from "~/lib/env.js";
+import { coversShellNavigation, usePendingRouteSkeleton } from "~/lib/route-skeleton.js";
 import { useAppSession } from "~/lib/session.js";
 
 /**
@@ -14,6 +16,9 @@ export default function ProtectedLayout() {
   const session = useAppSession();
   const location = useLocation();
   const onOnboarding = location.pathname === "/onboarding";
+  // Unconditional so the pending-navigation subscription is stable across the auth
+  // guard's state flips; only consulted in the Ready branch below.
+  const showSkeleton = usePendingRouteSkeleton(coversShellNavigation);
 
   if (session.state === "loading") {
     return <Splash />;
@@ -35,6 +40,7 @@ export default function ProtectedLayout() {
         <div className="flex items-center gap-3">
           <Link
             to="/"
+            prefetch="intent"
             className="flex items-center gap-2 font-display text-base font-semibold tracking-tight"
           >
             <BrandMark />
@@ -45,7 +51,7 @@ export default function ProtectedLayout() {
         <AccountMenu user={session.user} showSignOut={!MOCKS} />
       </header>
       <main className="flex-1 px-4 pb-24 pt-6 sm:pb-6">
-        <Outlet />
+        {showSkeleton ? <PageSkeleton /> : <Outlet />}
       </main>
     </div>
   );

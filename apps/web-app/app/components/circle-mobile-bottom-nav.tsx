@@ -71,6 +71,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
               key={item.to}
               to={item.to}
               end={item.end}
+              prefetch="viewport"
               className={({ isActive }) => slotClass(isActive)}
             >
               {Icon ? <Icon aria-hidden className="size-5 shrink-0" /> : null}
@@ -120,6 +121,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
                     key={item.to}
                     to={item.to}
                     end={item.end}
+                    prefetch="intent"
                     onClick={() => setMoreOpen(false)}
                     className={({ isActive }) =>
                       cn(
