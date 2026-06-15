@@ -1,12 +1,24 @@
 import type { KeyboardEvent } from "react";
 
-function isExplicitSubmitDisabled(form: HTMLFormElement) {
-  const linked = document.querySelector<HTMLButtonElement>(
-    `button[type="submit"][form="${CSS.escape(form.id)}"]`,
-  );
-  const inside = form.querySelector<HTMLButtonElement>(`:scope button[type="submit"]`);
-  const control = linked ?? inside;
-  return control?.disabled === true;
+/**
+ * Footer Apply buttons use `form="<id>"` outside the `<form>` DOM subtree. Prefer that
+ * control (matches native default-button behavior for our panels) without building a
+ * CSS selector from `form.id` — `CSS.escape` is absent in jsdom and ids need not be CSS-safe.
+ */
+function defaultSubmitButtonForForm(form: HTMLFormElement) {
+  const formId = form.id;
+  if (formId) {
+    for (const btn of document.querySelectorAll<HTMLButtonElement>("button[type='submit']")) {
+      if (btn.getAttribute("form") === formId) {
+        return btn;
+      }
+    }
+  }
+  return form.querySelector<HTMLButtonElement>("button[type='submit']");
+}
+
+function isDefaultSubmitDisabled(form: HTMLFormElement) {
+  return defaultSubmitButtonForForm(form)?.disabled === true;
 }
 
 /**
@@ -36,7 +48,7 @@ export function requestSubmitFilterFormOnEnter(event: KeyboardEvent<HTMLFormElem
   if (skipTypes.has(target.type)) {
     return;
   }
-  if (isExplicitSubmitDisabled(form)) {
+  if (isDefaultSubmitDisabled(form)) {
     return;
   }
   event.preventDefault();
