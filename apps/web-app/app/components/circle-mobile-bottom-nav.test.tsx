@@ -55,6 +55,16 @@ describe("CircleMobileBottomNav", () => {
     expect(screen.getByRole("button", { name: "More" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("keeps More active on a nested Categories child route", () => {
+    renderMobileNav(`/circles/${circle.ref}/categories/groceries`);
+    expect(screen.getByRole("button", { name: "More" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("does not mark More active on a sibling whose path shares a prefix", () => {
+    renderMobileNav(`/circles/${circle.ref}/categories-archive`);
+    expect(screen.getByRole("button", { name: "More" })).not.toHaveAttribute("aria-current");
+  });
+
   it("navigates from the sheet and closes the dialog", async () => {
     const user = userEvent.setup();
     const view = renderMobileNav(`/circles/${circle.ref}`);
