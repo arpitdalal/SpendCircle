@@ -1,4 +1,4 @@
-import { href } from "react-router";
+import { href, matchPath } from "react-router";
 
 /** A canonical Circle-chrome destination, shared by the desktop tab nav and the
  * mobile bottom bar / "More" sheet so the two can't drift (issue #124). */
@@ -29,8 +29,13 @@ export function circleNavItems(circleRef: string): CircleNavItem[] {
 /** Primary slots get a dedicated bottom-bar button; the remainder live in "More". */
 export const PRIMARY_SLOT_COUNT = 3;
 
-/** Active-route test that mirrors `NavLink`'s prefix matching (and `end` for the index). */
+/**
+ * Whether `pathname` activates `item`, backed by React Router's own `matchPath` so the
+ * "More" trigger and the `NavLink` slots share one matching definition (issue #131).
+ * `matchPath` is segment-aware and case-insensitive — the same semantics `NavLink` derives
+ * active state from — instead of a hand-rolled `startsWith` that could drift on trailing
+ * slashes or substring-vs-segment matches.
+ */
 export function isCircleNavItemActive(pathname: string, item: CircleNavItem) {
-  if (item.end) return pathname === item.to;
-  return pathname === item.to || pathname.startsWith(`${item.to}/`);
+  return matchPath({ path: item.to, end: item.end }, pathname) != null;
 }
