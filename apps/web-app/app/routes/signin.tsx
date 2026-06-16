@@ -1,14 +1,35 @@
 import { LoaderCircle } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, Navigate } from "react-router";
+import { Splash } from "~/components/splash.js";
 import { Button } from "~/components/ui/button.js";
 import { signInWithGoogle } from "~/lib/auth-client.js";
+import { useAppSession } from "~/lib/session.js";
+
+/**
+ * Sign-in route guard: an already-authenticated visitor has no use for the form,
+ * so bounce them to the app root and let ProtectedLayout route on the resolved
+ * state (ready → shell, onboarding → /onboarding) — the inverse of the layout's
+ * unauthenticated → /signin redirect. Splash while auth is still resolving so an
+ * authenticated reload never flashes the form before redirecting.
+ */
+export default function SignIn() {
+  const session = useAppSession();
+
+  if (session.state === "loading") {
+    return <Splash />;
+  }
+  if (session.state !== "unauthenticated") {
+    return <Navigate to="/" replace />;
+  }
+  return <SignInForm />;
+}
 
 /**
  * Sign-in wrap (ADR 0014): conspicuous copy ties account creation to the Terms
  * and Privacy Policy, with no separate checkbox. Google is the only provider.
  */
-export default function SignIn() {
+function SignInForm() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

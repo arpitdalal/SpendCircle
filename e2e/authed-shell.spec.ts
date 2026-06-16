@@ -17,3 +17,12 @@ test("unknown deep links fall back to the safe route (real backend)", async ({ p
   await page.goto("/this/path/does/not/exist");
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
 });
+
+test("an already-signed-in visitor to /signin is redirected into the app", async ({ page }) => {
+  await page.goto("/signin");
+  // The guard bounces an authenticated session to the app root rather than showing the
+  // form; ProtectedLayout then renders the shell for this bootstrapped User.
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Continue with Google/ })).toBeHidden();
+});
