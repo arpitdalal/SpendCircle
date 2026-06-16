@@ -8,6 +8,7 @@ import { FilterPanel } from "~/components/ui/filter-panel.js";
 import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-combobox.js";
 import { Pagination } from "~/components/ui/pagination.js";
 import { Segmented } from "~/components/ui/segmented.js";
+import { useFilterPanelDraft } from "~/components/ui/use-filter-panel-draft.js";
 import {
   TRANSACTIONS_PAGE_SIZE,
   useTransactionSearch,
@@ -28,15 +29,19 @@ export default function CircleSearch() {
   const circle = useCircle();
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = readSearchFilters(searchParams);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [draft, setDraft] = useState<SearchFilters>(filters);
+  const {
+    open: panelOpen,
+    openPanel,
+    onOpenChange: setPanelOpen,
+    draft,
+    setDraft,
+  } = useFilterPanelDraft(filters);
   const options = useTransactionSearchOptions(circle.id, panelOpen ? draft.type : filters.type);
   const results = useTransactionSearch(circle.id, toSearchQuery(filters), {
     page: filters.page,
     pageSize: TRANSACTIONS_PAGE_SIZE,
   });
   const filterCount = activeFilterCount(filters);
-  const searchKey = searchParams.toString();
 
   // Hold the last LOADED pagination shape so the control stays mounted while the next
   // page is in flight (useQuery returns undefined on arg change) — unmounting it would
@@ -76,10 +81,6 @@ export default function CircleSearch() {
       setSearchParams(canonicalSearchParams({ ...filters, page: maxPage }), { replace: true });
     }
   }, [filters, results.isLoading, results.pageSize, results.totalCount, setSearchParams]);
-
-  useEffect(() => {
-    setDraft(readSearchFilters(new URLSearchParams(searchKey)));
-  }, [searchKey]);
 
   useEffect(() => {
     // Drop URL-selected ids no longer in the option universe (e.g. a stale deep link).
@@ -144,7 +145,7 @@ export default function CircleSearch() {
           <Search className="size-4" />
           Search
         </Button>
-        <Button type="button" variant="outline" onClick={() => setPanelOpen(true)}>
+        <Button type="button" variant="outline" onClick={openPanel}>
           <SlidersHorizontal className="size-4" />
           Filters{filterCount > 0 ? ` (${filterCount})` : ""}
         </Button>

@@ -24,7 +24,10 @@ export function FilterPanel({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className={mobileSheetBackdropClassName} />
+        <Dialog.Backdrop
+          className={mobileSheetBackdropClassName}
+          data-testid="filter-panel-backdrop"
+        />
         <Dialog.Popup
           className={cn(
             mobileSheetPopupBaseClassName,

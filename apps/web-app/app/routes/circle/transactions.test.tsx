@@ -17,8 +17,10 @@ import {
   type TransactionFilterOptions,
 } from "~/lib/data.js";
 import {
+  assertFilterPanelDiscardsDraftOnClose,
   configureConvex,
   convexReactMock,
+  FILTER_PANEL_CLOSE_MEDIUMS,
   flushIntersectionObserverStub,
   installIntersectionObserverStub,
   makeCategoryView,
@@ -388,6 +390,18 @@ describe("CircleTransactions", () => {
     // Draft edits never touch the applied URL — the still-applied expense category survives
     // even though the income draft's option set no longer contains it.
     expect(location()).toBe(url);
+  });
+
+  it.each(
+    FILTER_PANEL_CLOSE_MEDIUMS,
+  )("discards unapplied panel edits when the panel is closed via %s", async (medium) => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: [makeTransactionView({ title: "Weekly shop" })],
+    });
+
+    await assertFilterPanelDiscardsDraftOnClose({ user, medium, location });
   });
 
   it("hides write actions in archived circles", () => {
