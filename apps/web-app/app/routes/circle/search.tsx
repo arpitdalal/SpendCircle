@@ -35,7 +35,9 @@ export default function CircleSearch() {
     onOpenChange: setPanelOpen,
     draft,
     setDraft,
-  } = useFilterPanelDraft(filters);
+    // The top-bar search box binds `draft.q` but lives outside the panel — closing the panel
+    // must not wipe a typed-but-unapplied query, only the panel's own filter edits.
+  } = useFilterPanelDraft(filters, { externalFields: ["q"] });
   const options = useTransactionSearchOptions(circle.id, panelOpen ? draft.type : filters.type);
   const results = useTransactionSearch(circle.id, toSearchQuery(filters), {
     page: filters.page,
