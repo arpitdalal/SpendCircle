@@ -19,7 +19,7 @@ vi.mock("better-auth/react", () => ({
   })),
 }));
 
-import { signInWithGoogle } from "./auth-client.js";
+import { signInWithGoogle, signOut } from "./auth-client.js";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -42,5 +42,23 @@ describe("signInWithGoogle", () => {
     auth.social.mockResolvedValue({ data: null, error });
 
     await expect(signInWithGoogle("/")).rejects.toBe(error);
+  });
+});
+
+describe("signOut", () => {
+  it("resolves when Better Auth signs the user out", async () => {
+    auth.signOut.mockResolvedValue({ data: { success: true }, error: null });
+
+    await expect(signOut()).resolves.toBeUndefined();
+    expect(auth.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  // Better Auth surfaces failures as a resolved `{ error }` object, not a rejection;
+  // the wrapper must throw so callers can drive their failure UX off it (#132).
+  it("throws if Better Auth resolves with an error object", async () => {
+    const error = { message: "Sign-out failed" };
+    auth.signOut.mockResolvedValue({ data: null, error });
+
+    await expect(signOut()).rejects.toBe(error);
   });
 });

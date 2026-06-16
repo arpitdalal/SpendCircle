@@ -24,5 +24,9 @@ export async function signInWithGoogle(callbackURL = "/") {
 }
 
 export async function signOut() {
-  await authClient.signOut();
+  const result = await authClient.signOut();
+
+  if (result.error) {
+    throw result.error;
+  }
 }

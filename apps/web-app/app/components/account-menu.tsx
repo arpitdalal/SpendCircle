@@ -1,5 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
-import { Link } from "react-router";
+import { LoaderCircle } from "lucide-react";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { Avatar } from "~/components/ui/avatar.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
 import { signOut } from "~/lib/auth-client.js";
@@ -7,13 +9,35 @@ import type { SessionUser } from "~/lib/session.js";
 import { cn } from "~/lib/utils.js";
 
 const menuItemClass =
-  "flex cursor-pointer rounded-md px-3 py-2 text-sm text-foreground outline-none select-none data-highlighted:bg-muted/60";
+  "flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground outline-none select-none data-disabled:cursor-default data-disabled:opacity-70 data-highlighted:bg-muted/60";
 
 /**
  * Header account control: avatar trigger opens a Base UI `Menu` with identity,
  * Settings navigation, and optional Sign out (ADR 0019 / issue #124).
  */
 export function AccountMenu({ user, showSignOut }: { user: SessionUser; showSignOut: boolean }) {
+  const navigate = useNavigate();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  // Sign-out is terminal: success lets the reactive ProtectedLayout guard redirect to
+  // /signin once the session clears (no bespoke routing here), while a failed request
+  // leaves the session intact, so we log it and send the user to that same /signin
+  // destination ourselves rather than strand them in a half-signed-out menu (#132, #107).
+  // Either outcome unmounts this control, so the pending state never needs resetting and
+  // the re-entry guard blocks a double-click while the request is in flight.
+  const handleSignOut = async () => {
+    if (isSigningOut) {
+      return;
+    }
+    setIsSigningOut(true);
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("signOut failed", error);
+      void navigate("/signin", { replace: true });
+    }
+  };
+
   return (
     <Menu.Root modal={false}>
       <Menu.Trigger
@@ -44,8 +68,21 @@ export function AccountMenu({ user, showSignOut }: { user: SessionUser; showSign
               Settings
             </Menu.LinkItem>
             {showSignOut ? (
-              <Menu.Item className={menuItemClass} onClick={() => void signOut()}>
-                Sign out
+              <Menu.Item
+                className={menuItemClass}
+                closeOnClick={false}
+                disabled={isSigningOut}
+                aria-busy={isSigningOut}
+                onClick={() => void handleSignOut()}
+              >
+                {isSigningOut ? (
+                  <>
+                    <LoaderCircle aria-hidden className="size-4 animate-spin" />
+                    Signing out...
+                  </>
+                ) : (
+                  "Sign out"
+                )}
               </Menu.Item>
             ) : null}
           </Menu.Popup>

@@ -1,7 +1,14 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderWithRouter } from "~/test/convex-react.js";
+import { Route } from "react-router";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  configureConvex,
+  convexReactMock,
+  makeCurrentUserView,
+  renderRoutes,
+  renderWithRouter,
+} from "~/test/convex-react.js";
 
 const auth = vi.hoisted(() => ({
   social: vi.fn(),
@@ -20,7 +27,17 @@ vi.mock("better-auth/react", () => ({
   })),
 }));
 
+// The route guard reads the real session (`useAppSession`), so double `convex/react`
+// — the auth boundary — and default to a resolved, unauthenticated session so the
+// form renders; the "already signed in" case overrides this per-test.
+vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+
 import SignIn from "./signin.js";
+
+beforeEach(() => {
+  configureConvex();
+  convexReactMock.useConvexAuth.mockReturnValue({ isAuthenticated: false, isLoading: false });
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -90,5 +107,31 @@ describe("SignIn", () => {
 
     expect(await screen.findByText("Couldn't start Google sign-in. Try again.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+  });
+
+  it("redirects an already-signed-in visitor to the app instead of showing the form", () => {
+    configureConvex({ currentUser: makeCurrentUserView() });
+    convexReactMock.useConvexAuth.mockReturnValue({ isAuthenticated: true, isLoading: false });
+
+    const view = renderRoutes(
+      <>
+        <Route path="/signin" element={<SignIn />} />
+        <Route path="/" element={<div>app-home</div>} />
+      </>,
+      { initialEntries: ["/signin"] },
+    );
+
+    expect(view.location()).toBe("/");
+    expect(screen.getByText("app-home")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue with Google" })).not.toBeInTheDocument();
+  });
+
+  it("shows a splash, not the form, while auth is still resolving", () => {
+    convexReactMock.useConvexAuth.mockReturnValue({ isAuthenticated: false, isLoading: true });
+
+    renderWithRouter(<SignIn />);
+
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue with Google" })).not.toBeInTheDocument();
   });
 });
