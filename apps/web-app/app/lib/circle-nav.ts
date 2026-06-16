@@ -1,11 +1,15 @@
+import { LayoutDashboard, type LucideIcon, Receipt, Search, Tags, Users } from "lucide-react";
 import { href, matchPath } from "react-router";
 
 /** A canonical Circle-chrome destination, shared by the desktop tab nav and the
- * mobile bottom bar / "More" sheet so the two can't drift (issue #124). */
+ * mobile bottom bar / "More" sheet so the two can't drift (issue #124). The `icon`
+ * lives here too so label + route + icon are defined together; a label rename can't
+ * silently drop an icon the way a separate label-keyed map could (issue #130). */
 export interface CircleNavItem {
   to: string;
   label: string;
   end: boolean;
+  icon: LucideIcon;
 }
 
 /**
@@ -14,15 +18,36 @@ export interface CircleNavItem {
  */
 export function circleNavItems(circleRef: string): CircleNavItem[] {
   return [
-    { to: href("/circles/:circleRef", { circleRef }), label: "Dashboard", end: true },
+    {
+      to: href("/circles/:circleRef", { circleRef }),
+      label: "Dashboard",
+      end: true,
+      icon: LayoutDashboard,
+    },
     {
       to: href("/circles/:circleRef/transactions", { circleRef }),
       label: "Transactions",
       end: false,
+      icon: Receipt,
     },
-    { to: href("/circles/:circleRef/search", { circleRef }), label: "Search", end: false },
-    { to: href("/circles/:circleRef/categories", { circleRef }), label: "Categories", end: false },
-    { to: href("/circles/:circleRef/members", { circleRef }), label: "Members", end: false },
+    {
+      to: href("/circles/:circleRef/search", { circleRef }),
+      label: "Search",
+      end: false,
+      icon: Search,
+    },
+    {
+      to: href("/circles/:circleRef/categories", { circleRef }),
+      label: "Categories",
+      end: false,
+      icon: Tags,
+    },
+    {
+      to: href("/circles/:circleRef/members", { circleRef }),
+      label: "Members",
+      end: false,
+      icon: Users,
+    },
   ];
 }
 

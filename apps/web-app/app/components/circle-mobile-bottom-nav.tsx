@@ -1,14 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
-import {
-  LayoutDashboard,
-  type LucideIcon,
-  MoreHorizontal,
-  Receipt,
-  Search,
-  Tags,
-  Users,
-  X,
-} from "lucide-react";
+import { MoreHorizontal, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { buttonVariants } from "~/components/ui/button-variants.js";
@@ -19,14 +10,6 @@ import {
 import { circleNavItems, isCircleNavItemActive, PRIMARY_SLOT_COUNT } from "~/lib/circle-nav.js";
 import type { Circle } from "~/lib/data.js";
 import { cn } from "~/lib/utils.js";
-
-const iconForLabel: Record<string, LucideIcon> = {
-  Dashboard: LayoutDashboard,
-  Transactions: Receipt,
-  Search,
-  Categories: Tags,
-  Members: Users,
-};
 
 function slotClass(isActive: boolean) {
   return cn(
@@ -65,7 +48,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
         data-testid="circle-mobile-bottom-nav"
       >
         {primarySlots.map((item) => {
-          const Icon = iconForLabel[item.label];
+          const Icon = item.icon;
           return (
             <NavLink
               key={item.to}
@@ -74,7 +57,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
               prefetch="viewport"
               className={({ isActive }) => slotClass(isActive)}
             >
-              {Icon ? <Icon aria-hidden className="size-5 shrink-0" /> : null}
+              <Icon aria-hidden className="size-5 shrink-0" />
               <span className="truncate">{item.label}</span>
             </NavLink>
           );
@@ -115,7 +98,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
             </Dialog.Description>
             <div className="flex flex-col gap-1 px-4 pb-4 pt-2">
               {moreItems.map((item) => {
-                const Icon = iconForLabel[item.label];
+                const Icon = item.icon;
                 return (
                   <NavLink
                     key={item.to}
@@ -132,7 +115,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
                       )
                     }
                   >
-                    {Icon ? <Icon aria-hidden className="size-5 shrink-0" /> : null}
+                    <Icon aria-hidden className="size-5 shrink-0" />
                     {item.label}
                   </NavLink>
                 );
