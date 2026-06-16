@@ -1,5 +1,5 @@
-import { fireEvent, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { screen } from "@testing-library/react";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountMenu } from "~/components/account-menu.js";
@@ -15,11 +15,11 @@ vi.mock("better-auth/react", () => ({
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
-function openAccountMenu() {
-  const trigger = screen.getByRole("button", { name: "Account menu" });
-  fireEvent.mouseDown(trigger);
+async function openAccountMenu(u: UserEvent) {
+  await u.click(screen.getByRole("button", { name: "Account menu" }));
 }
 
 describe("AccountMenu", () => {
@@ -39,7 +39,7 @@ describe("AccountMenu", () => {
       </>,
       { initialEntries: ["/"] },
     );
-    openAccountMenu();
+    await openAccountMenu(u);
     await u.click(await screen.findByRole("menuitem", { name: "Settings" }));
     expect(view.location()).toBe("/settings");
     expect(await screen.findByText("settings-screen")).toBeInTheDocument();
@@ -50,16 +50,61 @@ describe("AccountMenu", () => {
     renderRoutes(<Route path="/" element={<AccountMenu user={user} showSignOut />} />, {
       initialEntries: ["/"],
     });
-    openAccountMenu();
+    await openAccountMenu(u);
     await u.click(await screen.findByRole("menuitem", { name: "Sign out" }));
     expect(signOutMock).toHaveBeenCalledTimes(1);
   });
 
+  it("shows a pending state while sign-out is in flight", async () => {
+    const u = userEvent.setup();
+    // Hold the network boundary open so the in-flight UI is observable until we release it.
+    let releaseSignOut = () => {};
+    signOutMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSignOut = () => resolve();
+        }),
+    );
+    renderRoutes(<Route path="/" element={<AccountMenu user={user} showSignOut />} />, {
+      initialEntries: ["/"],
+    });
+    await openAccountMenu(u);
+    await u.click(await screen.findByRole("menuitem", { name: "Sign out" }));
+
+    const pending = await screen.findByRole("menuitem", { name: "Signing out..." });
+    expect(pending).toHaveAttribute("aria-busy", "true");
+    expect(pending).toHaveAttribute("data-disabled");
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+
+    releaseSignOut();
+  });
+
+  it("logs and still routes to /signin when sign-out fails", async () => {
+    const u = userEvent.setup();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failure = new Error("network down");
+    signOutMock.mockRejectedValueOnce(failure);
+    const view = renderRoutes(
+      <>
+        <Route path="/" element={<AccountMenu user={user} showSignOut />} />
+        <Route path="/signin" element={<div>signin-screen</div>} />
+      </>,
+      { initialEntries: ["/"] },
+    );
+    await openAccountMenu(u);
+    await u.click(await screen.findByRole("menuitem", { name: "Sign out" }));
+
+    expect(await screen.findByText("signin-screen")).toBeInTheDocument();
+    expect(view.location()).toBe("/signin");
+    expect(errorSpy).toHaveBeenCalledWith("signOut failed", failure);
+  });
+
   it("omits Sign out when showSignOut is false", async () => {
+    const u = userEvent.setup();
     renderRoutes(<Route path="/" element={<AccountMenu user={user} showSignOut={false} />} />, {
       initialEntries: ["/"],
     });
-    openAccountMenu();
+    await openAccountMenu(u);
     expect(screen.queryByRole("menuitem", { name: "Sign out" })).not.toBeInTheDocument();
   });
 });
