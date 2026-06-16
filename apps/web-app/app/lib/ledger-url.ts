@@ -27,3 +27,13 @@ type ObjectRef = { ref: string };
 export function transactionDetailHref(circle: ObjectRef, transaction: ObjectRef) {
   return `/circles/${circle.ref}/transactions/${transaction.ref}`;
 }
+
+/**
+ * Canonical edit object-route path — the single home the ledger/search rows and the detail
+ * page both build, so the `/edit` suffix can't drift between call sites. Like
+ * {@link transactionDetailHref} it carries no origin of its own; the caller appends a
+ * validated `returnTo` via `withReturnTo`.
+ */
+export function transactionEditHref(circle: ObjectRef, transaction: ObjectRef) {
+  return `/circles/${circle.ref}/transactions/${transaction.ref}/edit`;
+}

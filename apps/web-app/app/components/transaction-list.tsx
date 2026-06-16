@@ -12,7 +12,7 @@ import {
   useArchiveTransaction,
   useRestoreTransaction,
 } from "~/lib/data.js";
-import { transactionDetailHref } from "~/lib/ledger-url.js";
+import { transactionDetailHref, transactionEditHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { withReturnTo } from "~/lib/return-to-url.js";
@@ -111,7 +111,7 @@ export function TransactionList({
             </span>
             {ledgerMonth && txn.status === "active" && canEdit && txn.canEditFields ? (
               <Link
-                to={withReturnTo(`/circles/${circle.ref}/transactions/${txn.ref}/edit`, origin)}
+                to={withReturnTo(transactionEditHref(circle, txn), origin)}
                 aria-label={`Edit ${txn.title}`}
                 className={buttonVariants({ variant: "outline", size: "sm" })}
               >

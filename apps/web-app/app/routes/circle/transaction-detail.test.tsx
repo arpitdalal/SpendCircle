@@ -2,6 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Circle, Member, TransactionDetail, TransactionHistoryEvent } from "~/lib/data.js";
+import { withReturnTo } from "~/lib/return-to-url.js";
 import {
   configureConvex,
   makeCircleView,
@@ -236,7 +237,7 @@ describe("TransactionDetail — edit affordance (courtesy nav, server enforces)"
     expect(returnToOf(edit.getAttribute("href"))).toBe(detailUrl);
   });
 
-  it("sets returnTo to the bare detail when the detail itself was opened with no origin", () => {
+  it("pins the editor's returnTo to the detail with Back on the ledger fallback when opened with no origin", () => {
     setup({
       transactionDetail: makeTransactionDetailView({
         ref: "weekly-shop-t1",
@@ -245,9 +246,14 @@ describe("TransactionDetail — edit affordance (courtesy nav, server enforces)"
       }),
       url: `/circles/${REF}/transactions/weekly-shop-t1`,
     });
+    // No origin → the detail's own Back resolved to the ledger fallback. The editor's
+    // returnTo is the detail page re-built from THAT validated fallback (not the empty raw
+    // search), so edit → close lands on detail and Back still points at the ledger.
     expect(
       returnToOf(screen.getByRole("link", { name: "Edit Weekly shop" }).getAttribute("href")),
-    ).toBe(`/circles/${REF}/transactions/weekly-shop-t1`);
+    ).toBe(
+      withReturnTo(`/circles/${REF}/transactions/weekly-shop-t1`, `/circles/${REF}/transactions`),
+    );
   });
 
   it("hides the Edit link from a non-recorder (canEditFields=false)", () => {

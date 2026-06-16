@@ -25,9 +25,10 @@ import { type Resolution, useResolvedRef } from "./use-resolved-ref.js";
  * Transactions route when `returnTo` is absent/malformed. A stale title slug
  * canonicalizes in place via the primitive.
  *
- * The route always resolves `fallback` to a read-only-safe in-Circle path (never the
- * Circle root): an archived Circle stays accessible, so its edit links land back on
- * the return origin rather than ejecting through the unavailable path.
+ * The route always resolves `fallback` to a read-only-safe in-Circle path: an archived
+ * Circle stays accessible, so its edit links land back on the return origin rather than
+ * ejecting through the unavailable path. The origin may be the bare Circle root (a valid
+ * `returnTo`) — still read-safe, since the dashboard renders read-only for an archived Circle.
  *
  * `enabled` lets the route stop resolving when it should not be showing the form at
  * all — skipping the query AND every effect (no fallback, no canonicalize), so the

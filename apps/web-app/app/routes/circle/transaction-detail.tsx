@@ -1,10 +1,11 @@
 import { formatMoney, money, toCurrencyCode } from "@spend-circle/domain";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { Splash } from "~/components/splash.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
 import { type Circle, type TransactionDetail, useTransactionHistory } from "~/lib/data.js";
 import { formatAuditTimestamp } from "~/lib/datetime.js";
+import { transactionDetailHref, transactionEditHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { parseReturnTo, RETURN_TO_PARAM, withReturnTo } from "~/lib/return-to-url.js";
 import { useResolvedTransactionDetail } from "~/lib/use-resolved-transaction-detail.js";
@@ -54,19 +55,19 @@ function TransactionDetailView({
   transaction: TransactionDetail;
   backTo: string;
 }) {
-  const location = useLocation();
   const currency = toCurrencyCode(circle.currency);
   const amount = formatMoney(money(transaction.amountMinorUnits, currency), viewerLocale());
   const writable = circle.status === "active";
   const isArchived = transaction.status === "archived";
 
-  // The Edit link carries THIS detail page's full URL as its `returnTo`, so the editor
-  // returns here on close — and the detail it returns to still has ITS own `returnTo`, so a
-  // ledger → detail → edit → close trip ends back on detail with Back still pointing at the
-  // ledger (issue #123).
+  // The Edit link carries THIS detail page's URL as its `returnTo`, so the editor returns
+  // here on close — and that nested `returnTo` is the canonical detail path re-built from the
+  // already-validated `backTo`, NOT the raw `location.search` (which could echo a tampered
+  // nested value). So both reads agree on the same validated origin, and a ledger → detail →
+  // edit → close trip ends back on detail with Back still pointing at the ledger (issue #123).
   const editUrl = withReturnTo(
-    `/circles/${circle.ref}/transactions/${transaction.ref}/edit`,
-    location.pathname + location.search,
+    transactionEditHref(circle, transaction),
+    withReturnTo(transactionDetailHref(circle, transaction), backTo),
   );
 
   return (
