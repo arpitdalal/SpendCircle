@@ -50,65 +50,82 @@ export async function pickFormCategory(page: Page, scope: Locator, name: string)
 
 const e2eDir = dirname(fileURLToPath(import.meta.url));
 
+const E2E_PASSWORD = "e2e-Password-123";
+
+/**
+ * Drive the flag-gated email+password test-auth bypass (ADR 0019) on `page` until it
+ * lands authenticated on the app shell. Signs up (first run for a unique email) then
+ * signs in via `window.__scE2E`, leaving a REAL Better Auth session in the page's
+ * context — exactly what the per-worker fixture below captures as `storageState`, and
+ * what the sign-out spec drives directly in a throwaway context so it can revoke a
+ * session without clobbering the worker's shared one.
+ */
+export async function establishE2ESession(
+  page: Page,
+  opts: { baseURL: string; email: string; password?: string },
+) {
+  const password = opts.password ?? E2E_PASSWORD;
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await page.goto(opts.baseURL, { waitUntil: "domcontentloaded" });
+      break;
+    } catch (err) {
+      if (attempt >= 30) throw err;
+      await page.waitForTimeout(1000);
+    }
+  }
+
+  await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });
+
+  let signInResult: string | undefined;
+  try {
+    signInResult = await page.evaluate(
+      async ([e, p]) => {
+        const helper = Reflect.get(globalThis, "__scE2E");
+        if (typeof helper !== "object" || helper === null) {
+          return "error: missing __scE2E";
+        }
+        const signIn = Reflect.get(helper, "signIn");
+        if (typeof signIn !== "function") {
+          return "error: bad signIn";
+        }
+        try {
+          await Reflect.apply(signIn, helper, [e, p]);
+          return "ok";
+        } catch (err) {
+          return `error: ${String(err instanceof Error ? err.message : err)}`;
+        }
+      },
+      [opts.email, password],
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Better Auth can reload mid-sign-in; awaiting the in-page promise then loses
+    // the realm → Playwright throws here. Continue: locator wait below survives nav.
+    if (!msg.includes("Execution context was destroyed")) {
+      throw err;
+    }
+  }
+  if (signInResult !== undefined && signInResult !== "ok") {
+    throw new Error(`E2E sign-in failed: ${signInResult}`);
+  }
+
+  await page.goto(opts.baseURL, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Your circles" }).waitFor({ timeout: 30_000 });
+}
+
 async function signUpUserAndSaveStorageState(opts: {
   baseURL: string;
   workerIndex: number;
   browser: Browser;
 }) {
   const email = `e2e+w${opts.workerIndex}-${Date.now()}@example.com`;
-  const password = "e2e-Password-123";
   const storagePath = join(e2eDir, ".auth", `worker-${opts.workerIndex}.json`);
 
   const page = await opts.browser.newPage();
   try {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await page.goto(opts.baseURL, { waitUntil: "domcontentloaded" });
-        break;
-      } catch (err) {
-        if (attempt >= 30) throw err;
-        await page.waitForTimeout(1000);
-      }
-    }
-
-    await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });
-
-    let signInResult: string | undefined;
-    try {
-      signInResult = await page.evaluate(
-        async ([e, p]) => {
-          const helper = Reflect.get(globalThis, "__scE2E");
-          if (typeof helper !== "object" || helper === null) {
-            return "error: missing __scE2E";
-          }
-          const signIn = Reflect.get(helper, "signIn");
-          if (typeof signIn !== "function") {
-            return "error: bad signIn";
-          }
-          try {
-            await Reflect.apply(signIn, helper, [e, p]);
-            return "ok";
-          } catch (err) {
-            return `error: ${String(err instanceof Error ? err.message : err)}`;
-          }
-        },
-        [email, password],
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // Better Auth can reload mid-sign-in; awaiting the in-page promise then loses
-      // the realm → Playwright throws here. Continue: locator wait below survives nav.
-      if (!msg.includes("Execution context was destroyed")) {
-        throw err;
-      }
-    }
-    if (signInResult !== undefined && signInResult !== "ok") {
-      throw new Error(`E2E sign-in failed: ${signInResult}`);
-    }
-
-    await page.goto(opts.baseURL, { waitUntil: "domcontentloaded" });
-    await page.getByRole("heading", { name: "Your circles" }).waitFor({ timeout: 30_000 });
-
+    await establishE2ESession(page, { baseURL: opts.baseURL, email });
     await mkdir(dirname(storagePath), { recursive: true });
     await page.context().storageState({ path: storagePath });
     return storagePath;
