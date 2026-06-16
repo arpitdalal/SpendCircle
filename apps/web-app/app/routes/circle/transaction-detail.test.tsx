@@ -87,6 +87,16 @@ describe("TransactionDetail — resolution", () => {
     expect(screen.queryByRole("heading", { name: "Weekly shop" })).not.toBeInTheDocument();
   });
 
+  it("ejects an unavailable target to the returnTo origin it was opened from", async () => {
+    const origin = `/circles/${REF}/search?q=rent&page=2`;
+    const { location } = setup({
+      transactionDetail: null,
+      url: `/circles/${REF}/transactions/weekly-shop-t1?returnTo=${encodeURIComponent(origin)}`,
+    });
+    await waitFor(() => expect(location()).toBe(origin));
+    expect(screen.getByText("That link isn't available.")).toBeInTheDocument();
+  });
+
   it("takes the bad-link path for a malformed ref (an app-emitted bad link)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { location } = setup({ url: `/circles/${REF}/transactions/not-valid!` });
@@ -165,24 +175,38 @@ describe("TransactionDetail — Transaction History (PRD 77)", () => {
   });
 });
 
-describe("TransactionDetail — ledger month preserved (Back / Edit links)", () => {
-  it("returns Back to the same ledger month the row was opened from", () => {
+/** Reads the decoded `returnTo` param off a link's href (issue #123). */
+function returnToOf(href: string | null) {
+  return new URL(href ?? "", "http://t").searchParams.get("returnTo");
+}
+
+describe("TransactionDetail — returnTo origin (Back link)", () => {
+  it("returns Back to the exact origin it was opened from, all query state preserved", () => {
+    const origin = `/circles/${REF}/search?q=rent&page=2&status=archived`;
     setup({
       transactionDetail: makeTransactionDetailView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
-      url: `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05&view=archived`,
+      url: `/circles/${REF}/transactions/weekly-shop-t1?returnTo=${encodeURIComponent(origin)}`,
     });
-    expect(screen.getByRole("link", { name: /Back to transactions/ })).toHaveAttribute(
-      "href",
-      `/circles/${REF}/transactions?month=2026-05`,
-    );
+    expect(screen.getByRole("link", { name: /Back/ })).toHaveAttribute("href", origin);
   });
 
-  it("falls back to the bare ledger when the URL carries no valid slice", () => {
+  it("falls back to the bare ledger when the URL carries no returnTo", () => {
     setup({
       transactionDetail: makeTransactionDetailView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
       url: `/circles/${REF}/transactions/weekly-shop-t1`,
     });
-    expect(screen.getByRole("link", { name: /Back to transactions/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Back/ })).toHaveAttribute(
+      "href",
+      `/circles/${REF}/transactions`,
+    );
+  });
+
+  it("falls back to the bare ledger for a tampered (protocol-relative) returnTo — no open redirect", () => {
+    setup({
+      transactionDetail: makeTransactionDetailView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
+      url: `/circles/${REF}/transactions/weekly-shop-t1?returnTo=${encodeURIComponent("//evil.com")}`,
+    });
+    expect(screen.getByRole("link", { name: /Back/ })).toHaveAttribute(
       "href",
       `/circles/${REF}/transactions`,
     );
@@ -190,22 +214,29 @@ describe("TransactionDetail — ledger month preserved (Back / Edit links)", () 
 });
 
 describe("TransactionDetail — edit affordance (courtesy nav, server enforces)", () => {
-  it("offers an Edit link to the recorder, carrying the slice and from=detail so close returns here", () => {
+  it("offers an Edit link to the recorder carrying THIS detail URL as returnTo, so close returns here", () => {
+    const detailUrl = `/circles/${REF}/transactions/weekly-shop-t1?returnTo=${encodeURIComponent(
+      `/circles/${REF}/transactions?month=2026-05`,
+    )}`;
     setup({
       transactionDetail: makeTransactionDetailView({
         ref: "weekly-shop-t1",
         title: "Weekly shop",
         canEditFields: true,
       }),
-      url: `/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`,
+      url: detailUrl,
     });
-    expect(screen.getByRole("link", { name: "Edit Weekly shop" })).toHaveAttribute(
-      "href",
-      `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&from=detail`,
+    const edit = screen.getByRole("link", { name: "Edit Weekly shop" });
+    expect(new URL(edit.getAttribute("href") ?? "", "http://t").pathname).toBe(
+      `/circles/${REF}/transactions/weekly-shop-t1/edit`,
     );
+    // The editor's returnTo is the full detail URL (which still carries its own ledger
+    // returnTo) — so edit → close lands on detail, and detail's Back still points at the
+    // ledger.
+    expect(returnToOf(edit.getAttribute("href"))).toBe(detailUrl);
   });
 
-  it("carries only from=detail (no month) when the detail itself was opened with no slice", () => {
+  it("sets returnTo to the bare detail when the detail itself was opened with no origin", () => {
     setup({
       transactionDetail: makeTransactionDetailView({
         ref: "weekly-shop-t1",
@@ -214,10 +245,9 @@ describe("TransactionDetail — edit affordance (courtesy nav, server enforces)"
       }),
       url: `/circles/${REF}/transactions/weekly-shop-t1`,
     });
-    expect(screen.getByRole("link", { name: "Edit Weekly shop" })).toHaveAttribute(
-      "href",
-      `/circles/${REF}/transactions/weekly-shop-t1/edit?from=detail`,
-    );
+    expect(
+      returnToOf(screen.getByRole("link", { name: "Edit Weekly shop" }).getAttribute("href")),
+    ).toBe(`/circles/${REF}/transactions/weekly-shop-t1`);
   });
 
   it("hides the Edit link from a non-recorder (canEditFields=false)", () => {

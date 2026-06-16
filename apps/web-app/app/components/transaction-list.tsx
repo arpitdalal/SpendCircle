@@ -1,6 +1,6 @@
 import { formatMoney, money, type PlainMonth, toCurrencyCode } from "@spend-circle/domain";
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Button } from "~/components/ui/button.js";
@@ -15,6 +15,7 @@ import {
 import { transactionDetailHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
+import { withReturnTo } from "~/lib/return-to-url.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
 
@@ -43,6 +44,10 @@ export function TransactionList({
   paginationMode?: "infinite" | "none";
 }) {
   const { transactions, status, loadMore } = paginated;
+  // This list renders on both the ledger and Search; either way its current URL (filters,
+  // page, month) is the origin a row's detail/edit link returns to via `returnTo` (#123).
+  const location = useLocation();
+  const origin = location.pathname + location.search;
 
   if (status === "LoadingFirstPage") {
     return (
@@ -75,7 +80,7 @@ export function TransactionList({
                 )}
               >
                 <Link
-                  to={transactionDetailHref(circle, txn, ledgerMonth)}
+                  to={withReturnTo(transactionDetailHref(circle, txn), origin)}
                   className="hover:underline"
                   aria-label={`View ${txn.title}`}
                 >
@@ -106,7 +111,7 @@ export function TransactionList({
             </span>
             {ledgerMonth && txn.status === "active" && canEdit && txn.canEditFields ? (
               <Link
-                to={`/circles/${circle.ref}/transactions/${txn.ref}/edit?month=${ledgerMonth}`}
+                to={withReturnTo(`/circles/${circle.ref}/transactions/${txn.ref}/edit`, origin)}
                 aria-label={`Edit ${txn.title}`}
                 className={buttonVariants({ variant: "outline", size: "sm" })}
               >

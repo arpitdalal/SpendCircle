@@ -102,17 +102,19 @@ describe("Dashboard recent feed", () => {
       }),
     ];
     configureConvex({ dashboard: makeDashboard({ recent }) });
-    renderInCircle(makeCircleView(), <CircleDashboard />);
+    // Seed the address bar with the Dashboard's own URL so each row's `returnTo` (#123) is
+    // the realistic origin a detail Back would return to.
+    const origin = "/circles/trip-c1";
+    renderInCircle(makeCircleView(), <CircleDashboard />, { initialEntries: [origin] });
 
     const feed = screen.getByRole("region", { name: /recent activity/i });
-    expect(within(feed).getByRole("link", { name: /view paycheck/i })).toHaveAttribute(
-      "href",
-      "/circles/trip-c1/transactions/paycheck-t1?month=2026-06",
+    const paycheck = within(feed).getByRole("link", { name: /view paycheck/i });
+    expect(new URL(paycheck.getAttribute("href") ?? "", "http://t").pathname).toBe(
+      "/circles/trip-c1/transactions/paycheck-t1",
     );
-    expect(within(feed).getByRole("link", { name: /view groceries/i })).toHaveAttribute(
-      "href",
-      "/circles/trip-c1/transactions/groceries-t1?month=2026-06",
-    );
+    expect(
+      new URL(paycheck.getAttribute("href") ?? "", "http://t").searchParams.get("returnTo"),
+    ).toBe(origin);
     expect(within(feed).getByText("+$5,000.00")).toBeInTheDocument();
     expect(within(feed).getByText("Groceries")).toBeInTheDocument();
     expect(within(feed).getByText("-$73.50")).toBeInTheDocument();

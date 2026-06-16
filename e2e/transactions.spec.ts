@@ -238,7 +238,8 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   // Edit: open the canonical edit object route (TXN-5), change the title + amount,
   // save, and see the row update live back on the ledger.
   await row.getByRole("link", { name: `Edit ${title}` }).click();
-  await expect(page).toHaveURL(/\/transactions\/[^/]+\/edit\?month=/);
+  // The ledger Edit link carries the ledger URL as `returnTo` (issue #123).
+  await expect(page).toHaveURL(/\/transactions\/[^/]+\/edit\?returnTo=/);
   const editForm = page.getByRole("form", { name: /edit transaction/i });
   await editForm.getByLabel("Title").fill(editedTitle);
   await editForm.getByLabel(/Amount/).fill("25.00");
@@ -377,7 +378,10 @@ test("the transactions page restores month, add form, and edit link across reloa
   const row = page.getByRole("listitem").filter({ hasText: title });
   await expect(row).toBeVisible();
   await row.getByRole("link", { name: `Edit ${title}` }).click();
-  await expect(page).toHaveURL(new RegExp(`/transactions/[^/]+/edit\\?month=${month}`));
+  // The Edit link's `returnTo` is the ledger URL, which carries the month (encoded).
+  await expect(page).toHaveURL(
+    new RegExp(`/transactions/[^/]+/edit\\?returnTo=.*month%3D${month}`),
+  );
   // The edit form is fetched by id, so a reload reopens it on the latest server values.
   await page.reload();
   await expect(
@@ -496,7 +500,9 @@ test("editing from the transaction detail returns to the detail on cancel and on
 
   const row = page.getByRole("listitem").filter({ hasText: title });
   await row.getByRole("link", { name: `View ${title}` }).click();
-  const detailUrl = new RegExp(`/transactions/[^/]+\\?month=${month}$`);
+  // The detail link carries the ledger URL (with its month) as `returnTo` (issue #123);
+  // editing from here returns to this exact detail URL, so the same matcher holds after.
+  const detailUrl = new RegExp(`/transactions/[^/]+\\?returnTo=.*month%3D${month}`);
   await expect(page).toHaveURL(detailUrl);
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
 

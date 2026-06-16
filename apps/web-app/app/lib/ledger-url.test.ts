@@ -1,33 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  editSearch,
-  ledgerSearch,
-  parseEditReturn,
-  transactionDetailHref,
-  withQuery,
-} from "./ledger-url.js";
+import { transactionDetailHref, withQuery } from "./ledger-url.js";
 
 describe("transactionDetailHref", () => {
-  it("builds the detail path with month when provided", () => {
-    expect(transactionDetailHref({ ref: "c1" }, { ref: "rent-t1" }, "2026-05")).toBe(
-      "/circles/c1/transactions/rent-t1?month=2026-05",
-    );
-  });
-
-  it("omits query when month is absent", () => {
+  it("builds the bare detail path (origin is carried by returnTo, not here)", () => {
     expect(transactionDetailHref({ ref: "c1" }, { ref: "rent-t1" })).toBe(
       "/circles/c1/transactions/rent-t1",
     );
-  });
-});
-
-describe("ledgerSearch", () => {
-  it("encodes the month", () => {
-    expect(ledgerSearch({ month: "2026-05" })).toBe("month=2026-05");
-  });
-
-  it("omits an absent month", () => {
-    expect(ledgerSearch({})).toBe("");
   });
 });
 
@@ -38,28 +16,5 @@ describe("withQuery", () => {
 
   it("returns the bare path when the query is empty", () => {
     expect(withQuery("/a/b", "")).toBe("/a/b");
-  });
-});
-
-describe("editSearch", () => {
-  it("carries the ledger month without a from marker by default", () => {
-    expect(editSearch({ month: "2026-05" })).toBe("month=2026-05");
-  });
-
-  it("appends from=detail after the month when opened from the detail page", () => {
-    expect(editSearch({ month: "2026-05", from: "detail" })).toBe("month=2026-05&from=detail");
-  });
-
-  it("omits from for an explicit ledger return", () => {
-    expect(editSearch({ month: "2026-05", from: "ledger" })).toBe("month=2026-05");
-  });
-});
-
-describe("parseEditReturn", () => {
-  it("decodes detail and falls back to ledger for anything else", () => {
-    expect(parseEditReturn("detail")).toBe("detail");
-    expect(parseEditReturn("ledger")).toBe("ledger");
-    expect(parseEditReturn(null)).toBe("ledger");
-    expect(parseEditReturn("bogus")).toBe("ledger");
   });
 });

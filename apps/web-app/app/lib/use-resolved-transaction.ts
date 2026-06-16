@@ -1,7 +1,6 @@
 import { api } from "@spend-circle/convex";
-import { currentMonth, isValidPlainMonth, type PlainMonth } from "@spend-circle/domain";
 import { useConvexAuth, useQuery } from "convex/react";
-import { useParams, useSearchParams } from "react-router";
+import { useParams } from "react-router";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 import type { Transaction } from "./data.js";
 import { MOCKS } from "./env.js";
@@ -20,13 +19,15 @@ import { type Resolution, useResolvedRef } from "./use-resolved-ref.js";
  * The server collapses missing / inaccessible / wrong-Circle / archived /
  * not-editable-by-viewer all to `null`, and this hands that `null` to the
  * primitive, which fires the generic unavailable-link snackbar and falls back to
- * the Circle's Transactions route — the SELECTED month preserved so closing an
- * unavailable edit link returns to the ledger the User was on, not a default
- * (ADR 0017). A stale title slug canonicalizes in place via the primitive.
+ * the caller-supplied `fallback` — the validated `returnTo` origin the route
+ * computed (issue #123), so closing an unavailable edit link returns the User to
+ * where they opened it FROM (search, dashboard, ledger), or the Circle's
+ * Transactions route when `returnTo` is absent/malformed. A stale title slug
+ * canonicalizes in place via the primitive.
  *
- * The fallback intentionally targets the read-only-safe Transactions route, not the
- * Circle root: an archived Circle stays accessible, so its edit links land back on
- * the in-place read-only ledger rather than ejecting through the unavailable path.
+ * The route always resolves `fallback` to a read-only-safe in-Circle path (never the
+ * Circle root): an archived Circle stays accessible, so its edit links land back on
+ * the return origin rather than ejecting through the unavailable path.
  *
  * `enabled` lets the route stop resolving when it should not be showing the form at
  * all — skipping the query AND every effect (no fallback, no canonicalize), so the
@@ -36,21 +37,19 @@ import { type Resolution, useResolvedRef } from "./use-resolved-ref.js";
  * (read-only) Circle must drop the edit URL to the in-place ledger without ever taking
  * the generic unavailable-link path, even when the target itself resolves to `null`.
  */
-export function useResolvedTransaction({ enabled = true } = {}): Resolution<Transaction> {
+export function useResolvedTransaction({
+  enabled = true,
+  fallback,
+}: {
+  enabled?: boolean;
+  /** The validated `returnTo` origin (issue #123) — where an unavailable edit link
+   * ejects to. The route computes it once via `parseReturnTo` and feeds it here AND uses
+   * it as the close target, so the bad-link fallback and a normal close agree. */
+  fallback: string;
+}): Resolution<Transaction> {
   const circle = useCircle();
   const { transactionRef } = useParams();
   const { isAuthenticated } = useConvexAuth();
-  const [searchParams] = useSearchParams();
-
-  // Preserve the selected ledger month across the fallback so an unavailable edit link
-  // returns to the ledger the User was on; an absent/invalid month resolves to the current
-  // month (the same normalization the ledger applies), so this anti-enumeration redirect
-  // always lands on a concrete ledger month rather than a bare route. This is the bad-link
-  // fallback, distinct from a normal close (see `transaction-edit.tsx`), which trims the URL
-  // and carries its slice back verbatim without inventing a month.
-  const rawMonth = searchParams.get("month");
-  const month: PlainMonth = isValidPlainMonth(rawMonth) ? rawMonth : currentMonth(new Date());
-  const fallback = `/circles/${circle.ref}/transactions?month=${month}`;
 
   const parsed = parseTransactionRef(transactionRef);
   const queried = useQuery(
