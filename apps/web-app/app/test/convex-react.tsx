@@ -25,6 +25,11 @@ export {
 export { makeTransactionDetailView, makeTransactionView } from "./convex/transactions.js";
 export { makeCurrentUserView } from "./convex/users.js";
 export {
+  assertFilterPanelDiscardsDraftOnClose,
+  FILTER_PANEL_CLOSE_MEDIUMS,
+  type FilterPanelCloseMedium,
+} from "./filter-panel-draft-contract.js";
+export {
   flushIntersectionObserverStub,
   IntersectionObserverStub,
   installIntersectionObserverStub,

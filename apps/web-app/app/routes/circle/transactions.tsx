@@ -8,7 +8,7 @@ import {
   toCurrencyCode,
 } from "@spend-circle/domain";
 import { SlidersHorizontal } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { Skeleton } from "~/components/skeleton.js";
 import { TransactionForm } from "~/components/transaction-form/index.js";
@@ -17,6 +17,7 @@ import { Button } from "~/components/ui/button.js";
 import { FilterPanel } from "~/components/ui/filter-panel.js";
 import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-combobox.js";
 import { Segmented } from "~/components/ui/segmented.js";
+import { useFilterPanelDraft } from "~/components/ui/use-filter-panel-draft.js";
 import {
   type MonthlySummary,
   useLedgerFilterOptions,
@@ -45,8 +46,13 @@ export default function CircleTransactions() {
   const rawNew = searchParams.get("new");
   const createType: TransactionType | null =
     writable && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [draft, setDraft] = useState<LedgerFilters>(filters);
+  const {
+    open: panelOpen,
+    openPanel,
+    onOpenChange: setPanelOpen,
+    draft,
+    setDraft,
+  } = useFilterPanelDraft(filters);
   const options = useLedgerFilterOptions(
     circle.id,
     filters.month,
@@ -57,13 +63,6 @@ export default function CircleTransactions() {
   // as well as any narrowing filters — there is no active-only base-list shortcut, so the
   // default view can include archived rows (distinguished in the row, not hidden).
   const transactions = useLedgerTransactionFilter(circle.id, toLedgerQuery(filters));
-  const searchKey = searchParams.toString();
-
-  useEffect(() => {
-    if (panelOpen) {
-      setDraft(readLedgerFilters(new URLSearchParams(searchKey)));
-    }
-  }, [panelOpen, searchKey]);
 
   useEffect(() => {
     const next = canonicalLedgerParams(filters, searchParams);
@@ -169,7 +168,7 @@ export default function CircleTransactions() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <MonthNavigator month={filters.month} onChange={goToMonth} />
-        <Button type="button" variant="outline" onClick={() => setPanelOpen(true)}>
+        <Button type="button" variant="outline" onClick={openPanel}>
           <SlidersHorizontal className="size-4" />
           Filters{filterCount > 0 ? ` (${filterCount})` : ""}
         </Button>

@@ -4,8 +4,10 @@ import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category, Circle, Member, TransactionFilterOptions } from "~/lib/data.js";
 import {
+  assertFilterPanelDiscardsDraftOnClose,
   type ConvexState,
   configureConvex,
+  FILTER_PANEL_CLOSE_MEDIUMS,
   makeCategoryView,
   makeCircleView,
   makeMemberView,
@@ -265,5 +267,66 @@ describe("CircleSearch", () => {
 
     await waitFor(() => expect(location()).toMatch(/q=new/));
     expect(location()).not.toMatch(/page=/);
+  });
+
+  it.each(
+    FILTER_PANEL_CLOSE_MEDIUMS,
+  )("discards unapplied panel edits when the panel is closed via %s", async (medium) => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
+    });
+
+    await assertFilterPanelDiscardsDraftOnClose({ user, medium, location });
+  });
+
+  it("keeps a typed-but-unapplied top-bar query when the panel is closed without applying", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
+    });
+
+    // The top-bar query box lives outside the panel; it is not a panel edit.
+    await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "rent");
+
+    // Open Filters, make a panel edit, abandon it (Esc) without Apply.
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Filters" })).getByRole("button", {
+        name: "Expense",
+      }),
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Filters" })).not.toBeInTheDocument(),
+    );
+
+    // The typed query survives — closing only discards the panel-owned edit (type).
+    expect(screen.getByRole("searchbox", { name: "Search title or note" })).toHaveValue("rent");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(location()).toBe(`/circles/${REF}/search?type=all&status=all&q=rent`);
+  });
+
+  it("does not apply abandoned panel edits when searching from the top bar after closing", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
+    });
+
+    // Edit the panel, then abandon it (Esc) without Apply.
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    await user.click(within(dialog).getByRole("button", { name: "Expense" }));
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Filters" })).not.toBeInTheDocument(),
+    );
+
+    // Searching from the top bar commits only the query — the abandoned type=expense edit
+    // (which shared the same draft/submit) must not ride along.
+    await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "rent");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(location()).toBe(`/circles/${REF}/search?type=all&status=all&q=rent`);
   });
 });
