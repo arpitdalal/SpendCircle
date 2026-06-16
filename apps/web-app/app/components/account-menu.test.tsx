@@ -6,8 +6,12 @@ import { AccountMenu } from "~/components/account-menu.js";
 import { renderRoutes } from "~/test/convex-react.js";
 
 // Mock only the true boundary: Better Auth's network client. Our own `signOut`
-// wrapper in `~/lib/auth-client.js` still runs for real against this fake client.
-const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+// wrapper in `~/lib/auth-client.js` still runs for real against this fake client,
+// so the mock mirrors Better Auth's real contract: it RESOLVES with `{ data, error }`
+// (failures are an `error` object, not a rejection).
+const signOutMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
+);
 
 vi.mock("better-auth/react", () => ({
   createAuthClient: () => ({ signOut: signOutMock }),
@@ -82,8 +86,10 @@ describe("AccountMenu", () => {
   it("logs and still routes to /signin when sign-out fails", async () => {
     const u = userEvent.setup();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const failure = new Error("network down");
-    signOutMock.mockRejectedValueOnce(failure);
+    // Better Auth signals failure by resolving with an `error` object (not a rejection);
+    // the real `signOut` wrapper turns that into the throw this UX path catches.
+    const failure = { message: "network down" };
+    signOutMock.mockResolvedValueOnce({ data: null, error: failure });
     const view = renderRoutes(
       <>
         <Route path="/" element={<AccountMenu user={user} showSignOut />} />
