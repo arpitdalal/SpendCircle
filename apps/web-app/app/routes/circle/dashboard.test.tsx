@@ -67,12 +67,17 @@ describe("Dashboard totals", () => {
     configureConvex({ dashboard: () => undefined });
     renderInCircle(makeCircleView(), <CircleDashboard />);
 
-    // The totals grid reads as busy and the recent feed shows its skeleton region.
+    // The totals grid reads as busy and the recent feed shows its skeleton placeholder.
     expect(screen.getByText(/this month's totals/i).closest("fieldset")).toHaveAttribute(
       "aria-busy",
       "true",
     );
     expect(screen.getByTestId("recent-skeleton")).toBeInTheDocument();
+    // Exactly ONE polite announcement covers the whole surface (not one per widget),
+    // and the per-widget placeholders stay out of the a11y tree (aria-hidden).
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toHaveTextContent(/loading dashboard/i);
   });
 });
 

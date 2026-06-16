@@ -1,10 +1,15 @@
-import { Link, Navigate, Outlet, useLocation } from "react-router";
+import { Link, Navigate, Outlet, useLocation, useNavigation } from "react-router";
 import { AccountMenu } from "~/components/account-menu.js";
+import { CircleBottomNavSkeleton } from "~/components/circle-mobile-bottom-nav.js";
 import { CircleSwitcher } from "~/components/circle-switcher.js";
 import { PageSkeleton } from "~/components/skeleton.js";
 import { Splash } from "~/components/splash.js";
 import { MOCKS } from "~/lib/env.js";
-import { coversShellNavigation, usePendingRouteSkeleton } from "~/lib/route-skeleton.js";
+import {
+  coversShellNavigation,
+  isCircleRoute,
+  usePendingRouteSkeleton,
+} from "~/lib/route-skeleton.js";
 import { useAppSession } from "~/lib/session.js";
 
 /**
@@ -19,6 +24,13 @@ export default function ProtectedLayout() {
   // Unconditional so the pending-navigation subscription is stable across the auth
   // guard's state flips; only consulted in the Ready branch below.
   const showSkeleton = usePendingRouteSkeleton(coversShellNavigation);
+  // When the shell skeleton covers a navigation INTO a Circle (a cross-Circle switch,
+  // or Home→Circle), keep a Circle bottom-bar placeholder mounted so the mobile bar
+  // doesn't flash out while CircleLayout is unmounted — the destination is a Circle, so
+  // it will own a real bar once it resolves.
+  const navigation = useNavigation();
+  const pendingTo = navigation.location?.pathname;
+  const showBottomNavSkeleton = showSkeleton && pendingTo != null && isCircleRoute(pendingTo);
 
   if (session.state === "loading") {
     return <Splash />;
@@ -53,6 +65,7 @@ export default function ProtectedLayout() {
       <main className="flex-1 px-4 pb-24 pt-6 sm:pb-6">
         {showSkeleton ? <PageSkeleton /> : <Outlet />}
       </main>
+      {showBottomNavSkeleton ? <CircleBottomNavSkeleton /> : null}
     </div>
   );
 }

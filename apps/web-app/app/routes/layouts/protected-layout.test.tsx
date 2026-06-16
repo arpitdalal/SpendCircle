@@ -63,6 +63,8 @@ describe("ProtectedLayout shell skeleton", () => {
     // The header (brand) survives the navigation — no full-page swap, no layout shift.
     expect(screen.getByText("Spend Circle")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Go to settings" })).not.toBeInTheDocument();
+    // A non-Circle destination gets no Circle bottom-bar placeholder.
+    expect(screen.queryByTestId("circle-bottom-nav-skeleton")).not.toBeInTheDocument();
 
     slow.resolve();
     expect(await screen.findByText("Settings stub")).toBeInTheDocument();
@@ -83,5 +85,41 @@ describe("ProtectedLayout shell skeleton", () => {
 
     await new Promise((resolve) => setTimeout(resolve, SKELETON_DELAY_MS + 40));
     expect(screen.queryByTestId("route-skeleton")).not.toBeInTheDocument();
+  });
+
+  it("keeps a Circle bottom-bar placeholder mounted while a slow navigation INTO a Circle loads", async () => {
+    // Switching into a Circle routes through the shell skeleton, which unmounts the
+    // Circle layout (and its real mobile bar). The placeholder bar holds the slot so the
+    // mobile bottom bar doesn't flash out then back in during the load (issue #121).
+    const slow = deferred();
+    ready();
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [
+            { index: true, Component: () => <Link to="/circles/home-c2">Open circle</Link> },
+            {
+              path: "circles/:circleRef",
+              Component: () => <h2>Circle stub</h2>,
+              loader: () => slow.promise,
+            },
+          ],
+        },
+      ],
+      ["/"],
+    );
+
+    await userEvent.click(await screen.findByRole("link", { name: "Open circle" }));
+
+    expect(await screen.findByTestId("route-skeleton")).toBeInTheDocument();
+    expect(screen.getByTestId("circle-bottom-nav-skeleton")).toBeInTheDocument();
+
+    // Once the destination resolves the placeholder gives way (the real Circle layout,
+    // not exercised here, owns the live bar from then on).
+    slow.resolve();
+    expect(await screen.findByText("Circle stub")).toBeInTheDocument();
+    expect(screen.queryByTestId("circle-bottom-nav-skeleton")).not.toBeInTheDocument();
   });
 });

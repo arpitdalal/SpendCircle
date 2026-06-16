@@ -21,7 +21,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { RowsSkeleton, Skeleton, SkeletonRegion } from "~/components/skeleton.js";
+import { LoadingStatus, RowsSkeleton, Skeleton } from "~/components/skeleton.js";
 import {
   canonicalDashboardParams,
   type DashboardSelection,
@@ -113,6 +113,13 @@ export default function CircleDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* One polite announcement for the whole surface — the totals, comparison, and
+          recent widgets carry only presentational placeholders, so a screen reader
+          hears "Loading…" once rather than once per widget (issue #121). */}
+      <LoadingStatus
+        loading={dashboard === undefined || comparison === undefined}
+        label="Loading dashboard…"
+      />
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-display text-lg font-semibold tracking-tight">Dashboard</h2>
         <PaidByFilter
@@ -290,9 +297,10 @@ function MonthlyComparisonSection({
       </div>
 
       {comparison === undefined ? (
-        <SkeletonRegion label="Loading comparison…" testId="comparison-skeleton">
+        // Presentational placeholder — the page-level LoadingStatus does the announcing.
+        <div aria-hidden data-testid="comparison-skeleton">
           <Skeleton className="h-72 w-full rounded-xl" />
-        </SkeletonRegion>
+        </div>
       ) : !comparison ? (
         <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
           No comparison available.
@@ -429,9 +437,10 @@ function RecentTransactions({
         Recent activity
       </h3>
       {dashboard === undefined ? (
-        <SkeletonRegion label="Loading recent activity…" testId="recent-skeleton">
+        // Presentational placeholder — the page-level LoadingStatus does the announcing.
+        <div aria-hidden data-testid="recent-skeleton">
           <RowsSkeleton rows={4} />
-        </SkeletonRegion>
+        </div>
       ) : !dashboard || dashboard.recent.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
           No recent activity.

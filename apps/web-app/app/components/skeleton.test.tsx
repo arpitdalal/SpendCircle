@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { PageSkeleton, RowsSkeleton, Skeleton, SkeletonRegion } from "./skeleton.js";
+import { LoadingStatus, PageSkeleton, RowsSkeleton, Skeleton, SkeletonRegion } from "./skeleton.js";
 
 /**
  * Contract of the shared skeleton primitives (issue #121): a polite busy region that
@@ -28,9 +28,18 @@ describe("skeleton primitives", () => {
   });
 
   it("RowsSkeleton renders the requested number of placeholder rows", () => {
-    const { container } = render(<RowsSkeleton rows={3} />);
-    // One card-row wrapper per requested row.
-    expect(container.querySelectorAll(":scope > div > div")).toHaveLength(3);
+    render(<RowsSkeleton rows={3} />);
+    // One addressable card-row per requested row (testid, not DOM structure).
+    expect(screen.getAllByTestId("skeleton-row")).toHaveLength(3);
+  });
+
+  it("LoadingStatus announces once while loading and disappears when done", () => {
+    const { rerender } = render(<LoadingStatus loading label="Loading dashboard…" />);
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Loading dashboard…");
+
+    rerender(<LoadingStatus loading={false} label="Loading dashboard…" />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("PageSkeleton is the generic Phase-1 content region", () => {

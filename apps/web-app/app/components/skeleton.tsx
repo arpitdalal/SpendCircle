@@ -43,6 +43,26 @@ export function SkeletonRegion({
   );
 }
 
+/**
+ * A single page-level busy announcement for a surface composed of SEVERAL
+ * independently-loading widgets (e.g. the Dashboard: totals + comparison + recent).
+ * Each widget keeps a presentational placeholder ({@link Skeleton}/{@link RowsSkeleton},
+ * `aria-hidden`), and this one polite region announces the label ONCE while any of them
+ * is still resolving — so a screen reader hears "Loading…" a single time instead of one
+ * message per widget. Rendered only while `loading` so it is ADDED to the DOM when the
+ * load begins (the reliable cue for live-region announcement) and removed when it ends.
+ */
+export function LoadingStatus({ loading, label }: { loading: boolean; label: string }) {
+  if (!loading) {
+    return null;
+  }
+  return (
+    <span role="status" className="sr-only">
+      {label}
+    </span>
+  );
+}
+
 /** Three stat-card placeholders shaped like the totals grid the Dashboard and the
  * ledger's Monthly totals render. Presentational — wrap in a {@link SkeletonRegion}
  * (or let the live amounts announce) at the call site. */
@@ -70,6 +90,7 @@ export function RowsSkeleton({ rows = 4 }: { rows?: number }) {
       {keys.map((key) => (
         <div
           key={key}
+          data-testid="skeleton-row"
           className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
         >
           <div className="min-w-0 flex-1 space-y-2">

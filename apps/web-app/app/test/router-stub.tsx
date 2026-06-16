@@ -15,7 +15,14 @@ type StubRoutes = Parameters<typeof createRoutesStub>[0];
 /**
  * A promise plus its resolver. Hand `promise` to a route's `loader` to hold that
  * navigation in `"loading"` for as long as the test wants, then call `resolve()` to
- * let the navigation settle — the controllable stand-in for a slow route-chunk download.
+ * let the navigation settle.
+ *
+ * The app itself has NO React Router loaders/actions — in production a navigation sits in
+ * `"loading"` purely while the destination route MODULE downloads. There is no API to
+ * stall a chunk download on demand, so a deferred loader is the test instrument that
+ * reproduces the IDENTICAL observable the layouts react to (`useNavigation().state ===
+ * "loading"` with a pending `navigation.location`). The loader-driven path is never hit
+ * in prod; only the observable it manufactures is.
  */
 export function deferred() {
   let resolve!: () => void;
