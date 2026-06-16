@@ -184,15 +184,18 @@ describe("CircleSearch", () => {
     expect(location()).toBe(url);
   });
 
-  it("opens a result detail without search params", async () => {
+  it("opens a result detail carrying the search URL as returnTo so Back returns to the results", async () => {
     const user = userEvent.setup();
+    const origin = `/circles/${REF}/search?type=all&status=active&q=rent`;
     const { location } = setup({
-      initialEntries: [`/circles/${REF}/search?type=all&status=active&q=rent`],
+      initialEntries: [origin],
       searchTransactions: [makeTransactionView({ ref: "rent-t1", title: "Rent" })],
     });
 
     await user.click(screen.getByRole("link", { name: "View Rent" }));
-    expect(location()).toBe(`/circles/${REF}/transactions/rent-t1`);
+    const dest = new URL(location(), "http://t");
+    expect(dest.pathname).toBe(`/circles/${REF}/transactions/rent-t1`);
+    expect(dest.searchParams.get("returnTo")).toBe(origin);
   });
 
   it("shows numbered page 2 slice and updates the URL when Page 1 is chosen", async () => {

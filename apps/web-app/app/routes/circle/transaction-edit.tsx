@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { Splash } from "~/components/splash.js";
 import { TransactionForm } from "~/components/transaction-form/index.js";
-import { EDIT_RETURN_PARAM, parseEditReturn, withQuery } from "~/lib/ledger-url.js";
+import { parseReturnTo, RETURN_TO_PARAM } from "~/lib/return-to-url.js";
 import { useResolvedTransaction } from "~/lib/use-resolved-transaction.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -17,41 +17,28 @@ import { useCircle } from "~/routes/layouts/circle-layout.js";
  * preserved.
  *
  * This route never reads the edit URL's `month`: an edit has no month of its own (its date
- * comes from the saved Transaction). The `month` param is just ledger context the
- * close carries BACK untouched. Where close (cancel or successful save) and the archived
- * redirect land is the `from` marker: `from=detail` (the detail page's Edit link) strips
- * only the `/edit` segment to return to this Transaction's detail page, so Detail → Edit →
- * close lands back on Detail; the default strips `/:transactionRef/edit` to return to the
- * ledger (the ledger row's Edit link). Either way the URL's own query is reused verbatim,
- * minus the edit-only `from` marker — a slice that was absent stays absent, so it never
- * invents one that would rewrite the detail's Back link. An archived Circle stays accessible
- * and read-only, so an edit link there does not eject through the unavailable path — it
- * lands back on that same return target (the write surface is closed). Reload re-fetches the
- * latest server values; unsaved draft fields are not persisted.
+ * comes from the saved Transaction). Where close (cancel or successful save), the bad-link
+ * fallback, and the archived redirect all land is the validated `returnTo` origin (issue
+ * #123): the exact URL the editor was opened FROM (the detail page, a filtered ledger, a
+ * search result), or — when `returnTo` is absent / malformed / out-of-scope — the Circle's
+ * ledger. The detail page's Edit link sets `returnTo` to its own URL, so Detail → Edit →
+ * close lands back on Detail; a ledger row's Edit link sets the filtered ledger URL. An
+ * archived Circle stays accessible and read-only, so an edit link there does not eject
+ * through the unavailable path — it lands back on that same `returnTo` (the write surface is
+ * closed). Reload re-fetches the latest server values; unsaved draft fields are not persisted.
  */
 export default function TransactionEdit() {
   const circle = useCircle();
   const navigate = useNavigate();
-  const params = useParams();
   const [searchParams] = useSearchParams();
   const writable = circle.status === "active";
 
-  // Close (cancel / successful save) and the archived redirect return to where the editor
-  // was opened FROM, by structurally trimming the current URL — never by re-encoding it.
-  // The query carries back verbatim (minus the edit-only `from` marker), so an absent slice
-  // stays absent. `from=detail` lands on this Transaction's detail object route (drop only
-  // `/edit`); the default lands on the ledger (drop `/:transactionRef/edit`).
-  const returnSlice = new URLSearchParams();
-  const month = searchParams.get("month");
-  if (month) {
-    returnSlice.set("month", month);
-  }
+  // Close (cancel / successful save), the bad-link fallback, and the archived redirect all
+  // return to the validated `returnTo` origin — the exact URL this editor was opened FROM,
+  // with all of its filter/page/month state intact (issue #123). An absent / malformed /
+  // out-of-scope value falls back to the Circle's ledger (anti-enumeration, ADR 0016).
   const ledgerBase = `/circles/${circle.ref}/transactions`;
-  const returnBase =
-    parseEditReturn(searchParams.get(EDIT_RETURN_PARAM)) === "detail"
-      ? `${ledgerBase}/${params.transactionRef}`
-      : ledgerBase;
-  const returnUrl = withQuery(returnBase, returnSlice.toString());
+  const returnUrl = parseReturnTo(searchParams.get(RETURN_TO_PARAM), { fallback: ledgerBase });
 
   // Set the instant we begin leaving (cancel or successful save).
   const [closing, setClosing] = useState(false);
@@ -71,7 +58,7 @@ export default function TransactionEdit() {
   //     live resolver would canonicalize the now-stale URL slug with a `replace` and
   //     drag us back onto the edit route; gating lets the close navigation win.
   const active = writable && !closing;
-  const resolution = useResolvedTransaction({ enabled: active });
+  const resolution = useResolvedTransaction({ enabled: active, fallback: returnUrl });
 
   // An archived Circle is accessible but read-only: drop the edit form state and land on
   // the return target (the detail read surface when opened from there, else the in-place

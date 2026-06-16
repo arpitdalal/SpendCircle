@@ -1,12 +1,13 @@
-import { formatMoney, isValidPlainMonth, money, toCurrencyCode } from "@spend-circle/domain";
+import { formatMoney, money, toCurrencyCode } from "@spend-circle/domain";
 import { Link, useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { Splash } from "~/components/splash.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
 import { type Circle, type TransactionDetail, useTransactionHistory } from "~/lib/data.js";
 import { formatAuditTimestamp } from "~/lib/datetime.js";
-import { editSearch, ledgerSearch, withQuery } from "~/lib/ledger-url.js";
+import { transactionDetailHref, transactionEditHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
+import { parseReturnTo, RETURN_TO_PARAM, withReturnTo } from "~/lib/return-to-url.js";
 import { useResolvedTransactionDetail } from "~/lib/use-resolved-transaction-detail.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -28,46 +29,52 @@ import { useCircle } from "~/routes/layouts/circle-layout.js";
  */
 export default function TransactionDetailRoute() {
   const circle = useCircle();
-  const resolution = useResolvedTransactionDetail();
+  const [searchParams] = useSearchParams();
+
+  // The validated `returnTo` origin (issue #123) is both the Back target and the bad-link
+  // fallback for the resolver, so an unavailable detail link returns the User to where they
+  // opened it FROM. Absent / malformed / out-of-scope falls back to the Circle's ledger.
+  const returnTo = parseReturnTo(searchParams.get(RETURN_TO_PARAM), {
+    fallback: `/circles/${circle.ref}/transactions`,
+  });
+  const resolution = useResolvedTransactionDetail({ fallback: returnTo });
 
   if (resolution.status === "pending") {
     return <Splash label="Opening transaction…" />;
   }
 
-  return <TransactionDetailView circle={circle} transaction={resolution.value} />;
+  return <TransactionDetailView circle={circle} transaction={resolution.value} backTo={returnTo} />;
 }
 
 function TransactionDetailView({
   circle,
   transaction,
+  backTo,
 }: {
   circle: Circle;
   transaction: TransactionDetail;
+  backTo: string;
 }) {
-  const [searchParams] = useSearchParams();
   const currency = toCurrencyCode(circle.currency);
   const amount = formatMoney(money(transaction.amountMinorUnits, currency), viewerLocale());
   const writable = circle.status === "active";
   const isArchived = transaction.status === "archived";
 
-  // Preserve only the selected ledger month. Ledger filters are intentionally not
-  // carried into object routes until redirectTo support lands.
-  const rawMonth = searchParams.get("month");
-  const month = isValidPlainMonth(rawMonth) ? rawMonth : undefined;
-  const ledgerBase = `/circles/${circle.ref}/transactions`;
-  const ledgerUrl = withQuery(ledgerBase, ledgerSearch({ month }));
-  // The edit link carries THIS detail's month plus `from=detail`, so the editor
-  // returns here on close and this page's Back link still points at the same month.
-  const editUrl = withQuery(
-    `${ledgerBase}/${transaction.ref}/edit`,
-    editSearch({ month, from: "detail" }),
+  // The Edit link carries THIS detail page's URL as its `returnTo`, so the editor returns
+  // here on close — and that nested `returnTo` is the canonical detail path re-built from the
+  // already-validated `backTo`, NOT the raw `location.search` (which could echo a tampered
+  // nested value). So both reads agree on the same validated origin, and a ledger → detail →
+  // edit → close trip ends back on detail with Back still pointing at the ledger (issue #123).
+  const editUrl = withReturnTo(
+    transactionEditHref(circle, transaction),
+    withReturnTo(transactionDetailHref(circle, transaction), backTo),
   );
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <Link to={ledgerUrl} className="text-sm text-muted-foreground hover:text-foreground">
-          ‹ Back to transactions
+        <Link to={backTo} className="text-sm text-muted-foreground hover:text-foreground">
+          ‹ Back
         </Link>
         {writable && transaction.canEditFields && !isArchived ? (
           <Link

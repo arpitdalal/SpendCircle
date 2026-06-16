@@ -1,24 +1,14 @@
-import type { PlainMonth } from "@spend-circle/domain";
-
 /**
- * The Monthly Ledger's URL-owned slice as a query string (ADR 0017): the selected
- * `month`. The single home of that encoding so the
- * ledger row's detail link (open a row, keep its slice) and the detail page's Back link
- * (return to the same month) can't drift apart.
- *
- * Returns a bare query (no leading `?`), empty when nothing to preserve, so a caller
- * prepends it onto whatever path it owns: `…/transactions?${q}` or `…/transactions/<ref>?${q}`.
+ * Transaction object-route URL helpers. The origin a route returns to on close/back —
+ * the ledger month, search filters + page, dashboard scope — is no longer carried as a
+ * structural slice here; it lives in the app-wide `returnTo` codec (`return-to-url.ts`,
+ * issue #123). What remains is the canonical detail-path builder shared by the ledger /
+ * search rows and the Dashboard recent feed, plus the small query-join those helpers and
+ * `withReturnTo` reuse so the `?`-vs-empty rule has a single home.
  */
-export function ledgerSearch(opts: { month?: PlainMonth } = {}): string {
-  const params = new URLSearchParams();
-  if (opts.month) {
-    params.set("month", opts.month);
-  }
-  return params.toString();
-}
 
-/** Joins a path with a {@link ledgerSearch} query, omitting the `?` when the query is empty. */
-export function withQuery(path: string, query: string): string {
+/** Joins a path with a bare query (no leading `?`), omitting the `?` when the query is empty. */
+export function withQuery(path: string, query: string) {
   return query ? `${path}?${query}` : path;
 }
 
@@ -29,48 +19,21 @@ export function withQuery(path: string, query: string): string {
 type ObjectRef = { ref: string };
 
 /**
- * Read-only Transaction detail path for a Circle object route, optionally preserving
- * the Ledger/Dashboard month slice (ADR 0017) so the detail page and Back navigation
- * stay consistent with the Monthly Ledger row links.
+ * Canonical read-only Transaction detail path for a Circle object route. The origin to
+ * return to is carried separately as a validated `returnTo` param (see `withReturnTo`),
+ * so this is just the bare path — the single home both the ledger/search rows and the
+ * Dashboard recent feed build, so they can't drift.
  */
-export function transactionDetailHref(
-  circle: ObjectRef,
-  transaction: ObjectRef,
-  ledgerMonth?: PlainMonth,
-) {
-  const base = `/circles/${circle.ref}/transactions/${transaction.ref}`;
-  return ledgerMonth ? withQuery(base, ledgerSearch({ month: ledgerMonth })) : base;
+export function transactionDetailHref(circle: ObjectRef, transaction: ObjectRef) {
+  return `/circles/${circle.ref}/transactions/${transaction.ref}`;
 }
 
 /**
- * Where an edit object route returns on close — Cancel OR a successful save (ADR 0017).
- * The default `"ledger"` lands on the Monthly Ledger (the edit's `month` context);
- * `"detail"` returns to the Transaction detail page the edit was opened from, so a
- * Ledger → Detail → Edit → close trip lands back on Detail, not the Ledger. The detail
- * page's Edit link sets `from=detail`; the ledger row's Edit link omits it (ledger
- * default). Decoded by {@link parseEditReturn} so the edit route honors the same marker.
+ * Canonical edit object-route path — the single home the ledger/search rows and the detail
+ * page both build, so the `/edit` suffix can't drift between call sites. Like
+ * {@link transactionDetailHref} it carries no origin of its own; the caller appends a
+ * validated `returnTo` via `withReturnTo`.
  */
-export type EditReturn = "ledger" | "detail";
-
-/** The edit object link's `from` param: who opened the editor and thus where close returns. */
-export const EDIT_RETURN_PARAM = "from";
-
-/** Decodes the edit route's `from` param to a known {@link EditReturn}; anything else
- * (absent, stale, hand-typed) falls back to the ledger default. */
-export function parseEditReturn(value: string | null): EditReturn {
-  return value === "detail" ? "detail" : "ledger";
-}
-
-/**
- * Builds an edit object link's query: the {@link ledgerSearch} slice to carry forward
- * (so a return to the detail keeps ITS Back target, and a return to the ledger keeps the
- * month) plus, when opened from the detail page, the `from=detail` return marker. Reuses
- * `ledgerSearch` for the slice so the slice encoding has a single home and can't drift.
- */
-export function editSearch(opts: { month?: PlainMonth; from?: EditReturn } = {}): string {
-  const params = new URLSearchParams(ledgerSearch(opts));
-  if (opts.from === "detail") {
-    params.set(EDIT_RETURN_PARAM, "detail");
-  }
-  return params.toString();
+export function transactionEditHref(circle: ObjectRef, transaction: ObjectRef) {
+  return `/circles/${circle.ref}/transactions/${transaction.ref}/edit`;
 }

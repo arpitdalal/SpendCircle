@@ -20,15 +20,22 @@ import { type Resolution, useResolvedRef } from "./use-resolved-ref.js";
  * read-only detail query, so it resolves for ANY current Member and for an archived
  * (frozen) Transaction too — the server only collapses missing / inaccessible / wrong-
  * Circle to `null`. That `null` flows to the primitive, which fires the generic
- * unavailable-link snackbar and falls back to the Circle's Transactions route; a stale
- * title slug canonicalizes in place. There is no `enabled` gate: a detail surface has no
- * save-rename race or write-when-archived case to suppress, so resolution always runs.
+ * unavailable-link snackbar and falls back to the caller-supplied `fallback` — the
+ * validated `returnTo` origin the route computed (issue #123), so an unavailable detail
+ * link returns the User to where they opened it FROM, or the Circle's Transactions route
+ * when `returnTo` is absent/malformed; a stale title slug canonicalizes in place. There
+ * is no `enabled` gate: a detail surface has no save-rename race or write-when-archived
+ * case to suppress, so resolution always runs.
  */
-export function useResolvedTransactionDetail(): Resolution<TransactionDetail> {
+export function useResolvedTransactionDetail({
+  fallback,
+}: {
+  /** The validated `returnTo` origin (issue #123) the route also uses as its Back target. */
+  fallback: string;
+}): Resolution<TransactionDetail> {
   const circle = useCircle();
   const { transactionRef } = useParams();
   const { isAuthenticated } = useConvexAuth();
-  const fallback = `/circles/${circle.ref}/transactions`;
 
   const parsed = parseTransactionRef(transactionRef);
   const queried = useQuery(

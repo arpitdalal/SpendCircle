@@ -54,7 +54,8 @@ test("transaction search finds circle transactions across months and opens detai
   await expect(result).toBeVisible();
 
   await result.getByRole("link", { name: `View ${title}` }).click();
-  await expect(page).toHaveURL(/\/transactions\/[^/?]+$/);
+  // The result detail link carries the search URL as `returnTo` so Back returns to results.
+  await expect(page).toHaveURL(/\/transactions\/[^/?]+\?returnTo=.*search/);
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
 });
 

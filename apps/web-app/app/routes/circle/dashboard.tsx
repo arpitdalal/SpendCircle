@@ -9,7 +9,7 @@ import {
   toCurrencyCode,
 } from "@spend-circle/domain";
 import { useEffect } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 import {
   Bar,
   CartesianGrid,
@@ -41,6 +41,7 @@ import {
 import { formatMonthLabel, formatMonthTick } from "~/lib/datetime.js";
 import { transactionDetailHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
+import { withReturnTo } from "~/lib/return-to-url.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -430,6 +431,10 @@ function RecentTransactions({
   circle: Circle;
 }) {
   const currency = toCurrencyCode(circle.currency);
+  // The Dashboard's own URL (its scope/Paid By filter) is the origin a recent row returns
+  // to via `returnTo` (#123), matching the ledger/search row links.
+  const location = useLocation();
+  const origin = location.pathname + location.search;
 
   return (
     <section className="space-y-3" aria-labelledby="dashboard-recent-heading">
@@ -448,13 +453,7 @@ function RecentTransactions({
       ) : (
         <ul className="space-y-2">
           {dashboard.recent.map((txn) => (
-            <RecentRow
-              key={txn.id}
-              circle={circle}
-              txn={txn}
-              currency={currency}
-              month={dashboard.month}
-            />
+            <RecentRow key={txn.id} circle={circle} txn={txn} currency={currency} origin={origin} />
           ))}
         </ul>
       )}
@@ -466,19 +465,19 @@ function RecentRow({
   circle,
   txn,
   currency,
-  month,
+  origin,
 }: {
   circle: Circle;
   txn: Transaction;
   currency: ReturnType<typeof toCurrencyCode>;
-  month: Dashboard["month"];
+  origin: string;
 }) {
   return (
     <li className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">
           <Link
-            to={transactionDetailHref(circle, txn, month)}
+            to={withReturnTo(transactionDetailHref(circle, txn), origin)}
             className="hover:underline"
             aria-label={`View ${txn.title}`}
           >

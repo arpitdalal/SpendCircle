@@ -5,8 +5,8 @@ import type { Circle } from "~/lib/data.js";
 import { SnackbarProvider } from "~/lib/snackbar.js";
 import type { CircleOutletContext } from "~/routes/layouts/circle-layout.js";
 
-function withRouter(node: ReactElement) {
-  return <MemoryRouter>{node}</MemoryRouter>;
+function withRouter(node: ReactElement, initialEntries?: string[]) {
+  return <MemoryRouter initialEntries={initialEntries}>{node}</MemoryRouter>;
 }
 
 /** Renders a route that reads no Circle context (e.g. Home) under a real router. */
@@ -19,8 +19,14 @@ export function renderWithRouter(element: ReactElement) {
  * runs. `rerenderInCircle` rebuilds a fresh element tree so React reconciles (re-
  * reading the query doubles) rather than bailing on an identical element; pass a
  * `nextCircle` to model the reactive `getCircle` flipping (e.g. the Circle archived
- * mid-edit), defaulting to the originally-rendered Circle. */
-export function renderInCircle(circle: Circle, element: ReactElement) {
+ * mid-edit), defaulting to the originally-rendered Circle. `initialEntries` seeds the
+ * address bar so a route reading the current URL (e.g. the Dashboard building a
+ * `returnTo` from its own location) sees a realistic path under the `*` match. */
+export function renderInCircle(
+  circle: Circle,
+  element: ReactElement,
+  opts: { initialEntries?: string[] } = {},
+) {
   const wrap = (node: ReactElement, current: Circle) =>
     withRouter(
       <Routes>
@@ -28,6 +34,7 @@ export function renderInCircle(circle: Circle, element: ReactElement) {
           <Route path="*" element={node} />
         </Route>
       </Routes>,
+      opts.initialEntries,
     );
   const result = render(wrap(element, circle));
   return {

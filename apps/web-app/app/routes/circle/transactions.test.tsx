@@ -255,18 +255,17 @@ describe("CircleTransactions", () => {
     expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05&type=all&status=all`);
   });
 
-  it("carries only month to detail and edit object routes", async () => {
+  it("carries the full ledger URL (filters + month) to the detail route as returnTo", async () => {
     const user = userEvent.setup();
+    const origin = `/circles/${REF}/transactions?month=2026-05&type=expense&status=archived&q=rent`;
     const txn = makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" });
-    const { location } = setup({
-      filteredTransactions: [txn],
-      initialEntries: [
-        `/circles/${REF}/transactions?month=2026-05&type=expense&status=archived&q=rent`,
-      ],
-    });
+    const { location } = setup({ filteredTransactions: [txn], initialEntries: [origin] });
 
     await user.click(screen.getByRole("link", { name: "View Weekly shop" }));
-    expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`);
+    const dest = new URL(location(), "http://t");
+    expect(dest.pathname).toBe(`/circles/${REF}/transactions/weekly-shop-t1`);
+    // The exact origin (all of its filter state) round-trips so the detail's Back returns here.
+    expect(dest.searchParams.get("returnTo")).toBe(origin);
   });
 
   it("opens create form from the add CTA and keeps month/filter URL state", async () => {

@@ -1,4 +1,3 @@
-import { currentMonth } from "@spend-circle/domain";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, useNavigate } from "react-router";
@@ -29,6 +28,11 @@ import TransactionEdit from "./transaction-edit.js";
 
 const REF = "trip-c1";
 const updateTransaction = vi.fn();
+
+// The validated `returnTo` origin an editor is opened with (issue #123): a filtered ledger.
+// Close / save / bad-link fallback / archived redirect all land back here.
+const LEDGER_ORIGIN = `/circles/${REF}/transactions?month=2026-05`;
+const LEDGER = encodeURIComponent(LEDGER_ORIGIN);
 
 const ROUTES = (
   <>
@@ -61,7 +65,7 @@ function setup(
     editableTransaction: opts.editableTransaction,
     updateTransaction,
   });
-  const url = opts.url ?? `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05`;
+  const url = opts.url ?? `/circles/${REF}/transactions/weekly-shop-t1/edit?returnTo=${LEDGER}`;
   return renderCircleRoutes(circle, ROUTES, { initialEntries: [url] });
 }
 
@@ -83,33 +87,41 @@ describe("TransactionEdit — resolution", () => {
     expect(within(form).getByLabelText("Title")).toHaveValue("Weekly shop");
   });
 
-  it("canonicalizes a stale title slug in place, preserving the month", async () => {
+  it("canonicalizes a stale title slug in place, preserving the returnTo query", async () => {
     const { location } = setup({
       editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
-      url: `/circles/${REF}/transactions/stale-slug-t1/edit?month=2026-05`,
+      url: `/circles/${REF}/transactions/stale-slug-t1/edit?returnTo=${LEDGER}`,
     });
     await waitFor(() =>
-      expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05`),
+      expect(location()).toBe(
+        `/circles/${REF}/transactions/weekly-shop-t1/edit?returnTo=${LEDGER}`,
+      ),
     );
   });
 });
 
 describe("TransactionEdit — unavailable target (anti-enumeration)", () => {
-  it("falls back to the ledger with the month preserved and shows the generic snackbar", async () => {
+  it("falls back to the returnTo origin and shows the generic snackbar", async () => {
     const { location } = setup({ editableTransaction: null });
-    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    await waitFor(() => expect(location()).toBe(LEDGER_ORIGIN));
     expect(screen.getByText("That link isn't available.")).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: /edit transaction/i })).not.toBeInTheDocument();
   });
 
-  it("falls back to the current month when the edit URL has no valid month", async () => {
+  it("falls back to the bare ledger when the edit URL has no returnTo", async () => {
     const { location } = setup({
       editableTransaction: null,
       url: `/circles/${REF}/transactions/weekly-shop-t1/edit`,
     });
-    await waitFor(() =>
-      expect(location()).toBe(`/circles/${REF}/transactions?month=${currentMonth(new Date())}`),
-    );
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions`));
+  });
+
+  it("falls back to the bare ledger for a tampered (protocol-relative) returnTo — no open redirect", async () => {
+    const { location } = setup({
+      editableTransaction: null,
+      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?returnTo=${encodeURIComponent("//evil.com")}`,
+    });
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions`));
   });
 
   it("still takes the bad-link path for a malformed ref on a WRITABLE circle", async () => {
@@ -117,9 +129,9 @@ describe("TransactionEdit — unavailable target (anti-enumeration)", () => {
     // Circle a malformed edit ref is an app-emitted bad link — generic snackbar + report.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { location } = setup({
-      url: `/circles/${REF}/transactions/not-valid!/edit?month=2026-05`,
+      url: `/circles/${REF}/transactions/not-valid!/edit?returnTo=${LEDGER}`,
     });
-    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    await waitFor(() => expect(location()).toBe(LEDGER_ORIGIN));
     expect(screen.getByText("That link isn't available.")).toBeInTheDocument();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
@@ -127,11 +139,11 @@ describe("TransactionEdit — unavailable target (anti-enumeration)", () => {
 });
 
 describe("TransactionEdit — return navigation", () => {
-  it("returns to the ledger month on cancel, even when the transaction is off that month", async () => {
+  it("returns to the returnTo origin on cancel, even when the transaction is off that month", async () => {
     const user = userEvent.setup();
     const { location } = setup({
-      // The edited Transaction is in September, but the ledger context is May — closing
-      // must return to May, not jump to the Transaction's own month (ADR 0017).
+      // The edited Transaction is in September, but the editor was opened from the May
+      // ledger — closing must return to that origin, not the Transaction's own month.
       editableTransaction: makeTransactionView({
         ref: "weekly-shop-t1",
         title: "Weekly shop",
@@ -140,10 +152,10 @@ describe("TransactionEdit — return navigation", () => {
       }),
     });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`);
+    expect(location()).toBe(LEDGER_ORIGIN);
   });
 
-  it("returns to the ledger month after a successful save", async () => {
+  it("returns to the returnTo origin after a successful save", async () => {
     const user = userEvent.setup();
     const { location } = setup({
       editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
@@ -154,20 +166,24 @@ describe("TransactionEdit — return navigation", () => {
     await user.click(within(form).getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(updateTransaction).toHaveBeenCalled());
-    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    await waitFor(() => expect(location()).toBe(LEDGER_ORIGIN));
   });
 });
 
-describe("TransactionEdit — return to the detail page (from=detail)", () => {
-  it("returns to the transaction detail on cancel when opened from there, keeping the month", async () => {
+describe("TransactionEdit — return to the detail page (returnTo = detail URL)", () => {
+  // The detail page's Edit link sets returnTo to the detail's own URL (which itself still
+  // carries a returnTo to the ledger), so edit → close lands back on detail.
+  const DETAIL_RETURN = `/circles/${REF}/transactions/weekly-shop-t1?returnTo=${LEDGER}`;
+  const detailEditUrl = `/circles/${REF}/transactions/weekly-shop-t1/edit?returnTo=${encodeURIComponent(DETAIL_RETURN)}`;
+
+  it("returns to the transaction detail on cancel when opened from there", async () => {
     const user = userEvent.setup();
     const { location } = setup({
       editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
-      // The detail's Edit link carries the detail's own ledger slice + the from marker.
-      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&view=archived&from=detail`,
+      url: detailEditUrl,
     });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`);
+    expect(location()).toBe(DETAIL_RETURN);
     expect(screen.getByText("detail")).toBeInTheDocument();
   });
 
@@ -175,7 +191,7 @@ describe("TransactionEdit — return to the detail page (from=detail)", () => {
     const user = userEvent.setup();
     const { location } = setup({
       editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
-      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&from=detail`,
+      url: detailEditUrl,
     });
     const form = screen.getByRole("form", { name: /edit transaction/i });
     await user.clear(within(form).getByLabelText("Title"));
@@ -183,61 +199,54 @@ describe("TransactionEdit — return to the detail page (from=detail)", () => {
     await user.click(within(form).getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(updateTransaction).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`),
-    );
+    await waitFor(() => expect(location()).toBe(DETAIL_RETURN));
   });
 
-  it("returns to the BARE detail (no injected month) when opened from a sliceless detail", async () => {
-    // A detail opened with no ledger slice has a bare-ledger Back link; its Edit link is
-    // `?from=detail` with no month. Close must return to the bare detail — the form's
-    // current-month default is ledger CONTEXT and must not leak into the return slice, or
-    // it would rewrite the detail's Back link to a specific month the user never picked.
+  it("returns to the BARE detail when opened from a detail that had no origin of its own", async () => {
     const user = userEvent.setup();
+    const bareDetail = `/circles/${REF}/transactions/weekly-shop-t1`;
     const { location } = setup({
       editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
-      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?from=detail`,
+      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?returnTo=${encodeURIComponent(bareDetail)}`,
     });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1`);
+    expect(location()).toBe(bareDetail);
     expect(screen.getByText("detail")).toBeInTheDocument();
   });
 
   it("returns to the detail read surface on an archived Circle when opened from there", async () => {
     // Archived ≠ inaccessible: the detail is a read surface that still opens, so a
-    // from=detail edit link on a read-only Circle lands back on detail, not the ledger.
+    // detail-origin edit link on a read-only Circle lands back on detail, not the ledger.
     const { location } = setup({
       circle: { status: "archived" },
       editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
-      url: `/circles/${REF}/transactions/weekly-shop-t1/edit?month=2026-05&from=detail`,
+      url: detailEditUrl,
     });
-    await waitFor(() =>
-      expect(location()).toBe(`/circles/${REF}/transactions/weekly-shop-t1?month=2026-05`),
-    );
+    await waitFor(() => expect(location()).toBe(DETAIL_RETURN));
     expect(screen.queryByRole("form", { name: /edit transaction/i })).not.toBeInTheDocument();
     expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
   });
 });
 
 describe("TransactionEdit — archived Circle stays read-only in place", () => {
-  it("redirects an edit link to the read-only ledger without ejecting through unavailable", async () => {
+  it("redirects an edit link to the returnTo origin without ejecting through unavailable", async () => {
     const { location } = setup({
       circle: { status: "archived" },
       // Even with a resolvable target, an archived Circle is read-only: no edit form.
       editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
     });
-    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    await waitFor(() => expect(location()).toBe(LEDGER_ORIGIN));
     expect(screen.queryByRole("form", { name: /edit transaction/i })).not.toBeInTheDocument();
     // Read-only redirect, not the unavailable-link path — no snackbar.
     expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
   });
 
   it("redirects without the unavailable snackbar even when the target resolves to null", async () => {
-    // An archived Circle must drop ANY edit URL to the read-only ledger — including one
+    // An archived Circle must drop ANY edit URL to the returnTo origin — including one
     // whose target is unavailable. The resolver is disabled while read-only, so the
     // generic unavailable-link path can never fire and race the redirect.
     const { location } = setup({ circle: { status: "archived" }, editableTransaction: null });
-    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    await waitFor(() => expect(location()).toBe(LEDGER_ORIGIN));
     expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
     expect(screen.queryByRole("form", { name: /edit transaction/i })).not.toBeInTheDocument();
   });
@@ -245,14 +254,14 @@ describe("TransactionEdit — archived Circle stays read-only in place", () => {
   it("redirects a MALFORMED edit ref silently — no unavailable snackbar, no app-error report", async () => {
     // An unparseable ref is normally an app-emitted bad link (reported + snackbar). But a
     // read-only Circle disables resolution entirely, so even a malformed edit URL drops
-    // to the in-place ledger with no snackbar and no spurious app-error report.
+    // to the returnTo origin with no snackbar and no spurious app-error report.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { location } = setup({
       circle: { status: "archived" },
       editableTransaction: null,
-      url: `/circles/${REF}/transactions/not-valid!/edit?month=2026-05`,
+      url: `/circles/${REF}/transactions/not-valid!/edit?returnTo=${LEDGER}`,
     });
-    await waitFor(() => expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05`));
+    await waitFor(() => expect(location()).toBe(LEDGER_ORIGIN));
     expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
@@ -312,8 +321,8 @@ describe("TransactionEdit — target change without a loading gap", () => {
       updateTransaction,
     });
     renderCircleRoutes(makeCircleView(), ROUTES, {
-      initialEntries: [`/circles/${REF}/transactions/alpha-t1/edit?month=2026-05`],
-      chrome: <GoTo to={`/circles/${REF}/transactions/beta-t2/edit?month=2026-05`} />,
+      initialEntries: [`/circles/${REF}/transactions/alpha-t1/edit?returnTo=${LEDGER}`],
+      chrome: <GoTo to={`/circles/${REF}/transactions/beta-t2/edit?returnTo=${LEDGER}`} />,
     });
 
     const form = () => screen.getByRole("form", { name: /edit transaction/i });
