@@ -450,7 +450,8 @@ test("the transaction detail shows audit metadata and history reflecting an edit
   await applyLedgerStatus(page, "archived");
   const archivedRow = page.getByRole("listitem").filter({ hasText: title });
   await archivedRow.getByRole("link", { name: `View ${title}` }).click();
-  await expect(page).toHaveURL(/\/transactions\/[^/]+\?month=/);
+  // The detail link carries the ledger URL (with its month) as `returnTo` (issue #123).
+  await expect(page).toHaveURL(new RegExp(`/transactions/[^/]+\\?returnTo=.*month%3D${month}`));
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
 
   const audit = page.getByRole("region", { name: "Audit metadata" });

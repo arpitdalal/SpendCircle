@@ -62,6 +62,12 @@ describe("parseReturnTo", () => {
     ["a NUL control char", "/circles/trip-c1/\0/evil"],
     ["a `..` traversal out of scope", "/circles/trip-c1/../settings"],
     ["a `..` traversal to another circle", "/circles/trip-c1/../../circles/other-c2"],
+    // Percent-encoded dot segments: URLSearchParams hands these back undecoded, but the
+    // browser collapses them to `..` while normalizing the path → must reject (PR #128 review).
+    ["a fully encoded `%2e%2e` traversal", "/circles/trip-c1/%2e%2e/%2e%2e/settings"],
+    ["an upper-case `%2E%2E` traversal", "/circles/trip-c1/%2E%2E/settings"],
+    ["a mixed literal/encoded `.%2e` traversal", "/circles/trip-c1/.%2e/settings"],
+    ["a mixed encoded/literal `%2e.` traversal", "/circles/trip-c1/%2e./settings"],
     ["an over-length value", `/circles/trip-c1/${"x".repeat(3000)}`],
   ])("falls back for %s", (_name, raw) => {
     expect(parseReturnTo(raw, { fallback: FALLBACK })).toBe(FALLBACK);

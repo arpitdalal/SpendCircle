@@ -53,6 +53,17 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 const CIRCLE_SCOPED_PATH = /^\/circles\/[^/?#]+(?:[/?#]|$)/;
 
 /**
+ * A `..` traversal segment in any of the forms the browser collapses to `..` during the
+ * single percent-decode it applies while normalizing a path: literal `..`, or either dot
+ * percent-encoded (`%2e.`, `.%2e`, `%2e%2e`, any case). The literal check alone misses the
+ * encoded forms — `URLSearchParams` hands us `%2e%2e` undecoded, the segment string is not
+ * `".."`, yet `navigate()` normalizes it to a climb out of the Circle scope. (Double
+ * encoding like `%252e` decodes only to `%2e`, not `.`, in that one pass, so it never forms
+ * a traversal segment and the shape checks already reject it.)
+ */
+const DOT_SEGMENT = /^(?:\.|%2e){2}$/i;
+
+/**
  * Validates a raw `returnTo` query value, returning it only when it is a safe in-Circle
  * destination, else the caller's `fallback`. The `fallback` (a route the caller already
  * trusts — typically the Circle's ledger) covers every reject path, so a tampered value
@@ -86,9 +97,10 @@ export function parseReturnTo(raw: string | null, { fallback }: { fallback: stri
     return fallback;
   }
   // Reject `..` traversal that could climb out of the Circle scope after the browser
-  // normalizes the path (`/circles/c1/../settings`).
+  // normalizes the path — in literal OR percent-encoded form (`/circles/c1/../settings`,
+  // `/circles/c1/%2e%2e/settings`). See {@link DOT_SEGMENT}.
   const [pathname = raw] = raw.split(/[?#]/, 1);
-  if (pathname.split("/").includes("..")) {
+  if (pathname.split("/").some((segment) => DOT_SEGMENT.test(segment))) {
     return fallback;
   }
   return raw;
