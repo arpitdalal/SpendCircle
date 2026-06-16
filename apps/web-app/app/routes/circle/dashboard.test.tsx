@@ -61,15 +61,23 @@ describe("Dashboard totals", () => {
     expect(screen.getByText("US$87.50")).toBeInTheDocument(); // expenses
   });
 
-  it("shows placeholders while the dashboard loads", () => {
+  it("shows skeletons while the dashboard loads", () => {
     // A function returning `undefined` models the reactive query still loading
     // (passing `dashboard: undefined` would hit the helper's EMPTY_DASHBOARD default).
     configureConvex({ dashboard: () => undefined });
     renderInCircle(makeCircleView(), <CircleDashboard />);
 
-    // Three totals placeholders, plus the recent loading line.
-    expect(screen.getAllByText("…")).toHaveLength(3);
-    expect(screen.getByText(/loading recent activity/i)).toBeInTheDocument();
+    // The totals grid reads as busy and the recent feed shows its skeleton placeholder.
+    expect(screen.getByText(/this month's totals/i).closest("fieldset")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(screen.getByTestId("recent-skeleton")).toBeInTheDocument();
+    // Exactly ONE polite announcement covers the whole surface (not one per widget),
+    // and the per-widget placeholders stay out of the a11y tree (aria-hidden).
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toHaveTextContent(/loading dashboard/i);
   });
 });
 
@@ -208,10 +216,10 @@ describe("Dashboard month-over-month comparison (RPT-4)", () => {
     expect(within(section).queryByText("$100.00")).not.toBeInTheDocument();
   });
 
-  it("shows a loading state while the comparison loads", () => {
+  it("shows a skeleton while the comparison loads", () => {
     configureConvex({ monthlyComparison: () => undefined });
     renderInCircle(makeCircleView(), <CircleDashboard />);
-    expect(screen.getByText(/loading comparison/i)).toBeInTheDocument();
+    expect(screen.getByTestId("comparison-skeleton")).toBeInTheDocument();
   });
 
   it("formats the series in the viewer locale", () => {
@@ -379,9 +387,12 @@ describe("Dashboard URL state (paidBy + range)", () => {
     configureConvex({ paidByFilterOptions: undefined, dashboard: makeDashboard() });
     setup("?paidBy=mem-alex");
 
-    expect(screen.getAllByText("…")).toHaveLength(3);
-    expect(screen.getByText(/loading comparison/i)).toBeInTheDocument();
-    expect(screen.getByText(/loading recent activity/i)).toBeInTheDocument();
+    expect(screen.getByText(/this month's totals/i).closest("fieldset")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(screen.getByTestId("comparison-skeleton")).toBeInTheDocument();
+    expect(screen.getByTestId("recent-skeleton")).toBeInTheDocument();
     expect(screen.queryByText("$5,000.00")).not.toBeInTheDocument();
   });
 });

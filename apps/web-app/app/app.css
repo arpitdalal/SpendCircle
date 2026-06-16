@@ -130,6 +130,9 @@
   --animate-slide-up: slide-up 250ms var(--ease-out-quart);
   --animate-panel-up: panel-up 250ms var(--ease-out-quart);
   --animate-panel-side: panel-side 250ms var(--ease-out-quart);
+  /* Loading skeleton pulse. The global prefers-reduced-motion rule freezes it to a
+     static muted block, so the placeholder SHAPE is the cue — no motion required. */
+  --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
 
   @keyframes pop-in {
     from {
@@ -173,6 +176,15 @@
     }
     to {
       transform: translateX(0);
+    }
+  }
+  @keyframes pulse-soft {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
     }
   }
 }

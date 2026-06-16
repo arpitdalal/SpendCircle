@@ -1,3 +1,4 @@
+import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Avatar } from "~/components/ui/avatar.js";
 import { type Member, useMembers } from "~/lib/data.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -24,7 +25,11 @@ export default function CircleMembers() {
 
 function MemberList({ members }: { members: Member[] | null | undefined }) {
   if (members === undefined) {
-    return <p className="text-sm text-muted-foreground">Loading members…</p>;
+    return (
+      <SkeletonRegion label="Loading members…" testId="members-skeleton">
+        <RowsSkeleton rows={4} />
+      </SkeletonRegion>
+    );
   }
   // null ≡ inaccessible Circle (ADR 0016); the Circle guard already gated entry, so
   // a late null means there's nothing to show. An empty list can't normally happen

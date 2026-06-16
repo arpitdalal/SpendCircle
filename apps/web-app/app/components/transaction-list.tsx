@@ -2,6 +2,7 @@ import { formatMoney, money, type PlainMonth, toCurrencyCode } from "@spend-circ
 import { useState } from "react";
 import { Link } from "react-router";
 import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
+import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Button } from "~/components/ui/button.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
 import {
@@ -44,7 +45,11 @@ export function TransactionList({
   const { transactions, status, loadMore } = paginated;
 
   if (status === "LoadingFirstPage") {
-    return <p className="text-sm text-muted-foreground">Loading transactions…</p>;
+    return (
+      <SkeletonRegion label="Loading transactions…" testId="transactions-skeleton">
+        <RowsSkeleton rows={5} />
+      </SkeletonRegion>
+    );
   }
   if (transactions.length === 0) {
     return (

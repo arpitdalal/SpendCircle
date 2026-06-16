@@ -36,7 +36,11 @@ export function AccountMenu({ user, showSignOut }: { user: SessionUser; showSign
               <p className="text-sm font-medium text-foreground">{user.displayName}</p>
               <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
-            <Menu.LinkItem className={menuItemClass} closeOnClick render={<Link to="/settings" />}>
+            <Menu.LinkItem
+              className={menuItemClass}
+              closeOnClick
+              render={<Link to="/settings" prefetch="intent" />}
+            >
               Settings
             </Menu.LinkItem>
             {showSignOut ? (

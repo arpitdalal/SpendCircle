@@ -140,6 +140,27 @@ describe("CircleTransactions", () => {
     expect(screen.getByLabelText("Month")).toHaveValue(NOW_MONTH);
   });
 
+  it("shows a row skeleton while the first page loads, then content replaces it", async () => {
+    const view = setup({ status: "LoadingFirstPage", filteredTransactions: [] });
+    const skeleton = await screen.findByTestId("transactions-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(within(skeleton).getByText(/loading transactions/i)).toBeInTheDocument();
+
+    // Resolve the first page (reconfigure the doubles, re-render the same tree): the
+    // skeleton gives way to the real rows.
+    configureConvex({
+      categories: [makeCategoryView()],
+      members: [makeMemberView()],
+      ledgerFilterTransactions: [makeTransactionView({ title: "Weekly shop" })],
+      ledgerFilterStatus: "Exhausted",
+      ledgerFilterOptions: makeFilterOptions(),
+      monthlySummary: null,
+    });
+    view.rerender();
+    expect(await screen.findByText("Weekly shop")).toBeInTheDocument();
+    expect(screen.queryByTestId("transactions-skeleton")).not.toBeInTheDocument();
+  });
+
   it("drives the list from the ledger filter query with status=all by default", async () => {
     setup({ filteredTransactions: [makeTransactionView({ title: "Weekly shop" })] });
 

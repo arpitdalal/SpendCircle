@@ -1,0 +1,125 @@
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { Link } from "react-router";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SKELETON_DELAY_MS } from "~/lib/route-skeleton.js";
+import { configureConvex, makeCurrentUserView } from "~/test/convex-react.js";
+import { installIntersectionObserverStub } from "~/test/intersection-observer-stub.js";
+import { deferred, renderRouteStub } from "~/test/router-stub.js";
+
+/**
+ * Phase-1 shell-skeleton behavior for the protected (app shell) layout (issue #121).
+ * Same seam as the Circle layout test: a `createRoutesStub` data router gives the REAL
+ * layout a genuine pending navigation, only `convex/react` is doubled, and the real
+ * session state machine reads the modeled `getCurrentUser` to reach the Ready branch.
+ * The header chrome must stay put while the `<Outlet/>` content swaps to the skeleton.
+ */
+vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+
+import ProtectedLayout from "./protected-layout.js";
+
+// biome-ignore lint/suspicious/noExplicitAny: thin route-tree stand-ins; the layout is the unit under test.
+function routesWith(settingsLoader: () => any) {
+  return [
+    {
+      path: "/",
+      Component: ProtectedLayout,
+      children: [
+        { index: true, Component: () => <Link to="/settings">Go to settings</Link> },
+        {
+          path: "settings",
+          Component: () => <h2>Settings stub</h2>,
+          loader: settingsLoader,
+        },
+      ],
+    },
+  ];
+}
+
+installIntersectionObserverStub();
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+function ready() {
+  // A bootstrapped User (session Ready) plus an empty Circle list for the switcher.
+  configureConvex({ currentUser: makeCurrentUserView(), circles: [] });
+}
+
+describe("ProtectedLayout shell skeleton", () => {
+  it("shows the generic skeleton while a slow shell navigation loads, keeping the header", async () => {
+    const slow = deferred();
+    ready();
+    renderRouteStub(
+      routesWith(() => slow.promise),
+      ["/"],
+    );
+
+    await userEvent.click(await screen.findByRole("link", { name: "Go to settings" }));
+
+    const main = screen.getByRole("main");
+    expect(await within(main).findByTestId("route-skeleton")).toBeInTheDocument();
+    // The header (brand) survives the navigation — no full-page swap, no layout shift.
+    expect(screen.getByText("Spend Circle")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Go to settings" })).not.toBeInTheDocument();
+    // A non-Circle destination gets no Circle bottom-bar placeholder.
+    expect(screen.queryByTestId("circle-bottom-nav-skeleton")).not.toBeInTheDocument();
+
+    slow.resolve();
+    expect(await screen.findByText("Settings stub")).toBeInTheDocument();
+    expect(screen.queryByTestId("route-skeleton")).not.toBeInTheDocument();
+  });
+
+  it("does not flash a skeleton for a fast navigation (flicker guard)", async () => {
+    ready();
+    renderRouteStub(
+      routesWith(() => null),
+      ["/"],
+    );
+
+    await userEvent.click(await screen.findByRole("link", { name: "Go to settings" }));
+
+    expect(await screen.findByText("Settings stub")).toBeInTheDocument();
+    expect(screen.queryByTestId("route-skeleton")).not.toBeInTheDocument();
+
+    await new Promise((resolve) => setTimeout(resolve, SKELETON_DELAY_MS + 40));
+    expect(screen.queryByTestId("route-skeleton")).not.toBeInTheDocument();
+  });
+
+  it("keeps a Circle bottom-bar placeholder mounted while a slow navigation INTO a Circle loads", async () => {
+    // Switching into a Circle routes through the shell skeleton, which unmounts the
+    // Circle layout (and its real mobile bar). The placeholder bar holds the slot so the
+    // mobile bottom bar doesn't flash out then back in during the load (issue #121).
+    const slow = deferred();
+    ready();
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [
+            { index: true, Component: () => <Link to="/circles/home-c2">Open circle</Link> },
+            {
+              path: "circles/:circleRef",
+              Component: () => <h2>Circle stub</h2>,
+              loader: () => slow.promise,
+            },
+          ],
+        },
+      ],
+      ["/"],
+    );
+
+    await userEvent.click(await screen.findByRole("link", { name: "Open circle" }));
+
+    expect(await screen.findByTestId("route-skeleton")).toBeInTheDocument();
+    expect(screen.getByTestId("circle-bottom-nav-skeleton")).toBeInTheDocument();
+
+    // Once the destination resolves the placeholder gives way (the real Circle layout,
+    // not exercised here, owns the live bar from then on).
+    slow.resolve();
+    expect(await screen.findByText("Circle stub")).toBeInTheDocument();
+    expect(screen.queryByTestId("circle-bottom-nav-skeleton")).not.toBeInTheDocument();
+  });
+});

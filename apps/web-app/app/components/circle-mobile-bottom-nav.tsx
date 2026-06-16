@@ -71,6 +71,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
               key={item.to}
               to={item.to}
               end={item.end}
+              prefetch="viewport"
               className={({ isActive }) => slotClass(isActive)}
             >
               {Icon ? <Icon aria-hidden className="size-5 shrink-0" /> : null}
@@ -120,6 +121,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
                     key={item.to}
                     to={item.to}
                     end={item.end}
+                    prefetch="intent"
                     onClick={() => setMoreOpen(false)}
                     className={({ isActive }) =>
                       cn(
@@ -140,5 +142,35 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
         </Dialog.Portal>
       </Dialog.Root>
     </>
+  );
+}
+
+/**
+ * Presentational stand-in for the Circle bottom bar shown during a cross-Circle shell
+ * skeleton (issue #121). Switching Circles routes to the shell `PageSkeleton`, which
+ * unmounts `CircleLayout` and with it the real bar; without this the bar would flash out
+ * and back, the one mobile layout shift the loading work otherwise avoids. It mirrors the
+ * real bar's footprint (same fixed frame, `PRIMARY_SLOT_COUNT` slots + "More") so the
+ * swap is seamless, and is `aria-hidden` — the shell `PageSkeleton` already announces the
+ * load, and the real, navigable bar mounts the moment the destination Circle resolves.
+ */
+export function CircleBottomNavSkeleton() {
+  const slots = Array.from(
+    { length: PRIMARY_SLOT_COUNT + 1 },
+    (_, index) => `bottom-nav-slot-${index}`,
+  );
+  return (
+    <div
+      aria-hidden
+      data-testid="circle-bottom-nav-skeleton"
+      className="fixed inset-x-0 bottom-0 z-30 flex h-16 items-stretch border-t border-border bg-background/80 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden"
+    >
+      {slots.map((slot) => (
+        <div key={slot} className="flex flex-1 flex-col items-center justify-center gap-1.5 py-2">
+          <span className="size-5 animate-pulse-soft rounded-full bg-muted" />
+          <span className="h-2.5 w-10 animate-pulse-soft rounded bg-muted" />
+        </div>
+      ))}
+    </div>
   );
 }

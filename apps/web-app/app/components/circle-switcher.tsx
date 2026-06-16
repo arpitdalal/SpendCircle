@@ -95,6 +95,7 @@ export function CircleSwitcher() {
           <Link
             role="menuitem"
             to={href("/circles/new")}
+            prefetch="intent"
             onClick={() => setOpen(false)}
             className="flex items-center gap-3 px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
           >
@@ -137,6 +138,7 @@ function CircleItems({
           key={circle.id}
           role="menuitem"
           to={href("/circles/:circleRef", { circleRef: circle.ref })}
+          prefetch="intent"
           onClick={onSelect}
           className="flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-muted/60"
         >

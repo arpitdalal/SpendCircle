@@ -214,9 +214,11 @@ describe("CircleCategories — list and create (CAT-1)", () => {
     expect(screen.queryByRole("button", { name: "Add category" })).not.toBeInTheDocument();
   });
 
-  it("shows a loading state while the first page resolves", () => {
+  it("shows a skeleton while the first page resolves", () => {
     setup({ categories: [], categoriesPageStatus: "LoadingFirstPage" });
-    expect(screen.getByText(/Loading categories/)).toBeInTheDocument();
+    const skeleton = screen.getByTestId("categories-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(within(skeleton).getByText(/Loading categories/)).toBeInTheDocument();
   });
 });
 
