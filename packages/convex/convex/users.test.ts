@@ -29,6 +29,7 @@ describe("createUserWithPersonalCircle", () => {
       expect(circles).toHaveLength(1);
       expect(circles[0]?.kind).toBe("personal");
       expect(circles[0]?.ownerUserId).toBe(userId);
+      expect(circles[0]?.setupCompletedAt).toBeTypeOf("number");
 
       const members = await ctx.db.query("members").collect();
       expect(members).toHaveLength(1);

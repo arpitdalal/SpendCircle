@@ -38,6 +38,7 @@ describe("completeCircleSetup", () => {
       const circle = await ctx.db.get(circleId);
       expect(circle?.currency).toBe("USD");
       expect(circle?.setupAnswers).toEqual({ purpose: "residence", residenceType: "leased" });
+      expect(circle?.setupCompletedAt).toBeTypeOf("number");
 
       const categories = await ctx.db
         .query("categories")
@@ -81,6 +82,48 @@ describe("completeCircleSetup", () => {
     });
   });
 
+  it("seeds the nine shared starters when the owner finishes with default answers", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const result = await t.mutation(api.circles.completeCircleSetup, {
+      circleId,
+      answers: {},
+    });
+
+    expect(result.createdCategoryIds).toHaveLength(9);
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.setupAnswers).toEqual({});
+      expect(circle?.setupCompletedAt).toBeTypeOf("number");
+
+      const categories = await ctx.db
+        .query("categories")
+        .withIndex("by_circle_type_createdAt", (q) =>
+          q.eq("circleId", circleId).eq("type", "expense"),
+        )
+        .collect();
+      expect(categories.map((category) => category.name).sort()).toEqual([
+        "Dining",
+        "Education",
+        "Entertainment",
+        "Groceries",
+        "Health",
+        "Shopping",
+        "Transport",
+        "Travel",
+        "Utilities",
+      ]);
+
+      const circleEvents = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+        .collect();
+      expect(circleEvents).toHaveLength(0);
+    });
+  });
+
   it("rejects a non-owner member", async () => {
     const t = convexTest(schema, modules);
     const { circleId } = await t.run((ctx) => seedCircle(ctx));
@@ -111,6 +154,7 @@ describe("completeCircleSetup", () => {
 
     await t.run(async (ctx) => {
       expect((await ctx.db.get(circleId))?.setupAnswers).toBeUndefined();
+      expect((await ctx.db.get(circleId))?.setupCompletedAt).toBeUndefined();
       expect(
         await ctx.db
           .query("categories")
@@ -208,6 +252,7 @@ describe("completeCircleSetup", () => {
         purpose: "residence",
         residenceType: "leased",
       });
+      expect((await ctx.db.get(circleId))?.setupCompletedAt).toBeTypeOf("number");
     });
   });
 });
@@ -217,8 +262,10 @@ describe("updateCircleSettings", () => {
     const t = convexTest(schema, modules);
     const { owner, circleId } = await t.run(async (ctx) => {
       const seed = await seedCircle(ctx);
+      const now = Date.now();
       await ctx.db.patch(seed.circleId, {
         setupAnswers: { purpose: "trip" },
+        setupCompletedAt: now,
       });
       return seed;
     });
@@ -302,7 +349,7 @@ describe("updateCircleSettings", () => {
 
   it("rejects setup-answer edits before setup is complete, but still allows color", async () => {
     const t = convexTest(schema, modules);
-    // seedCircle leaves setupAnswers undefined — setup not yet completed.
+    // seedCircle leaves setup incomplete — no setupCompletedAt yet.
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     mockCurrentUser.mockResolvedValue(owner);
 
@@ -321,7 +368,27 @@ describe("updateCircleSettings", () => {
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(circleId);
       expect(circle?.setupAnswers).toBeUndefined();
+      expect(circle?.setupCompletedAt).toBeUndefined();
       expect(circle?.color).toBe("green");
+    });
+  });
+
+  it("lets a completed Circle with empty answers edit setup answers later", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.completeCircleSetup, { circleId, answers: {} });
+
+    await t.mutation(api.circles.updateCircleSettings, {
+      circleId,
+      setupAnswers: { purpose: "trip" },
+    });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.setupAnswers).toEqual({ purpose: "trip" });
+      expect(circle?.setupCompletedAt).toBeTypeOf("number");
     });
   });
 
@@ -329,8 +396,10 @@ describe("updateCircleSettings", () => {
     const t = convexTest(schema, modules);
     const { owner, circleId } = await t.run(async (ctx) => {
       const seed = await seedCircle(ctx);
+      const now = Date.now();
       await ctx.db.patch(seed.circleId, {
         setupAnswers: { purpose: "trip" },
+        setupCompletedAt: now,
       });
       return seed;
     });
@@ -355,8 +424,10 @@ describe("updateCircleSettings", () => {
     const t = convexTest(schema, modules);
     const { owner, circleId } = await t.run(async (ctx) => {
       const seed = await seedCircle(ctx);
+      const now = Date.now();
       await ctx.db.patch(seed.circleId, {
         setupAnswers: { purpose: "residence", residenceType: "leased" },
+        setupCompletedAt: now,
       });
       await makeCategory(ctx, seed.circleId, {
         name: "Rent",

@@ -53,6 +53,7 @@ export async function createUserWithPersonalCircle(
     ownerUserId: userId,
     status: "active",
     currencyLocked: false,
+    setupCompletedAt: now,
     createdAt: now,
   });
 

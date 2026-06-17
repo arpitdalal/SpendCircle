@@ -39,6 +39,7 @@ export const MOCK_CIRCLES: Circle[] = [
     mark: "P",
     status: "active",
     setupAnswers: undefined,
+    setupComplete: true,
     currencyLocked: false,
   },
 ];
@@ -302,6 +303,7 @@ export function mockCircle(id: string): Circle {
     mark: "M",
     status: "active",
     setupAnswers: undefined,
+    setupComplete: false,
     currencyLocked: false,
   };
 }

@@ -52,6 +52,9 @@ export default defineSchema({
     ownerUserId: v.id("users"),
     status: lifecycleStatus,
     setupAnswers: v.optional(circleSetupAnswers),
+    // Workflow milestone: set by completeCircleSetup or Personal-Circle bootstrap (ADR 0023).
+    // Optional so existing rows need no breaking required-field migration.
+    setupCompletedAt: v.optional(v.number()),
     // Currency is locked once any Transaction exists (PRD story 9).
     currencyLocked: v.boolean(),
     createdAt: v.number(),

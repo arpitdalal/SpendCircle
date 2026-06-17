@@ -1,5 +1,5 @@
 import { Settings } from "lucide-react";
-import { href, Link, NavLink, Outlet, useOutletContext } from "react-router";
+import { href, Link, Navigate, NavLink, Outlet, useLocation, useOutletContext } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { CircleMobileBottomNav } from "~/components/circle-mobile-bottom-nav.js";
 import { PageSkeleton } from "~/components/skeleton.js";
@@ -37,11 +37,17 @@ export default function CircleLayout() {
 }
 
 function ResolvedCircleLayout({ circle, showSkeleton }: { circle: Circle; showSkeleton: boolean }) {
+  const location = useLocation();
+  const setupPath = href("/circles/:circleRef/setup", { circleRef: circle.ref });
   const tabs = circleNavItems(circle.ref);
   const members = useMembers(circle.id);
   const showSettings =
     members !== undefined && members?.find((member) => member.isSelf)?.role === "owner";
   const settingsPath = href("/circles/:circleRef/settings", { circleRef: circle.ref });
+
+  if (!circle.setupComplete && location.pathname !== setupPath) {
+    return <Navigate to={setupPath} replace />;
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">

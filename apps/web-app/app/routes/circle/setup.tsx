@@ -2,7 +2,7 @@ import { CIRCLE_PURPOSES, type CircleSetupAnswers, RESIDENCE_TYPES } from "@spen
 import { type FormEvent, useState } from "react";
 import { href, Navigate, useNavigate } from "react-router";
 import { Button } from "~/components/ui/button.js";
-import { useCompleteCircleSetup } from "~/lib/data.js";
+import { type Member, useCompleteCircleSetup, useMembers } from "~/lib/data.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -26,6 +26,7 @@ type ResidenceChoice = NonNullable<CircleSetupAnswers["residenceType"]> | "";
 
 export default function CircleSetup() {
   const circle = useCircle();
+  const members = useMembers(circle.id);
   const navigate = useNavigate();
   const completeSetup = useCompleteCircleSetup();
   const { show } = useSnackbar();
@@ -38,16 +39,16 @@ export default function CircleSetup() {
 
   const dashboardPath = href("/circles/:circleRef", { circleRef: circle.ref });
 
-  if (circle.setupAnswers !== undefined) {
+  if (circle.setupComplete) {
     return <Navigate to={dashboardPath} replace />;
   }
 
-  async function finish() {
-    await navigate(dashboardPath);
+  if (members === undefined) {
+    return <p className="text-sm text-muted-foreground">Loading setup…</p>;
   }
 
-  async function onSkip() {
-    await finish();
+  if (!viewerIsOwner(members)) {
+    return <Navigate to={dashboardPath} replace />;
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -61,7 +62,7 @@ export default function CircleSetup() {
         answers: setupAnswers(purpose, residenceType),
       });
       show("Circle setup complete.");
-      await finish();
+      await navigate(dashboardPath);
     } catch (caught) {
       console.error("completeCircleSetup failed", caught);
       setError("Couldn't complete setup. Please try again.");
@@ -142,13 +143,14 @@ export default function CircleSetup() {
           <Button type="submit" disabled={submitting}>
             {submitting ? "Saving..." : "Finish setup"}
           </Button>
-          <Button type="button" variant="ghost" disabled={submitting} onClick={onSkip}>
-            Skip
-          </Button>
         </div>
       </form>
     </div>
   );
+}
+
+function viewerIsOwner(members: Member[] | null) {
+  return members?.find((member) => member.isSelf)?.role === "owner";
 }
 
 function setupAnswers(purpose: PurposeChoice, residenceType: ResidenceChoice) {

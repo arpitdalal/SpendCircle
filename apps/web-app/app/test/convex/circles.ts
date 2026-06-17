@@ -50,6 +50,7 @@ export function makeCircleView(over: Partial<Circle> = {}): Circle {
     mark: "T",
     status: "active",
     setupAnswers: undefined,
+    setupComplete: true,
     currencyLocked: false,
     ...over,
   };
