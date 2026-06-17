@@ -4,7 +4,7 @@ import {
   type TransactionType,
   transactionFieldSchemas,
 } from "@spend-circle/domain";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "~/components/ui/button.js";
 import {
   Combobox,
@@ -82,7 +82,6 @@ export function TransactionFormCategorySection({
   const [query, setQuery] = useState("");
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [justCreated, setJustCreated] = useState<Map<string, Category>>(() => new Map());
 
   function clearInputQuery() {
     setQuery("");
@@ -91,31 +90,6 @@ export function TransactionFormCategorySection({
       input.value = "";
     }
   }
-
-  useEffect(() => {
-    setJustCreated((prev) => {
-      if (prev.size === 0) {
-        return prev;
-      }
-      const next = new Map(prev);
-      for (const id of prev.keys()) {
-        if (categoryById.has(id)) {
-          next.delete(id);
-        }
-      }
-      return next.size === prev.size ? prev : next;
-    });
-  }, [categoryById]);
-
-  const mergedCategoryById = useMemo(() => {
-    const map = new Map(categoryById);
-    for (const [id, category] of justCreated) {
-      if (!map.has(id)) {
-        map.set(id, category);
-      }
-    }
-    return map;
-  }, [categoryById, justCreated]);
 
   const activeIds = useMemo(
     () => activeCategories.map((category) => category.id),
@@ -182,11 +156,6 @@ export function TransactionFormCategorySection({
         DEFAULT_COLOR_ID,
       );
       onInlineCreatedCategory(created);
-      setJustCreated((prev) => {
-        const next = new Map(prev);
-        next.set(newId, created);
-        return next;
-      });
       if (!currentIds.includes(newId)) {
         onIdsChange([...currentIds, newId]);
       }
@@ -214,7 +183,7 @@ export function TransactionFormCategorySection({
             const reveal = field.state.meta.isDirty || submitReveal;
             const invalid = reveal && field.state.meta.errors.length > 0;
             const archivedSelected = field.state.value.flatMap((id) => {
-              const category = mergedCategoryById.get(id);
+              const category = categoryById.get(id);
               return category && category.status === "archived" ? [category] : [];
             });
             const blockingArchived = archivedSelected.filter(
@@ -227,19 +196,20 @@ export function TransactionFormCategorySection({
                 <Combobox
                   multiple
                   autoHighlight
+                  disabled={creating}
                   value={field.state.value}
                   onValueChange={(next) => {
                     field.handleChange(next ?? []);
                   }}
                   items={activeIds}
-                  itemToStringLabel={(id: string) => mergedCategoryById.get(id)?.name ?? id}
+                  itemToStringLabel={(id: string) => categoryById.get(id)?.name ?? id}
                 >
                   <ComboboxChips ref={anchorRef} className="w-full max-w-full">
                     <ComboboxValue>
                       {(values: string[]) => (
                         <>
                           {values.map((id) => {
-                            const category = mergedCategoryById.get(id);
+                            const category = categoryById.get(id);
                             const archived = category?.status === "archived";
                             const label = category?.name ?? id;
                             return (
@@ -264,6 +234,7 @@ export function TransactionFormCategorySection({
                             ref={inputRef}
                             placeholder="Search categories…"
                             aria-label="Categories"
+                            disabled={creating}
                             onChange={(event) => {
                               setQuery(event.target.value);
                               if (inlineError) {
@@ -279,7 +250,7 @@ export function TransactionFormCategorySection({
                     <ComboboxEmpty>No matching categories.</ComboboxEmpty>
                     <ComboboxList>
                       {(id: string) => {
-                        const category = mergedCategoryById.get(id);
+                        const category = categoryById.get(id);
                         if (category?.status !== "active") {
                           return null;
                         }

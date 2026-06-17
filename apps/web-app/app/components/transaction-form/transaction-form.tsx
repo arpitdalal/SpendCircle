@@ -103,7 +103,14 @@ export function TransactionForm({
     });
   }, [allCategories]);
 
-  const activeCategories = allCategories.filter((category) => category.status === "active");
+  const activeCategories = useMemo(() => {
+    const fromQuery = allCategories.filter((category) => category.status === "active");
+    const known = new Set(fromQuery.map((category) => category.id));
+    const pending = inlineCreatedCategories.filter(
+      (category) => category.status === "active" && !known.has(category.id),
+    );
+    return pending.length === 0 ? fromQuery : [...fromQuery, ...pending];
+  }, [allCategories, inlineCreatedCategories]);
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>(allCategories.map((category) => [category.id, category]));
     for (const category of inlineCreatedCategories) {

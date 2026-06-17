@@ -1,5 +1,5 @@
 import { currentMonth, toPlainDate } from "@spend-circle/domain";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -408,6 +408,42 @@ describe("TransactionForm — create", () => {
     expect(await screen.findByText("Circle is archived")).toBeInTheDocument();
     expect(within(form).queryByRole("button", { name: /Remove Snacks/ })).not.toBeInTheDocument();
     consoleError.mockRestore();
+  });
+
+  it("lets you re-select an inline-created category after removing its chip", async () => {
+    const user = userEvent.setup();
+    const newId = testId<Category["id"]>("cat-snacks");
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockResolvedValueOnce(newId);
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await inlineCreateTransactionFormCategory(user, form, "Snacks");
+    await user.click(within(form).getByRole("button", { name: /Remove Snacks/ }));
+
+    await pickTransactionFormCategory(user, form, "Snacks");
+
+    expect(within(form).getByRole("button", { name: /Remove Snacks/ })).toBeInTheDocument();
+    expect(createCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the category combobox while inline create is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveCreate: (id: Category["id"]) => void = () => {};
+    const createPromise = new Promise<Category["id"]>((resolve) => {
+      resolveCreate = resolve;
+    });
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockReturnValueOnce(createPromise);
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const combo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(combo);
+    await user.type(combo, "Snacks");
+    await user.click(screen.getByRole("button", { name: 'Create "Snacks"' }));
+
+    expect(combo).toBeDisabled();
+
+    resolveCreate(testId<Category["id"]>("cat-snacks"));
+    await waitFor(() => expect(combo).not.toBeDisabled());
+    await user.keyboard("{Escape}");
   });
 
   it("shows the category combobox when none exist for the type", () => {
