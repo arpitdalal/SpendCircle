@@ -66,8 +66,15 @@ export function NewCategoryForm({
   return (
     <form
       onSubmit={onSubmit}
+      // Names the form as a landmark region for screen-reader / heading navigation —
+      // this dedicated create page would otherwise expose only the input's field label
+      // (the standalone route had no heading at all). Mirrors `TransactionForm`'s labeled
+      // create region.
+      aria-label="New category"
       className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
     >
+      <h1 className="font-display text-lg font-semibold tracking-tight">New category</h1>
+
       <div className="space-y-1.5">
         <label htmlFor="category-name" className="block text-sm font-medium">
           New {type} category

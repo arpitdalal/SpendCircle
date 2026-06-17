@@ -59,11 +59,12 @@ export default function TransactionNew() {
     }
   }, [writable, type, navigate, returnUrl]);
 
-  // While ejecting (archived / invalid type) or leaving (closing), show the splash rather
-  // than flashing a form about to be torn down. The inline `type === null` check also
-  // narrows `type` to a concrete `TransactionType` for the form below.
+  // This splash only ever shows while LEAVING — ejecting (archived / invalid type) or
+  // closing (cancel / save); a valid open renders the form immediately, never this. So the
+  // copy reflects the return, not an open. The inline `type === null` check also narrows
+  // `type` to a concrete `TransactionType` for the form below.
   if (!writable || type === null || closing) {
-    return <Splash label="Opening transaction…" />;
+    return <Splash label="Returning…" />;
   }
 
   return (

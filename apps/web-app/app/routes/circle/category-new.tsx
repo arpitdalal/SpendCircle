@@ -47,10 +47,12 @@ export default function CategoryNew() {
     }
   }, [writable, type, navigate, returnUrl]);
 
-  // While ejecting or leaving, show the splash. The inline `type === null` check also
-  // narrows `type` to a concrete `TransactionType` for the form below.
+  // This splash only ever shows while LEAVING — ejecting (archived / invalid type) or
+  // closing (cancel / save); a valid open renders the form immediately, never this. So the
+  // copy reflects the return, not an open. The inline `type === null` check also narrows
+  // `type` to a concrete `TransactionType` for the form below.
   if (!writable || type === null || closing) {
-    return <Splash label="Opening category…" />;
+    return <Splash label="Returning…" />;
   }
 
   return <NewCategoryForm circleId={circle.id} type={type} onClose={close} />;

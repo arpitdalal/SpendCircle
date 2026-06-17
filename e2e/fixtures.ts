@@ -73,17 +73,6 @@ export async function createCategoryViaForm(
   await page.waitForURL(/\/categories(?:\?|$)/);
 }
 
-/**
- * Open the dedicated new-Transaction route (issue #96) from the Ledger: the "Add expense" /
- * "Add income" CTA is now a Link to `transactions/new`, not an inline toggle. Returns the
- * create form locator (its accessible name is `add expense` / `add income`).
- */
-export async function openCreateTransaction(page: Page, type: "expense" | "income") {
-  const label = type === "expense" ? "Add expense" : "Add income";
-  await page.getByRole("link", { name: label }).click();
-  return page.getByRole("form", { name: new RegExp(label, "i") });
-}
-
 const e2eDir = dirname(fileURLToPath(import.meta.url));
 
 const E2E_PASSWORD = "e2e-Password-123";
