@@ -19,13 +19,6 @@ function requireOperatorKey(operatorKey: string) {
   }
 }
 
-function requireCircleSetupBackfillKey(operatorKey: string) {
-  const expected = process.env.CIRCLE_SETUP_BACKFILL_KEY;
-  if (!expected || operatorKey !== expected) {
-    throw new Error("Invalid circle setup backfill key");
-  }
-}
-
 async function upsertBackfillState(
   ctx: MutationCtx,
   fields: Omit<Doc<"transactionSearchBackfills">, "_id" | "_creationTime" | "key">,
@@ -94,36 +87,6 @@ export const backfillTransactionSearchText = mutation({
       scanned: result.page.length,
       totalSynced,
       totalScanned,
-      isDone: result.isDone,
-      continueCursor: result.continueCursor,
-    };
-  },
-});
-
-/**
- * One bounded backfill page for ADR 0023: grandfather existing Circles as setup-
- * complete by setting `setupCompletedAt` on every Circle missing it. Run repeatedly
- * with the returned cursor until `isDone` is true.
- */
-export const backfillCircleSetupCompleted = mutation({
-  args: {
-    operatorKey: v.string(),
-    paginationOpts: paginationOptsValidator,
-  },
-  handler: async (ctx, args) => {
-    requireCircleSetupBackfillKey(args.operatorKey);
-    const result = await ctx.db.query("circles").paginate(args.paginationOpts);
-    const now = Date.now();
-    let patched = 0;
-    for (const circle of result.page) {
-      if (circle.setupCompletedAt === undefined) {
-        await ctx.db.patch(circle._id, { setupCompletedAt: now });
-        patched += 1;
-      }
-    }
-    return {
-      patched,
-      scanned: result.page.length,
       isDone: result.isDone,
       continueCursor: result.continueCursor,
     };
