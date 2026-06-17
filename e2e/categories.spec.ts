@@ -1,4 +1,4 @@
-import { clickCircleChromeTab, expect, test } from "./fixtures.js";
+import { clickCircleChromeTab, createCategoryViaForm, expect, test } from "./fixtures.js";
 
 /**
  * TRUE-E2E (ADR 0019): create a Category through the real frontend → Convex
@@ -23,12 +23,11 @@ test("a member creates a category and sees it in the live list", async ({ page }
   await clickCircleChromeTab(page, "Categories");
   await expect(page.getByRole("heading", { name: "Categories" })).toBeVisible();
 
-  await page.getByLabel(/New expense category/).fill(name);
-  // Pick a non-default palette color so the choice is exercised, not the default.
-  await page.getByRole("button", { name: "Teal" }).click();
-  await page.getByRole("button", { name: "Add category" }).click();
+  // The dedicated new-Category page (issue #96): CTA → form → back on the list. Pick a
+  // non-default palette color so the choice is exercised, not the default.
+  await createCategoryViaForm(page, { name, color: "Teal" });
 
-  // The reactive query flips to include the new Category with no reload.
+  // The reactive list shows the new Category once back on the list, no reload.
   await expect(page.getByRole("listitem").filter({ hasText: name })).toBeVisible();
 });
 
@@ -39,16 +38,14 @@ test("the server rejects a duplicate name inline", async ({ page }) => {
   await page.getByRole("link", { name: /Personal/ }).click();
   await clickCircleChromeTab(page, "Categories");
 
-  const nameField = page.getByLabel(/New expense category/);
-  const addButton = page.getByRole("button", { name: "Add category" });
-
-  await nameField.fill(name);
-  await addButton.click();
+  await createCategoryViaForm(page, { name });
   await expect(page.getByRole("listitem").filter({ hasText: name })).toBeVisible();
 
-  // A case-only duplicate is rejected by the server and surfaced inline.
-  await nameField.fill(name.toUpperCase());
-  await addButton.click();
+  // A case-only duplicate is rejected by the server and surfaced inline on the create page,
+  // which stays put (the one user-fixable error) rather than navigating back to the list.
+  await page.getByRole("link", { name: "New category" }).click();
+  await page.getByLabel(/New expense category/).fill(name.toUpperCase());
+  await page.getByRole("button", { name: "Add category" }).click();
   await expect(page.getByRole("alert")).toHaveText(/already exists/i);
 });
 
@@ -67,8 +64,7 @@ test("a member edits, archives, and restores a category and sees its history", a
   await page.getByRole("link", { name: /Personal/ }).click();
   await clickCircleChromeTab(page, "Categories");
 
-  await page.getByLabel(/New expense category/).fill(name);
-  await page.getByRole("button", { name: "Add category" }).click();
+  await createCategoryViaForm(page, { name });
   const row = page.getByRole("listitem").filter({ hasText: name });
   await expect(row).toBeVisible();
 
@@ -141,16 +137,12 @@ test("the category filter searches, scopes by status, reloads from the URL, and 
   await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
   await clickCircleChromeTab(page, "Categories");
 
-  // Seed 26 matching + 1 non-matching expense Categories (page size is 25).
-  const nameField = page.getByLabel(/New expense category/);
-  const addButton = page.getByRole("button", { name: "Add category" });
+  // Seed 26 matching + 1 non-matching expense Categories (page size is 25). Each create
+  // round-trips through the dedicated new-Category page and back to the list (issue #96).
   for (let i = 0; i < 26; i++) {
-    await nameField.fill(matchName(i));
-    await addButton.click();
-    await expect(nameField).toHaveValue(""); // create round-tripped
+    await createCategoryViaForm(page, { name: matchName(i) });
   }
-  await nameField.fill(otherName);
-  await addButton.click();
+  await createCategoryViaForm(page, { name: otherName });
   await expect(page.getByRole("listitem").filter({ hasText: otherName })).toBeVisible();
 
   // Search narrows the live list (substring, case-insensitive) and lands in the URL.

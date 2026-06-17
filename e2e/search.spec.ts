@@ -1,4 +1,10 @@
-import { clickCircleChromeTab, expect, pickFormCategory, test } from "./fixtures.js";
+import {
+  clickCircleChromeTab,
+  createCategoryViaForm,
+  expect,
+  pickFormCategory,
+  test,
+} from "./fixtures.js";
 
 test("transaction search finds circle transactions across months and opens detail", async ({
   page,
@@ -12,8 +18,7 @@ test("transaction search finds circle transactions across months and opens detai
   await page.getByRole("link", { name: /Personal/ }).click();
 
   await clickCircleChromeTab(page, "Categories");
-  await page.getByLabel(/New expense category/).fill(categoryName);
-  await page.getByRole("button", { name: "Add category" }).click();
+  await createCategoryViaForm(page, { name: categoryName });
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   await clickCircleChromeTab(page, "Transactions");
@@ -21,7 +26,7 @@ test("transaction search finds circle transactions across months and opens detai
   await monthInput.fill(month);
   await monthInput.blur();
 
-  await page.getByRole("button", { name: "Add expense" }).click();
+  await page.getByRole("link", { name: "Add expense" }).click();
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("14.00");
@@ -94,8 +99,7 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
   await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
 
   await clickCircleChromeTab(page, "Categories");
-  await page.getByLabel(/New expense category/).fill(categoryName);
-  await page.getByRole("button", { name: "Add category" }).click();
+  await createCategoryViaForm(page, { name: categoryName });
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   await clickCircleChromeTab(page, "Transactions");
@@ -105,7 +109,7 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
 
   for (let index = 0; index < 27; index += 1) {
     const day = (index + 1).toString().padStart(2, "0");
-    await page.getByRole("button", { name: "Add expense" }).click();
+    await page.getByRole("link", { name: "Add expense" }).click();
     const form = page.getByRole("form", { name: /add expense/i });
     await form.getByLabel("Title").fill(index % 2 === 0 ? matchingTitle(index) : missTitle(index));
     await form.getByLabel(/Amount/).fill("1.00");
@@ -158,8 +162,7 @@ test("transaction search pagination updates URL and result slice", async ({ page
   await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
 
   await clickCircleChromeTab(page, "Categories");
-  await page.getByLabel(/New expense category/).fill(categoryName);
-  await page.getByRole("button", { name: "Add category" }).click();
+  await createCategoryViaForm(page, { name: categoryName });
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   await clickCircleChromeTab(page, "Transactions");
@@ -169,7 +172,7 @@ test("transaction search pagination updates URL and result slice", async ({ page
 
   for (let index = 0; index < rowCount; index += 1) {
     const day = (index + 1).toString().padStart(2, "0");
-    await page.getByRole("button", { name: "Add expense" }).click();
+    await page.getByRole("link", { name: "Add expense" }).click();
     const form = page.getByRole("form", { name: /add expense/i });
     await form.getByLabel("Title").fill(matchingTitle(index));
     await form.getByLabel(/Amount/).fill("1.00");

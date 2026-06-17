@@ -37,6 +37,11 @@ export default [
         index("routes/circle/dashboard.tsx"),
         route("setup", "routes/circle/setup.tsx"),
         route("transactions", "routes/circle/transactions.tsx"),
+        // Create Transaction (issue #96). A STATIC `new` segment that outranks the dynamic
+        // `transactions/:transactionRef` below, so it never collides with a Transaction ref
+        // (canonical `slug-id` refs are never the literal "new" — ADR 0016), the same
+        // reasoning as `circles/new`. Reuses `TransactionForm` in create mode.
+        route("transactions/new", "routes/circle/transaction-new.tsx"),
         route("search", "routes/circle/search.tsx"),
         // The Transaction DETAIL object route (ADR 0016/0017) — the REFERENCE object
         // route: a canonical `slug-id` ref under the resolved Circle, resolving its own
@@ -50,6 +55,9 @@ export default [
         // route. Lands WITH its feature (TXN-5) — no caller-less placeholder.
         route("transactions/:transactionRef/edit", "routes/circle/transaction-edit.tsx"),
         route("categories", "routes/circle/categories.tsx"),
+        // Create Category (issue #96). Same static-segment pattern: a dedicated page
+        // lifts the new-Category form off the list, deep-linked with the active type tab.
+        route("categories/new", "routes/circle/category-new.tsx"),
         route("members", "routes/circle/members.tsx"),
       ]),
     ]),

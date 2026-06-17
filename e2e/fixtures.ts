@@ -48,6 +48,42 @@ export async function pickFormCategory(page: Page, scope: Locator, name: string)
   await page.keyboard.press("Escape");
 }
 
+/**
+ * Create a Category through the dedicated new-Category route (issue #96): from the
+ * Categories list, the "New category" CTA opens the create page, submit creates it and
+ * navigates back to the list (its `returnTo`). Switches to the Income tab first when
+ * needed so the CTA deep-links the right type. The caller asserts the resulting row if it
+ * needs to — kept out of here so pagination-sensitive specs don't wait on a row that may
+ * land on a later page. Assumes the Categories surface is already showing.
+ */
+export async function createCategoryViaForm(
+  page: Page,
+  { name, type = "expense", color }: { name: string; type?: "expense" | "income"; color?: string },
+) {
+  if (type === "income") {
+    await page.getByRole("tab", { name: "Income" }).click();
+  }
+  await page.getByRole("link", { name: "New category" }).click();
+  await page.getByLabel(new RegExp(`New ${type} category`)).fill(name);
+  if (color) {
+    await page.getByRole("button", { name: color }).click();
+  }
+  await page.getByRole("button", { name: "Add category" }).click();
+  // Success navigates back to the categories list (returnTo); the page leaves `/new`.
+  await page.waitForURL(/\/categories(?:\?|$)/);
+}
+
+/**
+ * Open the dedicated new-Transaction route (issue #96) from the Ledger: the "Add expense" /
+ * "Add income" CTA is now a Link to `transactions/new`, not an inline toggle. Returns the
+ * create form locator (its accessible name is `add expense` / `add income`).
+ */
+export async function openCreateTransaction(page: Page, type: "expense" | "income") {
+  const label = type === "expense" ? "Add expense" : "Add income";
+  await page.getByRole("link", { name: label }).click();
+  return page.getByRole("form", { name: new RegExp(label, "i") });
+}
+
 const e2eDir = dirname(fileURLToPath(import.meta.url));
 
 const E2E_PASSWORD = "e2e-Password-123";

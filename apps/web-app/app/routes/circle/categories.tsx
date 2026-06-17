@@ -1,23 +1,23 @@
 import {
   COLOR_PALETTE,
-  categoryInputSchema,
   categoryUpdateSchema,
-  colorLabel,
-  DEFAULT_COLOR_ID,
   LIMITS,
   type TransactionType,
 } from "@spend-circle/domain";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
+import { ColorPicker } from "~/components/category-form.js";
 import { HistoryList } from "~/components/history-list.js";
 import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import {
   type CategoriesFilters,
   type CategoryLifecycleFilter,
   canonicalCategoriesParams,
+  categoryNewHref,
   cleanQueryText,
   hasCategoriesNarrowing,
   readCategoriesFilters,
@@ -29,11 +29,11 @@ import {
   useArchiveCategory,
   useCategoriesPage,
   useCategoryHistory,
-  useCreateCategory,
   useRestoreCategory,
   useUpdateCategory,
 } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
+import { withReturnTo } from "~/lib/return-to-url.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -72,8 +72,13 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: CategoryLifecycleFilter; label: str
  */
 export default function CircleCategories() {
   const circle = useCircle();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = readCategoriesFilters(searchParams);
+  const writable = circle.status === "active";
+  // The list's full URL (its type tab, status, search) is the origin the New-category CTA
+  // returns to via `returnTo` (#123), so a filtered view round-trips through the new page.
+  const origin = location.pathname + location.search;
   const page = useCategoriesPage(circle.id, {
     type: filters.type,
     status: filters.status,
@@ -145,11 +150,18 @@ export default function CircleCategories() {
         <CategorySearchInput value={filters.q} onSearch={applySearch} />
       </div>
 
-      <NewCategoryForm
-        circleId={circle.id}
-        type={filters.type}
-        writable={circle.status === "active"}
-      />
+      {writable ? (
+        <Link
+          to={withReturnTo(categoryNewHref(circle, { type: filters.type }), origin)}
+          className={buttonVariants()}
+        >
+          New category
+        </Link>
+      ) : (
+        <p className="rounded-lg border border-border bg-card p-3 shadow-sm text-sm text-muted-foreground">
+          This circle is archived. Restore it to add categories.
+        </p>
+      )}
 
       <CategoryList
         page={page}
@@ -210,135 +222,6 @@ function CategorySearchInput({
         className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
       />
     </label>
-  );
-}
-
-/** The new-Category affordance: name, the active type, and a palette color picker. */
-function NewCategoryForm({
-  circleId,
-  type,
-  writable,
-}: {
-  circleId: Circle["id"];
-  type: TransactionType;
-  writable: boolean;
-}) {
-  const createCategory = useCreateCategory();
-  const [name, setName] = useState("");
-  const [color, setColor] = useState<string>(DEFAULT_COLOR_ID);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  if (!writable) {
-    return (
-      <p className="rounded-lg border border-border bg-card p-3 shadow-sm text-sm text-muted-foreground">
-        This circle is archived. Restore it to add categories.
-      </p>
-    );
-  }
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-
-    // Client-side mirror of the shared schema (the server re-validates — ADR 0015).
-    const parsed = categoryInputSchema.safeParse({ name, type, color });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Please check the category details.");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await createCategory({ circleId, name: parsed.data.name, type, color });
-      setName(""); // keep the chosen color for quick repeated adds
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "";
-      // The one rejection a user can fix inline; everything else is generic.
-      setError(
-        /already exists/i.test(message)
-          ? "A category with this name already exists for this type."
-          : mutationErrorMessageForUser(caught, "Couldn't create the category. Please try again."),
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form
-      onSubmit={onSubmit}
-      className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
-    >
-      <div className="space-y-1.5">
-        <label htmlFor="category-name" className="block text-sm font-medium">
-          New {type} category
-        </label>
-        <input
-          id="category-name"
-          name="name"
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            if (error) {
-              setError(null);
-            }
-          }}
-          maxLength={LIMITS.categoryNameMax}
-          placeholder="e.g. Groceries"
-          autoComplete="off"
-          aria-invalid={error != null}
-          aria-describedby={error ? "category-error" : undefined}
-          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
-        />
-      </div>
-
-      <ColorPicker legend="Color" color={color} onChange={setColor} />
-
-      {error ? (
-        <p id="category-error" role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-
-      <Button type="submit" disabled={submitting || name.trim() === ""}>
-        {submitting ? "Adding…" : "Add category"}
-      </Button>
-    </form>
-  );
-}
-
-/** The shared palette picker: one definition for the create and edit forms. */
-function ColorPicker({
-  legend,
-  color,
-  onChange,
-}: {
-  legend: string;
-  color: string;
-  onChange: (color: string) => void;
-}) {
-  return (
-    <fieldset className="space-y-1.5">
-      <legend className="text-sm font-medium">{legend}</legend>
-      <div className="flex flex-wrap gap-2">
-        {COLOR_PALETTE.map((paletteColor) => (
-          <button
-            key={paletteColor.id}
-            type="button"
-            aria-label={paletteColor.name}
-            aria-pressed={color === paletteColor.id}
-            onClick={() => onChange(paletteColor.id)}
-            style={{ backgroundColor: paletteColor.hex }}
-            className={cn(
-              "size-7 rounded-full ring-offset-2 ring-offset-background transition",
-              color === paletteColor.id ? "ring-2 ring-ring" : "ring-0",
-            )}
-          />
-        ))}
-      </div>
-      <p className="text-xs text-muted-foreground">{colorLabel(color)}</p>
-    </fieldset>
   );
 }
 
