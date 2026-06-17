@@ -1,14 +1,17 @@
 import { currentMonth, toPlainDate } from "@spend-circle/domain";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category, Circle, Member, Transaction } from "~/lib/data.js";
 import {
   configureConvex,
+  inlineCreateTransactionFormCategory,
   makeCategoryView,
   makeCircleView,
   makeMemberView,
   makeTransactionView,
+  pickTransactionFormCategory,
   testId,
 } from "~/test/convex-react.js";
 
@@ -22,11 +25,11 @@ import {
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
-import { pickTransactionFormCategory } from "~/test/convex-react.js";
 import { TransactionForm, type TransactionFormMode } from "./index.js";
 
 const createTransaction = vi.fn();
 const updateTransaction = vi.fn();
+const createCategory = vi.fn();
 
 /** What the helper accepts for a create: the real create mode minus `selectedMonth`, which
  * `renderForm` injects (defaulting to the current month) so a test needn't repeat it; the
@@ -49,11 +52,14 @@ function renderForm(
   createTransaction.mockResolvedValue("new-id");
   updateTransaction.mockReset();
   updateTransaction.mockResolvedValue("t1");
+  createCategory.mockReset();
+  createCategory.mockResolvedValue(testId<Category["id"]>("cat-new"));
   configureConvex({
     categories: opts.categories === undefined ? [makeCategoryView()] : opts.categories,
     members: opts.members === undefined ? [makeMemberView()] : opts.members,
     createTransaction,
     updateTransaction,
+    createCategory,
   });
   const onClose = vi.fn();
   // Default the selected month to the current one so a create's date defaults to today
@@ -108,7 +114,8 @@ describe("TransactionForm — create", () => {
     expect(screen.queryByRole("option", { name: "Gas" })).not.toBeInTheDocument();
     await user.clear(categoryCombo);
     await user.type(categoryCombo, "zzz");
-    expect(await screen.findByText("No matching categories.")).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: 'Create "zzz"' })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Groceries" })).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
   });
 
@@ -297,9 +304,209 @@ describe("TransactionForm — create", () => {
     consoleError.mockRestore();
   });
 
-  it("prompts to create a category first when none exist for the type", () => {
+  it("inline-creates a category from zero active categories and auto-selects it", async () => {
+    const user = userEvent.setup();
+    const newId = testId<Category["id"]>("cat-snacks");
     renderForm(createExpense, { categories: [] });
-    expect(screen.getByText(/No expense categories yet/)).toBeInTheDocument();
+    createCategory.mockResolvedValueOnce(newId);
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await inlineCreateTransactionFormCategory(user, form, "Snacks");
+
+    expect(createCategory).toHaveBeenCalledWith({
+      circleId: "c1",
+      name: "Snacks",
+      type: "expense",
+      color: "blue",
+    });
+    expect(within(form).getByRole("button", { name: /Remove Snacks/ })).toBeInTheDocument();
+  });
+
+  it("inline-creates a category, auto-selects it, and submits with the new id", async () => {
+    const user = userEvent.setup();
+    const newId = testId<Category["id"]>("cat-snacks");
+    const { onClose } = renderForm(createExpense, { categories: [] });
+    createCategory.mockResolvedValueOnce(newId);
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await user.type(within(form).getByLabelText("Title"), "Movie night");
+    await user.type(within(form).getByLabelText(/Amount/), "10");
+    await inlineCreateTransactionFormCategory(user, form, "Snacks");
+    await user.click(within(form).getByRole("button", { name: "Add expense" }));
+
+    expect(createCategory).toHaveBeenCalledWith({
+      circleId: "c1",
+      name: "Snacks",
+      type: "expense",
+      color: "blue",
+    });
+    expect(createTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryIds: [newId] }),
+    );
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("hides inline-create when the typed name matches an active category", async () => {
+    const user = userEvent.setup();
+    renderForm(createExpense, {
+      categories: [makeCategoryView({ name: "Groceries", type: "expense" })],
+    });
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const combo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(combo);
+    await user.type(combo, "Groceries");
+
+    expect(screen.queryByRole("option", { name: 'Create "Groceries"' })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+  });
+
+  it("shows a reserved-name message for an archived category name without creating", async () => {
+    const user = userEvent.setup();
+    renderForm(createExpense, {
+      categories: [
+        makeCategoryView({
+          id: testId<Category["id"]>("cat-old"),
+          name: "OldCat",
+          type: "expense",
+          status: "archived",
+        }),
+      ],
+    });
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const combo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(combo);
+    await user.type(combo, "OldCat");
+
+    expect(
+      await screen.findByText(/A category named .OldCat. already exists but is archived/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: 'Create "OldCat"' })).not.toBeInTheDocument();
+    expect(createCategory).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+  });
+
+  it("surfaces a friendly inline error when createCategory rejects with a duplicate name", async () => {
+    const user = userEvent.setup();
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockRejectedValueOnce(
+      new ConvexError("A category with this name already exists for this type"),
+    );
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await inlineCreateTransactionFormCategory(user, form, "Snacks", { waitForSelection: false });
+
+    expect(
+      await screen.findByText("A category with this name already exists for this type."),
+    ).toBeInTheDocument();
+    expect(within(form).queryByRole("button", { name: /Remove Snacks/ })).not.toBeInTheDocument();
+  });
+
+  it("surfaces a generic inline error when createCategory rejects for another reason", async () => {
+    const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockRejectedValueOnce(new ConvexError("Circle is archived"));
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await inlineCreateTransactionFormCategory(user, form, "Snacks", { waitForSelection: false });
+
+    expect(await screen.findByText("Circle is archived")).toBeInTheDocument();
+    expect(within(form).queryByRole("button", { name: /Remove Snacks/ })).not.toBeInTheDocument();
+    consoleError.mockRestore();
+  });
+
+  it("clears the category search input after a successful inline create", async () => {
+    const user = userEvent.setup();
+    const newId = testId<Category["id"]>("cat-rent");
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockResolvedValueOnce(newId);
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const combo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(combo);
+    await user.type(combo, "Rent");
+    await user.click(await screen.findByRole("option", { name: 'Create "Rent"' }));
+
+    expect(within(form).getByRole("button", { name: /Remove Rent/ })).toBeInTheDocument();
+    expect(combo).toHaveValue("");
+    await user.keyboard("{Escape}");
+  });
+
+  it("keeps the category search text when inline create fails", async () => {
+    const user = userEvent.setup();
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockRejectedValueOnce(
+      new ConvexError("A category with this name already exists for this type"),
+    );
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const combo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(combo);
+    await user.type(combo, "Rent");
+    await user.click(await screen.findByRole("option", { name: 'Create "Rent"' }));
+
+    expect(combo).toHaveValue("Rent");
+    expect(
+      await screen.findByText("A category with this name already exists for this type."),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+  });
+
+  it("creates a category from the keyboard-highlighted create option", async () => {
+    const user = userEvent.setup();
+    const newId = testId<Category["id"]>("cat-rent");
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockResolvedValueOnce(newId);
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const combo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(combo);
+    await user.type(combo, "Rent");
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(createCategory).toHaveBeenCalledWith({
+      circleId: "c1",
+      name: "Rent",
+      type: "expense",
+      color: "blue",
+    });
+    expect(within(form).getByRole("button", { name: /Remove Rent/ })).toBeInTheDocument();
+    expect(combo).toHaveValue("");
+  });
+
+  it("lets you re-select an inline-created category after removing its chip", async () => {
+    const user = userEvent.setup();
+    const newId = testId<Category["id"]>("cat-snacks");
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockResolvedValueOnce(newId);
+    const form = screen.getByRole("form", { name: /add expense/i });
+    await inlineCreateTransactionFormCategory(user, form, "Snacks");
+    await user.click(within(form).getByRole("button", { name: /Remove Snacks/ }));
+
+    await pickTransactionFormCategory(user, form, "Snacks");
+
+    expect(within(form).getByRole("button", { name: /Remove Snacks/ })).toBeInTheDocument();
+    expect(createCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the category combobox while inline create is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveCreate: (id: Category["id"]) => void = () => {};
+    const createPromise = new Promise<Category["id"]>((resolve) => {
+      resolveCreate = resolve;
+    });
+    renderForm(createExpense, { categories: [] });
+    createCategory.mockReturnValueOnce(createPromise);
+    const form = screen.getByRole("form", { name: /add expense/i });
+    const combo = within(form).getByRole("combobox", { name: "Categories" });
+    await user.click(combo);
+    await user.type(combo, "Snacks");
+    await user.click(screen.getByRole("option", { name: 'Create "Snacks"' }));
+
+    expect(combo).toBeDisabled();
+
+    resolveCreate(testId<Category["id"]>("cat-snacks"));
+    await waitFor(() => expect(combo).not.toBeDisabled());
+    await user.keyboard("{Escape}");
+  });
+
+  it("shows the category combobox when none exist for the type", () => {
+    renderForm(createExpense, { categories: [] });
+    expect(screen.getByRole("combobox", { name: "Categories" })).toBeInTheDocument();
+    expect(screen.queryByText(/Create one first/)).not.toBeInTheDocument();
   });
 });
 
@@ -377,6 +584,37 @@ describe("TransactionForm — edit (TXN-2)", () => {
     expect(updateTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ transactionId: "t1", type: "income", categoryIds: ["cat-salary"] }),
     );
+  });
+
+  it("inline-creates a category with the new type after a type change", async () => {
+    const user = userEvent.setup();
+    const newId = testId<Category["id"]>("cat-bonus");
+    renderForm(editMode({ title: "Weekly shop" }), {
+      categories: [
+        makeCategoryView({ name: "Groceries", type: "expense" }),
+        makeCategoryView({
+          id: testId<Category["id"]>("cat-salary"),
+          name: "Salary",
+          type: "income",
+        }),
+      ],
+    });
+    const form = screen.getByRole("form", { name: /edit transaction/i });
+
+    await user.click(within(form).getByRole("button", { name: "Income" }));
+    await user.click(
+      within(within(form).getByRole("alertdialog")).getByRole("button", { name: "Change type" }),
+    );
+    createCategory.mockResolvedValueOnce(newId);
+    await inlineCreateTransactionFormCategory(user, form, "Bonus");
+
+    expect(createCategory).toHaveBeenCalledWith({
+      circleId: "c1",
+      name: "Bonus",
+      type: "income",
+      color: "blue",
+    });
+    expect(within(form).getByRole("button", { name: /Remove Bonus/ })).toBeInTheDocument();
   });
 
   it("blocks saving until the cleared categories are re-picked after a type change", async () => {

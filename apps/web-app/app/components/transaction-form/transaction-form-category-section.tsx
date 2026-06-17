@@ -1,5 +1,10 @@
-import { type TransactionType, transactionFieldSchemas } from "@spend-circle/domain";
-import { useMemo } from "react";
+import {
+  categoryInputSchema,
+  DEFAULT_COLOR_ID,
+  type TransactionType,
+  transactionFieldSchemas,
+} from "@spend-circle/domain";
+import { useMemo, useState } from "react";
 import {
   Combobox,
   ComboboxChip,
@@ -13,28 +18,171 @@ import {
   useComboboxAnchor,
 } from "~/components/ui/combobox.js";
 import { FieldError, FieldLegend, FieldSet } from "~/components/ui/field.js";
-import type { Category } from "~/lib/data.js";
+import { type Category, type Circle, useCreateCategory } from "~/lib/data.js";
 import { useTypedAppFormContext } from "~/lib/form.js";
+import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { cn } from "~/lib/utils.js";
 import { transactionFormContextOptions } from "./transaction-form-options.js";
 
+/** Sentinel combobox item — keyboard-reachable create action, never stored as a category id. */
+const INLINE_CREATE_ITEM = "__sc_inline_create__";
+
+function toInlineCreatedCategory(
+  id: Category["id"],
+  name: string,
+  type: TransactionType,
+  color: string,
+): Category {
+  return {
+    id,
+    name,
+    type,
+    color,
+    status: "active",
+    creator: { displayName: "You", image: undefined },
+    canEditFields: true,
+    canArchive: true,
+  };
+}
+
+function buildCategoryNameIndex(categoryById: ReadonlyMap<string, Category>) {
+  const byType = new Map<TransactionType, Map<string, Category>>();
+  for (const category of categoryById.values()) {
+    let typeIndex = byType.get(category.type);
+    if (!typeIndex) {
+      typeIndex = new Map();
+      byType.set(category.type, typeIndex);
+    }
+    typeIndex.set(category.name.toLowerCase(), category);
+  }
+  return byType;
+}
+
+function lookupCategoryByName(
+  index: ReadonlyMap<TransactionType, ReadonlyMap<string, Category>>,
+  activeType: TransactionType,
+  name: string,
+) {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  return index.get(activeType)?.get(normalized) ?? null;
+}
+
 export function TransactionFormCategorySection({
+  circleId,
   categoryById,
   alreadyAttached,
   activeCategories,
   activeType,
+  onInlineCreatedCategory,
 }: {
+  circleId: Circle["id"];
   categoryById: ReadonlyMap<string, Category>;
   alreadyAttached: ReadonlySet<string>;
   activeCategories: Category[];
   activeType: TransactionType;
+  onInlineCreatedCategory: (category: Category) => void;
 }) {
   const form = useTypedAppFormContext(transactionFormContextOptions);
+  const createCategory = useCreateCategory();
   const anchorRef = useComboboxAnchor();
+  const [query, setQuery] = useState("");
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const trimmedQuery = query.trim();
+  const categoryNameIndex = useMemo(() => buildCategoryNameIndex(categoryById), [categoryById]);
+  const exactNameMatch = useMemo(
+    () => lookupCategoryByName(categoryNameIndex, activeType, trimmedQuery),
+    [categoryNameIndex, activeType, trimmedQuery],
+  );
+  const showCreateAffordance = trimmedQuery.length > 0 && !exactNameMatch && !creating;
+  const showReservedName =
+    trimmedQuery.length > 0 && exactNameMatch?.status === "archived" && !creating;
+  const createOptionLabel = `Create "${trimmedQuery}"`;
+
   const activeIds = useMemo(
     () => activeCategories.map((category) => category.id),
     [activeCategories],
   );
+
+  const comboboxItems = useMemo(
+    () => (showCreateAffordance ? [...activeIds, INLINE_CREATE_ITEM] : activeIds),
+    [activeIds, showCreateAffordance],
+  );
+
+  async function handleInlineCreate(
+    currentIds: string[],
+    onIdsChange: (nextIds: string[]) => void,
+  ) {
+    setInlineError(null);
+
+    if (!trimmedQuery) {
+      return;
+    }
+
+    if (exactNameMatch?.status === "active") {
+      if (!currentIds.includes(exactNameMatch.id)) {
+        onIdsChange([...currentIds, exactNameMatch.id]);
+      }
+      setQuery("");
+      return;
+    }
+    if (exactNameMatch?.status === "archived") {
+      setInlineError(`A category named '${exactNameMatch.name}' already exists but is archived`);
+      return;
+    }
+
+    const parsed = categoryInputSchema.safeParse({
+      name: trimmedQuery,
+      type: activeType,
+      color: DEFAULT_COLOR_ID,
+    });
+    if (!parsed.success) {
+      setInlineError(parsed.error.issues[0]?.message ?? "Please check the category name.");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const newId = await createCategory({
+        circleId,
+        name: parsed.data.name,
+        type: activeType,
+        color: DEFAULT_COLOR_ID,
+      });
+      if (!newId) {
+        setInlineError("Couldn't create the category. Please try again.");
+        return;
+      }
+      const created = toInlineCreatedCategory(
+        newId,
+        parsed.data.name,
+        activeType,
+        DEFAULT_COLOR_ID,
+      );
+      onInlineCreatedCategory(created);
+      if (!currentIds.includes(newId)) {
+        onIdsChange([...currentIds, newId]);
+      }
+      setQuery("");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      const isNameCollision = /already exists/i.test(message);
+      if (!isNameCollision) {
+        console.error("inlineCreateCategory failed", caught);
+      }
+      setInlineError(
+        isNameCollision
+          ? "A category with this name already exists for this type."
+          : mutationErrorMessageForUser(caught, "Couldn't create the category. Please try again."),
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
 
   return (
     <form.Subscribe selector={(state) => state.submissionAttempts > 0}>
@@ -53,78 +201,116 @@ export function TransactionFormCategorySection({
             const blockingArchived = archivedSelected.filter(
               (category) => !alreadyAttached.has(category.id),
             );
-            const showPicker = activeCategories.length > 0 || archivedSelected.length > 0;
 
             return (
               <FieldSet>
                 <FieldLegend>Categories</FieldLegend>
-                {!showPicker ? (
-                  <p className="text-xs text-muted-foreground">
-                    No {activeType} categories yet. Create one first to record a {activeType}.
-                  </p>
-                ) : (
-                  <Combobox
-                    multiple
-                    autoHighlight
-                    value={field.state.value}
-                    onValueChange={(next) => {
-                      field.handleChange(next ?? []);
-                    }}
-                    items={activeIds}
-                    itemToStringLabel={(id: string) => categoryById.get(id)?.name ?? id}
-                  >
-                    <ComboboxChips ref={anchorRef} className="w-full max-w-full">
-                      <ComboboxValue>
-                        {(values: string[]) => (
-                          <>
-                            {values.map((id) => {
-                              const category = categoryById.get(id);
-                              const archived = category?.status === "archived";
-                              const label = category?.name ?? id;
-                              return (
-                                <ComboboxChip
-                                  key={id}
-                                  removeAriaLabel={`Remove ${label}`}
-                                  className={
-                                    archived
-                                      ? cn(
-                                          "border border-amber-600/70 bg-amber-950/40 text-amber-300",
-                                          "hover:text-amber-100",
-                                        )
-                                      : undefined
-                                  }
-                                >
-                                  {label}
-                                  {archived ? " · archived" : ""}
-                                </ComboboxChip>
-                              );
-                            })}
-                            <ComboboxChipsInput
-                              placeholder="Search categories…"
-                              aria-label="Categories"
-                            />
-                          </>
-                        )}
-                      </ComboboxValue>
-                    </ComboboxChips>
-                    <ComboboxContent anchor={anchorRef}>
-                      <ComboboxEmpty>No matching categories.</ComboboxEmpty>
-                      <ComboboxList>
-                        {(id: string) => {
-                          const category = categoryById.get(id);
-                          if (category?.status !== "active") {
-                            return null;
-                          }
+                <Combobox
+                  multiple
+                  autoHighlight
+                  disabled={creating}
+                  inputValue={query}
+                  onInputValueChange={(next, eventDetails) => {
+                    // Only mirror typed input — item selection also emits input clears we
+                    // handle explicitly after a successful pick or inline create.
+                    if (eventDetails.reason !== "input-change") {
+                      return;
+                    }
+                    setQuery(next);
+                    if (inlineError) {
+                      setInlineError(null);
+                    }
+                  }}
+                  value={field.state.value}
+                  onValueChange={(next) => {
+                    const ids = next ?? [];
+                    if (ids.includes(INLINE_CREATE_ITEM)) {
+                      void handleInlineCreate(field.state.value, field.handleChange);
+                      return;
+                    }
+                    const added = ids.length > field.state.value.length;
+                    field.handleChange(ids);
+                    if (added) {
+                      setQuery("");
+                    }
+                  }}
+                  items={comboboxItems}
+                  itemToStringLabel={(id: string) =>
+                    id === INLINE_CREATE_ITEM
+                      ? createOptionLabel
+                      : (categoryById.get(id)?.name ?? id)
+                  }
+                >
+                  <ComboboxChips ref={anchorRef} className="w-full max-w-full">
+                    <ComboboxValue>
+                      {(values: string[]) => (
+                        <>
+                          {values.map((id) => {
+                            const category = categoryById.get(id);
+                            const archived = category?.status === "archived";
+                            const label = category?.name ?? id;
+                            return (
+                              <ComboboxChip
+                                key={id}
+                                removeAriaLabel={`Remove ${label}`}
+                                className={
+                                  archived
+                                    ? cn(
+                                        "border border-amber-600/70 bg-amber-950/40 text-amber-300",
+                                        "hover:text-amber-100",
+                                      )
+                                    : undefined
+                                }
+                              >
+                                {label}
+                                {archived ? " · archived" : ""}
+                              </ComboboxChip>
+                            );
+                          })}
+                          <ComboboxChipsInput
+                            placeholder="Search categories…"
+                            aria-label="Categories"
+                            disabled={creating}
+                          />
+                        </>
+                      )}
+                    </ComboboxValue>
+                  </ComboboxChips>
+                  <ComboboxContent anchor={anchorRef}>
+                    <ComboboxEmpty>No matching categories.</ComboboxEmpty>
+                    <ComboboxList>
+                      {(id: string) => {
+                        if (id === INLINE_CREATE_ITEM) {
                           return (
-                            <ComboboxItem key={id} value={id}>
-                              {category.name}
+                            <ComboboxItem key={id} value={id} className="border-t border-border">
+                              {createOptionLabel}
                             </ComboboxItem>
                           );
-                        }}
-                      </ComboboxList>
-                    </ComboboxContent>
-                  </Combobox>
-                )}
+                        }
+                        const category = categoryById.get(id);
+                        if (category?.status !== "active") {
+                          return null;
+                        }
+                        return (
+                          <ComboboxItem key={id} value={id}>
+                            {category.name}
+                          </ComboboxItem>
+                        );
+                      }}
+                    </ComboboxList>
+                  </ComboboxContent>
+                </Combobox>
+                {showReservedName ? (
+                  <p role="alert" className="text-sm text-amber-400">
+                    A category named &lsquo;{exactNameMatch?.name}&rsquo; already exists but is
+                    archived
+                  </p>
+                ) : null}
+                {inlineError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {inlineError}
+                  </p>
+                ) : null}
                 {blockingArchived.length > 0 ? (
                   <p role="alert" className="text-sm text-amber-400">
                     {blockingArchived.length === 1

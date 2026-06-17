@@ -49,6 +49,18 @@ export async function pickFormCategory(page: Page, scope: Locator, name: string)
 }
 
 /**
+ * Inline-create a Category in a Transaction form combobox (CAT-3).
+ */
+export async function inlineCreateFormCategory(page: Page, scope: Locator, name: string) {
+  const combo = scope.getByRole("combobox", { name: "Categories" });
+  await combo.click();
+  await combo.fill(name);
+  await page.getByRole("option", { name: `Create "${name}"` }).click();
+  // createCategory is async; wait for the chip. Don't Escape — it can clear the selection.
+  await expect(scope.getByRole("button", { name: `Remove ${name}` })).toBeVisible();
+}
+
+/**
  * Create a Category through the dedicated new-Category route (issue #96; revised #138):
  * from the Categories list, the "New category" CTA opens the create page, submit creates it
  * and navigates back to the list (its `returnTo`). The form now carries an in-form
