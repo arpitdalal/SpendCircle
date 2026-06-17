@@ -9,7 +9,7 @@ import {
   toCurrencyCode,
 } from "@spend-circle/domain";
 import { useEffect } from "react";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   Bar,
   CartesianGrid,
@@ -41,7 +41,7 @@ import {
 import { formatMonthLabel, formatMonthTick } from "~/lib/datetime.js";
 import { transactionDetailHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
-import { withReturnTo } from "~/lib/return-to-url.js";
+import { useReturnToOrigin, withReturnTo } from "~/lib/return-to-url.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -419,8 +419,9 @@ function ComparisonChart({ comparison }: { comparison: MonthlyComparison }) {
 /**
  * The recent-Transactions feed (PRD 75): the latest active Transactions by record
  * time, money formatted in the Circle Currency. Each row's title links to the TXN-4
- * detail route with the dashboard month in the query (ADR 0017), matching the Ledger
- * row links. `dashboard` is `undefined` while loading; an empty feed reads as "no recent
+ * detail route, carrying the Dashboard's current URL (its scope / Paid By filter) as a
+ * validated `returnTo` origin (issue #123) so close/back returns here — matching the
+ * Ledger row links. `dashboard` is `undefined` while loading; an empty feed reads as "no recent
  * activity" for the selected scope (which the Paid By filter may have narrowed).
  */
 function RecentTransactions({
@@ -433,8 +434,7 @@ function RecentTransactions({
   const currency = toCurrencyCode(circle.currency);
   // The Dashboard's own URL (its scope/Paid By filter) is the origin a recent row returns
   // to via `returnTo` (#123), matching the ledger/search row links.
-  const location = useLocation();
-  const origin = location.pathname + location.search;
+  const origin = useReturnToOrigin();
 
   return (
     <section className="space-y-3" aria-labelledby="dashboard-recent-heading">

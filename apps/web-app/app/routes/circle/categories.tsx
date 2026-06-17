@@ -1,6 +1,6 @@
 import { COLOR_PALETTE, categoryUpdateSchema, LIMITS } from "@spend-circle/domain";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { ColorPicker } from "~/components/category-form.js";
 import { HistoryList } from "~/components/history-list.js";
 import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
@@ -29,7 +29,7 @@ import {
   useUpdateCategory,
 } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
-import { withReturnTo } from "~/lib/return-to-url.js";
+import { useReturnToOrigin, withReturnTo } from "~/lib/return-to-url.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -70,13 +70,12 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: CategoryLifecycleFilter; label: str
  */
 export default function CircleCategories() {
   const circle = useCircle();
-  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = readCategoriesFilters(searchParams);
   const writable = circle.status === "active";
   // The list's full URL (its type, status, search) is the origin the New-category CTA
   // returns to via `returnTo` (#123), so a filtered view round-trips through the new page.
-  const origin = location.pathname + location.search;
+  const origin = useReturnToOrigin();
   const page = useCategoriesPage(circle.id, {
     type: filters.type,
     status: filters.status,

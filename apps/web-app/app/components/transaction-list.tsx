@@ -1,6 +1,6 @@
 import { formatMoney, money, type PlainMonth, toCurrencyCode } from "@spend-circle/domain";
 import { useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Button } from "~/components/ui/button.js";
@@ -15,7 +15,7 @@ import {
 import { transactionDetailHref, transactionEditHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
-import { withReturnTo } from "~/lib/return-to-url.js";
+import { useReturnToOrigin, withReturnTo } from "~/lib/return-to-url.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
 
@@ -46,8 +46,7 @@ export function TransactionList({
   const { transactions, status, loadMore } = paginated;
   // This list renders on both the ledger and Search; either way its current URL (filters,
   // page, month) is the origin a row's detail/edit link returns to via `returnTo` (#123).
-  const location = useLocation();
-  const origin = location.pathname + location.search;
+  const origin = useReturnToOrigin();
 
   if (status === "LoadingFirstPage") {
     return (

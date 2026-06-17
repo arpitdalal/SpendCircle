@@ -50,6 +50,11 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
+/** Minimal Circle-layout `<h1>` chrome for heading-hierarchy assertions in route tests. */
+export function circleLayoutHeadingChrome(circle: Pick<Circle, "name">) {
+  return <h1>{circle.name}</h1>;
+}
+
 /**
  * Renders arbitrary (non-Circle-scoped) ROUTES under a real `MemoryRouter` so route
  * navigation is exercised end to end: the test seeds the address bar via `initialEntries`,

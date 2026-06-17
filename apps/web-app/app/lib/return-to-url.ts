@@ -1,3 +1,4 @@
+import { useLocation } from "react-router";
 import { withQuery } from "./ledger-url.js";
 
 /**
@@ -68,6 +69,17 @@ const CIRCLE_SCOPED_PATH = /^\/circles\/[^/?#]+(?:[/?#]|$)/;
  * a traversal segment and the shape checks already reject it.)
  */
 const DOT_SEGMENT = /^(?:\.|%2e){2}$/i;
+
+/**
+ * The current URL captured as a `returnTo` origin — the single home for "where am I
+ * returning to FROM", so call sites can't drift on which URL parts to include. Pass the
+ * result to {@link withReturnTo}. Includes the hash for robustness (parseReturnTo already
+ * tolerates `#`), matching the canonical-URL reconstruction in use-resolved-ref.ts.
+ */
+export function useReturnToOrigin() {
+  const location = useLocation();
+  return location.pathname + location.search + location.hash;
+}
 
 /**
  * Validates a raw `returnTo` query value, returning it only when it is a safe in-Circle

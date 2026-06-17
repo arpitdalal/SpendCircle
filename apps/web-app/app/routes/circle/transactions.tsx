@@ -9,7 +9,7 @@ import {
 } from "@spend-circle/domain";
 import { SlidersHorizontal } from "lucide-react";
 import { type FormEvent, useEffect, useRef } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Skeleton } from "~/components/skeleton.js";
 import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
@@ -27,7 +27,7 @@ import {
 import { formatMonthLabel } from "~/lib/datetime.js";
 import { transactionNewHref, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
-import { withReturnTo } from "~/lib/return-to-url.js";
+import { useReturnToOrigin, withReturnTo } from "~/lib/return-to-url.js";
 import {
   activeFilterCount,
   canonicalLedgerParams,
@@ -41,7 +41,6 @@ import { useCircle } from "~/routes/layouts/circle-layout.js";
 
 export default function CircleTransactions() {
   const circle = useCircle();
-  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const writable = circle.status === "active";
@@ -55,7 +54,7 @@ export default function CircleTransactions() {
     writable && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
   // The ledger's full URL (filters, page, month) is the origin a create/edit/detail link
   // returns to via `returnTo` (#123), so a filtered ledger round-trips for free.
-  const origin = location.pathname + location.search;
+  const origin = useReturnToOrigin();
   const {
     open: panelOpen,
     openPanel,

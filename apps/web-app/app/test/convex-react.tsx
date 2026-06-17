@@ -17,6 +17,7 @@ export { makeHistoryEventView } from "./convex/history.js";
 export { testId } from "./convex/ids.js";
 export { makeMemberView } from "./convex/members.js";
 export {
+  circleLayoutHeadingChrome,
   renderCircleRoutes,
   renderInCircle,
   renderRoutes,

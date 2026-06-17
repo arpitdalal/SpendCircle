@@ -4,6 +4,7 @@ import { Route, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Circle, Transaction } from "~/lib/data.js";
 import {
+  circleLayoutHeadingChrome,
   configureConvex,
   makeCategoryView,
   makeCircleView,
@@ -66,11 +67,25 @@ function setup(
     updateTransaction,
   });
   const url = opts.url ?? `/circles/${REF}/transactions/weekly-shop-t1/edit?returnTo=${LEDGER}`;
-  return renderCircleRoutes(circle, ROUTES, { initialEntries: [url] });
+  return renderCircleRoutes(circle, ROUTES, {
+    initialEntries: [url],
+    chrome: circleLayoutHeadingChrome(circle),
+  });
 }
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("TransactionEdit — heading hierarchy", () => {
+  it("renders the form title as h2 under the Circle layout h1", () => {
+    setup({
+      editableTransaction: makeTransactionView({ ref: "weekly-shop-t1", title: "Weekly shop" }),
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "Trip" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Edit transaction" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
 });
 
 describe("TransactionEdit — resolution", () => {

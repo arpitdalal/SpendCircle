@@ -40,6 +40,11 @@ describe("parseReturnTo", () => {
       "/circles/trip-c1/transactions/rent-t1?returnTo=%2Fcircles%2Ftrip-c1%2Fsearch",
       "/circles/trip-c1/transactions/rent-t1?returnTo=%2Fcircles%2Ftrip-c1%2Fsearch",
     ],
+    [
+      "honors an in-Circle path with a hash fragment",
+      "/circles/trip-c1/transactions?month=2026-05#section",
+      "/circles/trip-c1/transactions?month=2026-05#section",
+    ],
   ])("%s", (_name, raw, expected) => {
     expect(parseReturnTo(raw, { fallback: FALLBACK })).toBe(expected);
   });
