@@ -1,6 +1,7 @@
 import {
   clickCircleChromeTab,
   createCategoryViaForm,
+  createRegularCircleAndFinishSetup,
   expect,
   pickFormCategory,
   test,
@@ -90,13 +91,7 @@ test("sparse transaction filters spanning multiple source pages do not crash", a
   // Convex full-text matches any query term, so filler rows must share no query token.
   const missTitle = (index: number) => `E2E Filler Row ${index} ${nonce}`;
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "Circles" }).click();
-  await page.getByRole("menu").getByRole("menuitem", { name: "Create circle" }).click();
-  await page.getByLabel("Name").fill(circleName);
-  await page.getByRole("button", { name: "Create circle" }).click();
-  await page.getByRole("button", { name: "Skip" }).click();
-  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+  await createRegularCircleAndFinishSetup(page, { name: circleName });
 
   await clickCircleChromeTab(page, "Categories");
   await createCategoryViaForm(page, { name: categoryName });
@@ -153,13 +148,7 @@ test("transaction search pagination updates URL and result slice", async ({ page
   const matchingTitle = (index: number) => `E2E Paged Needle ${index} ${nonce}`;
   const rowCount = 26;
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "Circles" }).click();
-  await page.getByRole("menu").getByRole("menuitem", { name: "Create circle" }).click();
-  await page.getByLabel("Name").fill(circleName);
-  await page.getByRole("button", { name: "Create circle" }).click();
-  await page.getByRole("button", { name: "Skip" }).click();
-  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+  await createRegularCircleAndFinishSetup(page, { name: circleName });
 
   await clickCircleChromeTab(page, "Categories");
   await createCategoryViaForm(page, { name: categoryName });

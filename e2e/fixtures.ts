@@ -8,6 +8,31 @@ const SM_BREAKPOINT_PX = 640;
 
 export type CircleChromeTab = "Dashboard" | "Transactions" | "Search" | "Categories" | "Members";
 
+/** Complete mandatory Circle setup (CS-5); lands on the Circle dashboard. */
+export async function finishCircleSetup(page: Page) {
+  await page.getByRole("button", { name: "Finish setup" }).click();
+  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+}
+
+/**
+ * Shell → create regular Circle → mandatory setup complete → dashboard.
+ * Use for specs that need an isolated Circle without polluting Personal pickers.
+ */
+export async function createRegularCircleAndFinishSetup(
+  page: Page,
+  { name, color }: { name: string; color?: string },
+) {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Circles" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Create circle" }).click();
+  await page.getByLabel("Name").fill(name);
+  if (color) {
+    await page.getByRole("button", { name: color }).click();
+  }
+  await page.getByRole("button", { name: "Create circle" }).click();
+  await finishCircleSetup(page);
+}
+
 /**
  * Circle tab navigation: desktop horizontal tabs vs mobile bottom bar + More sheet
  * (issue #124). Use instead of bare `getByRole("link", { name: … })` for Circle chrome.

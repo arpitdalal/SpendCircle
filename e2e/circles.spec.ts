@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures.js";
+import { expect, finishCircleSetup, test } from "./fixtures.js";
 
 /**
  * TRUE-E2E (ADR 0019): create a regular Circle through the real shell → Convex
@@ -31,8 +31,7 @@ test("a user creates a regular circle from the shell and can finish setup", asyn
   await expect(page.getByRole("heading", { name: "Circle setup" })).toBeVisible();
   expect(page.url()).toMatch(/\/circles\/[^/]+-[^/]+\/setup$/);
 
-  await page.getByRole("button", { name: "Finish setup" }).click();
-  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+  await finishCircleSetup(page);
   expect(page.url()).toMatch(/\/circles\/[^/]+-[^/]+$/);
   await expect(page.getByRole("link", { name: "Transactions" })).toBeVisible();
 });
@@ -48,8 +47,7 @@ test("the new circle appears in the switcher and is reachable again", async ({ p
   await expect(page.getByRole("heading", { name })).toBeVisible();
 
   // Finish mandatory setup before the Circle-scoped routes are usable.
-  await page.getByRole("button", { name: "Finish setup" }).click();
-  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+  await finishCircleSetup(page);
 
   // The reactive `listMyCircles` now includes it: open the switcher and select it.
   await page.getByRole("button", { name: "Circles" }).click();
