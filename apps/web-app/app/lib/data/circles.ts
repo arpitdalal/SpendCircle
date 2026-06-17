@@ -39,3 +39,13 @@ export function useCreateCircle() {
 export function useCompleteCircleSetup() {
   return useMutation(api.circles.completeCircleSetup);
 }
+
+/** Renames a Circle (F0). */
+export function useRenameCircle() {
+  return useMutation(api.circles.renameCircle);
+}
+
+/** Updates Circle Settings: Color and Setup answers (CS-2). */
+export function useUpdateCircleSettings() {
+  return useMutation(api.circles.updateCircleSettings);
+}

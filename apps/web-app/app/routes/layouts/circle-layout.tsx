@@ -1,9 +1,11 @@
-import { NavLink, Outlet, useOutletContext } from "react-router";
+import { Settings } from "lucide-react";
+import { href, Link, NavLink, Outlet, useOutletContext } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { CircleMobileBottomNav } from "~/components/circle-mobile-bottom-nav.js";
 import { PageSkeleton } from "~/components/skeleton.js";
 import { Splash } from "~/components/splash.js";
 import { circleNavItems } from "~/lib/circle-nav.js";
+import { useMembers } from "~/lib/data.js";
 import { coversCircleNavigation, usePendingRouteSkeleton } from "~/lib/route-skeleton.js";
 import { type Circle, useResolvedCircle } from "~/lib/use-resolved-circle.js";
 import { cn } from "~/lib/utils.js";
@@ -31,19 +33,36 @@ export default function CircleLayout() {
     return <Splash label="Opening circle…" />;
   }
 
-  const circle = resolution.value;
+  return <ResolvedCircleLayout circle={resolution.value} showSkeleton={showSkeleton} />;
+}
+
+function ResolvedCircleLayout({ circle, showSkeleton }: { circle: Circle; showSkeleton: boolean }) {
   const tabs = circleNavItems(circle.ref);
+  const members = useMembers(circle.id);
+  const showSettings =
+    members !== undefined && members?.find((member) => member.isSelf)?.role === "owner";
+  const settingsPath = href("/circles/:circleRef/settings", { circleRef: circle.ref });
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex items-center gap-3">
         <CircleMark mark={circle.mark} color={circle.color} className="size-11 text-base" />
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="font-display text-xl font-semibold tracking-tight">{circle.name}</h1>
           <p className="text-xs text-muted-foreground">
             {circle.kind === "personal" ? "Personal circle" : "Circle"} · {circle.currency}
           </p>
         </div>
+        {showSettings ? (
+          <Link
+            to={settingsPath}
+            prefetch="intent"
+            aria-label="Circle settings"
+            className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-ring/60 hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <Settings aria-hidden className="size-4" />
+          </Link>
+        ) : null}
       </div>
 
       <nav

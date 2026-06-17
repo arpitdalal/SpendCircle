@@ -3,6 +3,7 @@ import { COLOR_PALETTE, colorLabel } from "./color.js";
 import { MAX_AMOUNT_MINOR } from "./money.js";
 import {
   categoryInputSchema,
+  circleSettingsUpdateSchema,
   LIMITS,
   toMutationArgs,
   transactionCreateSchema,
@@ -66,6 +67,34 @@ describe("categoryInputSchema", () => {
     for (const color of COLOR_PALETTE) {
       expect(categoryInputSchema.safeParse({ ...valid, color: color.id }).success).toBe(true);
     }
+  });
+});
+
+describe("circleSettingsUpdateSchema (server contract)", () => {
+  it("accepts an empty payload (all fields optional ≡ no-op edit)", () => {
+    expect(circleSettingsUpdateSchema.parse({})).toEqual({});
+  });
+
+  it("accepts a valid color and setup answers", () => {
+    expect(
+      circleSettingsUpdateSchema.parse({
+        color: "teal",
+        setupAnswers: { purpose: "residence", residenceType: "owned" },
+      }),
+    ).toEqual({
+      color: "teal",
+      setupAnswers: { purpose: "residence", residenceType: "owned" },
+    });
+  });
+
+  it("rejects a color outside the palette", () => {
+    expect(circleSettingsUpdateSchema.safeParse({ color: "chartreuse" }).success).toBe(false);
+  });
+
+  it("rejects an invalid setup purpose", () => {
+    expect(
+      circleSettingsUpdateSchema.safeParse({ setupAnswers: { purpose: "vacation" } }).success,
+    ).toBe(false);
   });
 });
 

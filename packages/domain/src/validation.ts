@@ -3,6 +3,7 @@ import { isValidColorId } from "./color.js";
 import { isSupportedCurrency } from "./currency.js";
 import { isValidPlainDate } from "./date.js";
 import { type AmountParseError, isValidMinorUnits, parseAmountToMinorUnits } from "./money.js";
+import { circleSetupAnswersSchema } from "./setup.js";
 
 /**
  * Shared form-facing validation. These Zod schemas (ADR 0010) are reused by the
@@ -51,6 +52,17 @@ export const categoryUpdateSchema = z.object({
   color: colorId.optional(),
 });
 export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
+
+/**
+ * Server-facing Circle Settings input (CS-2), parallel to {@link categoryUpdateSchema}.
+ * Both fields are optional: an absent field means "leave it unchanged", and each present
+ * field is validated by the same rule as on create/setup so the entry points can't drift.
+ */
+export const circleSettingsUpdateSchema = z.object({
+  color: colorId.optional(),
+  setupAnswers: circleSetupAnswersSchema.optional(),
+});
+export type CircleSettingsUpdateInput = z.infer<typeof circleSettingsUpdateSchema>;
 
 /**
  * The Transaction fields shared by the form schema and the server-facing create

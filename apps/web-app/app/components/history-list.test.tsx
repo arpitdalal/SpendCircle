@@ -99,6 +99,27 @@ describe("HistoryList — content", () => {
     ]);
     expect(screen.getByText("System")).toBeInTheDocument();
   });
+
+  it("labels Circle Settings history events and setup fields", () => {
+    renderList([
+      {
+        id: "h1",
+        action: "settings_changed",
+        createdAt: Date.UTC(2026, 4, 16, 14, 5),
+        actor: { displayName: "Olive Owner" },
+        changes: [
+          { field: "color", from: "Blue", to: "Green" },
+          { field: "setup.purpose", from: "trip", to: "residence" },
+          { field: "setup.residenceType", to: "leased" },
+        ],
+      },
+    ]);
+
+    expect(screen.getByText(/updated settings/)).toBeInTheDocument();
+    expect(screen.getByText("Circle use:")).toBeInTheDocument();
+    expect(screen.getByText("Residence type:")).toBeInTheDocument();
+    expect(screen.getByText("Color:")).toBeInTheDocument();
+  });
 });
 
 describe("HistoryList — read states", () => {
