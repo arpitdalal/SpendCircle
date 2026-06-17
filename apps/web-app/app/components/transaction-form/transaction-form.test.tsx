@@ -393,7 +393,7 @@ describe("TransactionForm — create", () => {
     await inlineCreateTransactionFormCategory(user, form, "Snacks", { waitForSelection: false });
 
     expect(
-      await screen.findByText("A category with this name already exists for this type."),
+      await screen.findByText("A category with this name already exists for this type"),
     ).toBeInTheDocument();
     expect(within(form).queryByRole("button", { name: /Remove Snacks/ })).not.toBeInTheDocument();
   });
@@ -441,7 +441,7 @@ describe("TransactionForm — create", () => {
 
     expect(combo).toHaveValue("Rent");
     expect(
-      await screen.findByText("A category with this name already exists for this type."),
+      await screen.findByText("A category with this name already exists for this type"),
     ).toBeInTheDocument();
     await user.keyboard("{Escape}");
   });

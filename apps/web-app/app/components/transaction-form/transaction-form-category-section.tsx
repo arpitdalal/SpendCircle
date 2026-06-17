@@ -169,16 +169,15 @@ export function TransactionFormCategorySection({
       }
       setQuery("");
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "";
-      const isNameCollision = /already exists/i.test(message);
-      if (!isNameCollision) {
+      const duplicateNameMessage = "A category with this name already exists for this type";
+      const userMessage = mutationErrorMessageForUser(
+        caught,
+        "Couldn't create the category. Please try again.",
+      );
+      if (userMessage !== duplicateNameMessage) {
         console.error("inlineCreateCategory failed", caught);
       }
-      setInlineError(
-        isNameCollision
-          ? "A category with this name already exists for this type."
-          : mutationErrorMessageForUser(caught, "Couldn't create the category. Please try again."),
-      );
+      setInlineError(userMessage);
     } finally {
       setCreating(false);
     }

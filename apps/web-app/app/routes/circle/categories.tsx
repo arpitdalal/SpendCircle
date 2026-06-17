@@ -432,11 +432,8 @@ function EditCategoryForm({ category, onClose }: { category: Category; onClose: 
       });
       onClose();
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "";
       setError(
-        /already exists/i.test(message)
-          ? "A category with this name already exists for this type."
-          : mutationErrorMessageForUser(caught, "Couldn't save the category. Please try again."),
+        mutationErrorMessageForUser(caught, "Couldn't save the category. Please try again."),
       );
       setSubmitting(false);
     }

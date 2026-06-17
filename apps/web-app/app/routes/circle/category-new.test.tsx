@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ConvexError } from "convex/values";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Circle } from "~/lib/data.js";
@@ -146,12 +147,14 @@ describe("CategoryNew — inline errors stay on the page", () => {
     const user = userEvent.setup();
     setup();
     createCategory.mockRejectedValueOnce(
-      new Error("A category with this name already exists for this type"),
+      new ConvexError("A category with this name already exists for this type"),
     );
     await user.type(screen.getByLabelText(/New expense category/), "Groceries");
     await user.click(screen.getByRole("button", { name: "Add category" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/already exists/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "A category with this name already exists for this type",
+    );
   });
 
   it("shows a generic error for an unexpected failure", async () => {
@@ -218,11 +221,13 @@ describe("CategoryNew — in-form type toggle (issue #138)", () => {
     const user = userEvent.setup();
     setup();
     createCategory.mockRejectedValueOnce(
-      new Error("A category with this name already exists for this type"),
+      new ConvexError("A category with this name already exists for this type"),
     );
     await user.type(screen.getByLabelText(/New expense category/), "Groceries");
     await user.click(screen.getByRole("button", { name: "Add category" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/already exists/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "A category with this name already exists for this type",
+    );
 
     await user.click(
       within(screen.getByRole("group", { name: "Type" })).getByRole("button", { name: "Income" }),
