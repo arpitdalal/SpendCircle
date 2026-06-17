@@ -1,9 +1,10 @@
 import { searchResultTotalPages } from "@spend-circle/domain";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
+import { DebouncedSearchInput } from "~/components/ui/debounced-search-input.js";
 import { FilterPanel } from "~/components/ui/filter-panel.js";
 import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-combobox.js";
 import { Pagination } from "~/components/ui/pagination.js";
@@ -23,6 +24,7 @@ import {
   type SearchFilters,
   toMinorUnits,
 } from "~/lib/transaction-filter-url.js";
+import { cleanText } from "~/lib/url-codec.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
 export default function CircleSearch() {
@@ -35,9 +37,7 @@ export default function CircleSearch() {
     onOpenChange: setPanelOpen,
     draft,
     setDraft,
-    // The top-bar search box binds `draft.q` but lives outside the panel — closing the panel
-    // must not wipe a typed-but-unapplied query, only the panel's own filter edits.
-  } = useFilterPanelDraft(filters, { externalFields: ["q"] });
+  } = useFilterPanelDraft(filters);
   const options = useTransactionSearchOptions(circle.id, panelOpen ? draft.type : filters.type);
   const results = useTransactionSearch(circle.id, toSearchQuery(filters), {
     page: filters.page,
@@ -112,7 +112,7 @@ export default function CircleSearch() {
     if (hasReversedRange(draft)) {
       return;
     }
-    setSearchParams(canonicalSearchParams({ ...draft, page: 1 }), { replace: false });
+    setSearchParams(canonicalSearchParams({ ...draft, q: filters.q, page: 1 }), { replace: false });
     setPanelOpen(false);
   };
 
@@ -133,25 +133,21 @@ export default function CircleSearch() {
         <h2 className="font-display text-lg font-semibold tracking-tight">Search</h2>
       </div>
 
-      <form onSubmit={submit} className="flex gap-2">
-        <label className="min-w-0 flex-1">
-          <span className="sr-only">Search title or note</span>
-          <input
-            type="search"
-            value={draft.q}
-            onChange={(event) => setDraft({ ...draft, q: event.currentTarget.value })}
-            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
-          />
-        </label>
-        <Button type="submit" disabled={hasReversedRange(draft)}>
-          <Search className="size-4" />
-          Search
-        </Button>
+      <div className="flex gap-2">
+        <DebouncedSearchInput
+          className="min-w-0 flex-1"
+          value={filters.q}
+          onSearch={(q) =>
+            setSearchParams(canonicalSearchParams({ ...filters, q, page: 1 }), { replace: true })
+          }
+          label="Search title or note"
+          normalize={(raw) => cleanText(raw)}
+        />
         <Button type="button" variant="outline" onClick={openPanel}>
           <SlidersHorizontal className="size-4" />
           Filters{filterCount > 0 ? ` (${filterCount})` : ""}
         </Button>
-      </form>
+      </div>
 
       <TransactionList
         paginated={paginatedList}

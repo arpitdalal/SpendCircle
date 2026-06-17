@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Route } from "react-router";
+import { Route, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category, Circle, Member, TransactionFilterOptions } from "~/lib/data.js";
 import {
@@ -26,6 +26,16 @@ vi.mock(
 import CircleSearch from "./search.js";
 
 const REF = "trip-c1";
+
+/** Walks the real history stack so tests can assert debounced search uses replace. */
+function GoBack() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      test-go-back
+    </button>
+  );
+}
 
 const ROUTES = (
   <>
@@ -54,7 +64,10 @@ function setup(
     transactionSearchOptions: opts.options ?? makeSearchOptions(),
   });
   const initialEntries = opts.initialEntries ?? [`/circles/${REF}/search`];
-  return { circle, ...renderCircleRoutes(circle, ROUTES, { initialEntries }) };
+  return {
+    circle,
+    ...renderCircleRoutes(circle, ROUTES, { initialEntries, chrome: <GoBack /> }),
+  };
 }
 
 function makeSearchOptions(): TransactionFilterOptions {
@@ -92,16 +105,35 @@ describe("CircleSearch", () => {
     expect(screen.getByText("Weekly shop")).toBeInTheDocument();
   });
 
-  it("does not change the URL until Search is submitted", async () => {
+  it("updates the URL as the user types (debounced)", async () => {
     const user = userEvent.setup();
     const { location } = setup({
       initialEntries: [`/circles/${REF}/search?type=all&status=active`],
     });
 
     await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "rent");
-    expect(location()).toBe(`/circles/${REF}/search?type=all&status=active`);
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => expect(location()).toMatch(/q=rent/));
     expect(location()).toBe(`/circles/${REF}/search?type=all&status=active&q=rent`);
+    expect(location()).not.toMatch(/page=/);
+  });
+
+  it("the debounced search REPLACES — back skips the typed states", async () => {
+    const user = userEvent.setup();
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all`],
+    });
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/search?type=all&status=all`));
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    await user.click(screen.getByRole("button", { name: "Active" }));
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(location()).toBe(`/circles/${REF}/search?type=all&status=active`);
+
+    await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "rent");
+    await waitFor(() => expect(location()).toMatch(/q=rent/));
+
+    await user.click(screen.getByRole("button", { name: "test-go-back" }));
+    expect(location()).toBe(`/circles/${REF}/search?type=all&status=all`);
   });
 
   it("applies advanced filters through the panel", async () => {
@@ -263,7 +295,6 @@ describe("CircleSearch", () => {
 
     await user.clear(screen.getByRole("searchbox", { name: "Search title or note" }));
     await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "new");
-    await user.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() => expect(location()).toMatch(/q=new/));
     expect(location()).not.toMatch(/page=/);
@@ -280,31 +311,53 @@ describe("CircleSearch", () => {
     await assertFilterPanelDiscardsDraftOnClose({ user, medium, location });
   });
 
-  it("keeps a typed-but-unapplied top-bar query when the panel is closed without applying", async () => {
+  it("keeps in-flight top-bar query when a concurrent applied change does not touch q", async () => {
+    const user = userEvent.setup();
+    const searchTransactions = Array.from({ length: 30 }, (_, index) =>
+      makeTransactionView({ ref: `t-${index}`, title: `Rent row ${index}` }),
+    );
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=all&q=rent&page=2`],
+      searchTransactions,
+    });
+
+    await waitFor(() => expect(screen.getByText("Rent row 25")).toBeInTheDocument());
+
+    const searchbox = screen.getByRole("searchbox", { name: "Search title or note" });
+    await user.type(searchbox, "al");
+    expect(searchbox).toHaveValue("rental");
+
+    await user.click(screen.getByRole("button", { name: "Page 1" }));
+    await waitFor(() => expect(location()).not.toMatch(/page=2/));
+
+    expect(searchbox).toHaveValue("rental");
+    expect(location()).toMatch(/q=rent/);
+  });
+
+  it("keeps open-panel draft selections when a pending top-bar debounce applies q", async () => {
     const user = userEvent.setup();
     const { location } = setup({
       initialEntries: [`/circles/${REF}/search?type=all&status=all`],
     });
+    await waitFor(() => expect(location()).toBe(`/circles/${REF}/search?type=all&status=all`));
 
-    // The top-bar query box lives outside the panel; it is not a panel edit.
+    // Start a top-bar query so a debounce is PENDING, then open Filters and pick a category
+    // before the debounce fires — the category lands in the panel draft first.
     await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "rent");
-
-    // Open Filters, make a panel edit, abandon it (Esc) without Apply.
     await user.click(screen.getByRole("button", { name: /Filters/ }));
-    await user.click(
-      within(screen.getByRole("dialog", { name: "Filters" })).getByRole("button", {
-        name: "Expense",
-      }),
-    );
-    await user.keyboard("{Escape}");
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Filters" })).not.toBeInTheDocument(),
-    );
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    await pickCombobox(user, dialog, "Categories", "Groceries");
+    // Pre-condition: the debounce hasn't fired yet, so the q write (and its resync) happens
+    // strictly AFTER the draft selection — exactly the data-loss race we're guarding.
+    expect(location()).not.toMatch(/q=rent/);
 
-    // The typed query survives — closing only discards the panel-owned edit (type).
-    expect(screen.getByRole("searchbox", { name: "Search title or note" })).toHaveValue("rent");
-    await user.click(screen.getByRole("button", { name: "Search" }));
-    expect(location()).toBe(`/circles/${REF}/search?type=all&status=all&q=rent`);
+    // The pending debounce now applies `q` to the URL while the panel is still open. The
+    // applied-only `q` change must not resync the draft and discard the category selection.
+    await waitFor(() => expect(location()).toMatch(/q=rent/));
+
+    await user.click(within(dialog).getByRole("button", { name: "Apply" }));
+    expect(location()).toMatch(/categories=cat-grocery/);
+    expect(location()).toMatch(/q=rent/);
   });
 
   it("does not apply abandoned panel edits when searching from the top bar after closing", async () => {
@@ -325,8 +378,8 @@ describe("CircleSearch", () => {
     // Searching from the top bar commits only the query — the abandoned type=expense edit
     // (which shared the same draft/submit) must not ride along.
     await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "rent");
-    await user.click(screen.getByRole("button", { name: "Search" }));
-
-    expect(location()).toBe(`/circles/${REF}/search?type=all&status=all&q=rent`);
+    await waitFor(() =>
+      expect(location()).toBe(`/circles/${REF}/search?type=all&status=all&q=rent`),
+    );
   });
 });
