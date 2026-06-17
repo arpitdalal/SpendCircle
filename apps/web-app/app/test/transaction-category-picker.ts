@@ -34,11 +34,14 @@ export async function inlineCreateTransactionFormCategory(
   user: UserEvent,
   form: HTMLElement,
   name: string,
+  opts?: { waitForSelection?: boolean },
 ) {
   const combo = within(form).getByRole("combobox", { name: "Categories" });
   await user.click(combo);
   await user.clear(combo);
   await user.type(combo, name);
-  await user.click(await screen.findByRole("button", { name: `Create "${name}"` }));
-  await user.keyboard("{Escape}");
+  await user.click(await screen.findByRole("option", { name: `Create "${name}"` }));
+  if (opts?.waitForSelection !== false) {
+    await within(form).findByRole("button", { name: new RegExp(`Remove ${name}`) });
+  }
 }

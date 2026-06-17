@@ -4,8 +4,7 @@ import {
   type TransactionType,
   transactionFieldSchemas,
 } from "@spend-circle/domain";
-import { useMemo, useRef, useState } from "react";
-import { Button } from "~/components/ui/button.js";
+import { useMemo, useState } from "react";
 import {
   Combobox,
   ComboboxChip,
@@ -24,6 +23,9 @@ import { useTypedAppFormContext } from "~/lib/form.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { cn } from "~/lib/utils.js";
 import { transactionFormContextOptions } from "./transaction-form-options.js";
+
+/** Sentinel combobox item — keyboard-reachable create action, never stored as a category id. */
+const INLINE_CREATE_ITEM = "__sc_inline_create__";
 
 function toInlineCreatedCategory(
   id: Category["id"],
@@ -78,23 +80,9 @@ export function TransactionFormCategorySection({
   const form = useTypedAppFormContext(transactionFormContextOptions);
   const createCategory = useCreateCategory();
   const anchorRef = useComboboxAnchor();
-  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-
-  function clearInputQuery() {
-    setQuery("");
-    const input = inputRef.current;
-    if (input) {
-      input.value = "";
-    }
-  }
-
-  const activeIds = useMemo(
-    () => activeCategories.map((category) => category.id),
-    [activeCategories],
-  );
 
   const trimmedQuery = query.trim();
   const exactNameMatch = trimmedQuery
@@ -103,6 +91,17 @@ export function TransactionFormCategorySection({
   const showCreateAffordance = trimmedQuery.length > 0 && !exactNameMatch && !creating;
   const showReservedName =
     trimmedQuery.length > 0 && exactNameMatch?.status === "archived" && !creating;
+  const createOptionLabel = `Create "${trimmedQuery}"`;
+
+  const activeIds = useMemo(
+    () => activeCategories.map((category) => category.id),
+    [activeCategories],
+  );
+
+  const comboboxItems = useMemo(
+    () => (showCreateAffordance ? [...activeIds, INLINE_CREATE_ITEM] : activeIds),
+    [activeIds, showCreateAffordance],
+  );
 
   async function handleInlineCreate(
     currentIds: string[],
@@ -119,7 +118,7 @@ export function TransactionFormCategorySection({
       if (!currentIds.includes(existing.id)) {
         onIdsChange([...currentIds, existing.id]);
       }
-      clearInputQuery();
+      setQuery("");
       return;
     }
     if (existing?.status === "archived") {
@@ -159,7 +158,7 @@ export function TransactionFormCategorySection({
       if (!currentIds.includes(newId)) {
         onIdsChange([...currentIds, newId]);
       }
-      clearInputQuery();
+      setQuery("");
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "";
       setInlineError(
@@ -197,12 +196,37 @@ export function TransactionFormCategorySection({
                   multiple
                   autoHighlight
                   disabled={creating}
+                  inputValue={query}
+                  onInputValueChange={(next, eventDetails) => {
+                    // Only mirror typed input — item selection also emits input clears we
+                    // handle explicitly after a successful pick or inline create.
+                    if (eventDetails.reason !== "input-change") {
+                      return;
+                    }
+                    setQuery(next);
+                    if (inlineError) {
+                      setInlineError(null);
+                    }
+                  }}
                   value={field.state.value}
                   onValueChange={(next) => {
-                    field.handleChange(next ?? []);
+                    const ids = next ?? [];
+                    if (ids.includes(INLINE_CREATE_ITEM)) {
+                      void handleInlineCreate(field.state.value, field.handleChange);
+                      return;
+                    }
+                    const added = ids.length > field.state.value.length;
+                    field.handleChange(ids);
+                    if (added) {
+                      setQuery("");
+                    }
                   }}
-                  items={activeIds}
-                  itemToStringLabel={(id: string) => categoryById.get(id)?.name ?? id}
+                  items={comboboxItems}
+                  itemToStringLabel={(id: string) =>
+                    id === INLINE_CREATE_ITEM
+                      ? createOptionLabel
+                      : (categoryById.get(id)?.name ?? id)
+                  }
                 >
                   <ComboboxChips ref={anchorRef} className="w-full max-w-full">
                     <ComboboxValue>
@@ -231,16 +255,9 @@ export function TransactionFormCategorySection({
                             );
                           })}
                           <ComboboxChipsInput
-                            ref={inputRef}
                             placeholder="Search categories…"
                             aria-label="Categories"
                             disabled={creating}
-                            onChange={(event) => {
-                              setQuery(event.target.value);
-                              if (inlineError) {
-                                setInlineError(null);
-                              }
-                            }}
                           />
                         </>
                       )}
@@ -250,6 +267,13 @@ export function TransactionFormCategorySection({
                     <ComboboxEmpty>No matching categories.</ComboboxEmpty>
                     <ComboboxList>
                       {(id: string) => {
+                        if (id === INLINE_CREATE_ITEM) {
+                          return (
+                            <ComboboxItem key={id} value={id} className="border-t border-border">
+                              {createOptionLabel}
+                            </ComboboxItem>
+                          );
+                        }
                         const category = categoryById.get(id);
                         if (category?.status !== "active") {
                           return null;
@@ -261,22 +285,6 @@ export function TransactionFormCategorySection({
                         );
                       }}
                     </ComboboxList>
-                    {showCreateAffordance ? (
-                      <div className="border-t border-border p-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="w-full justify-start font-normal"
-                          disabled={creating}
-                          onClick={() => {
-                            void handleInlineCreate(field.state.value, field.handleChange);
-                          }}
-                        >
-                          {creating ? "Creating…" : `Create "${trimmedQuery}"`}
-                        </Button>
-                      </div>
-                    ) : null}
                   </ComboboxContent>
                 </Combobox>
                 {showReservedName ? (

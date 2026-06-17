@@ -55,7 +55,7 @@ export async function inlineCreateFormCategory(page: Page, scope: Locator, name:
   const combo = scope.getByRole("combobox", { name: "Categories" });
   await combo.click();
   await combo.fill(name);
-  await page.getByRole("button", { name: `Create "${name}"` }).click();
+  await page.getByRole("option", { name: `Create "${name}"` }).click();
   await page.keyboard.press("Escape");
 }
 
