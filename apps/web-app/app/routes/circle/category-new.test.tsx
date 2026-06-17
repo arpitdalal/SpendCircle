@@ -3,7 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Circle } from "~/lib/data.js";
-import { configureConvex, makeCircleView, renderCircleRoutes } from "~/test/convex-react.js";
+import {
+  circleLayoutHeadingChrome,
+  configureConvex,
+  makeCircleView,
+  renderCircleRoutes,
+} from "~/test/convex-react.js";
 
 /**
  * Behavior test for the new-Category OBJECT route (jsdom, issue #96; revised #138). Doubles
@@ -37,11 +42,23 @@ function setup(opts: { circle?: Partial<Circle>; url?: string } = {}) {
   createCategory.mockResolvedValue("new-id");
   configureConvex({ createCategory });
   const url = opts.url ?? `/circles/${REF}/categories/new?type=expense&returnTo=${LIST}`;
-  return renderCircleRoutes(circle, ROUTES, { initialEntries: [url] });
+  return renderCircleRoutes(circle, ROUTES, {
+    initialEntries: [url],
+    chrome: circleLayoutHeadingChrome(circle),
+  });
 }
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("CategoryNew — heading hierarchy", () => {
+  it("renders the form title as h2 under the Circle layout h1", () => {
+    setup();
+    expect(screen.getByRole("heading", { level: 1, name: "Trip" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "New category" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
 });
 
 describe("CategoryNew — render and submit", () => {

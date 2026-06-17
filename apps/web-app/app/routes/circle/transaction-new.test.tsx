@@ -6,6 +6,7 @@ import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Circle } from "~/lib/data.js";
 import {
+  circleLayoutHeadingChrome,
   configureConvex,
   makeCategoryView,
   makeCircleView,
@@ -55,11 +56,23 @@ function setup(opts: { circle?: Partial<Circle>; url?: string } = {}) {
   });
   const url =
     opts.url ?? `/circles/${REF}/transactions/new?type=expense&month=2026-05&returnTo=${LEDGER}`;
-  return renderCircleRoutes(circle, ROUTES, { initialEntries: [url] });
+  return renderCircleRoutes(circle, ROUTES, {
+    initialEntries: [url],
+    chrome: circleLayoutHeadingChrome(circle),
+  });
 }
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("TransactionNew — heading hierarchy", () => {
+  it("renders the form title as h2 under the Circle layout h1", () => {
+    setup();
+    expect(screen.getByRole("heading", { level: 1, name: "Trip" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Add expense" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
 });
 
 describe("TransactionNew — render", () => {

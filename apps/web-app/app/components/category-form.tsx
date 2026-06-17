@@ -86,7 +86,7 @@ export function NewCategoryForm({
       aria-label="New category"
       className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
     >
-      <h1 className="font-display text-lg font-semibold tracking-tight">New category</h1>
+      <h2 className="font-display text-lg font-semibold tracking-tight">New category</h2>
 
       <Segmented
         label="Type"

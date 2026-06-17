@@ -233,9 +233,9 @@ export function TransactionForm({
     >
       <form.AppForm>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">
+          <h2 className="text-sm font-semibold">
             {isEdit ? "Edit transaction" : `Add ${TYPE_LABEL[activeType].toLowerCase()}`}
-          </h3>
+          </h2>
         </div>
 
         {isEdit ? (
