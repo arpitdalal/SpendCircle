@@ -2,8 +2,8 @@ import {
   COLOR_PALETTE,
   categoryInputSchema,
   colorLabel,
-  DEFAULT_COLOR_ID,
   LIMITS,
+  randomColorId,
   type TransactionType,
 } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
@@ -45,7 +45,7 @@ export function NewCategoryForm({
   const createCategory = useCreateCategory();
   const [type, setType] = useState<TransactionType>(initialType);
   const [name, setName] = useState("");
-  const [color, setColor] = useState<string>(DEFAULT_COLOR_ID);
+  const [color, setColor] = useState<string>(() => randomColorId());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 

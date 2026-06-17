@@ -1,3 +1,4 @@
+import { COLOR_PALETTE } from "@spend-circle/domain";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
@@ -66,6 +67,15 @@ describe("CategoryNew — render and submit", () => {
   it("renders the expense create form for ?type=expense", () => {
     setup();
     expect(screen.getByLabelText(/New expense category/)).toBeInTheDocument();
+  });
+
+  it("pre-selects exactly one palette swatch on open", () => {
+    setup();
+    const pressed = COLOR_PALETTE.filter(
+      (paletteColor) =>
+        screen.queryByRole("button", { name: paletteColor.name, pressed: true }) != null,
+    );
+    expect(pressed).toHaveLength(1);
   });
 
   it("renders the income create form for ?type=income", () => {
