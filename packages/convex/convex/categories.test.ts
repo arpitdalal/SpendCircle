@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { convexTest, type TestConvex } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
@@ -244,9 +245,15 @@ describe("createCategory — uniqueness (case-insensitive, includes archived)", 
     mockCurrentUser.mockResolvedValue(owner);
 
     await t.mutation(api.categories.createCategory, { circleId, ...EXPENSE });
-    await expect(
-      t.mutation(api.categories.createCategory, { circleId, ...EXPENSE }),
-    ).rejects.toThrow(/already exists/);
+    try {
+      await t.mutation(api.categories.createCategory, { circleId, ...EXPENSE });
+      expect.unreachable("expected duplicate create to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConvexError);
+      if (error instanceof ConvexError) {
+        expect(error.data).toBe("A category with this name already exists for this type");
+      }
+    }
   });
 
   it("rejects a case-only difference of the same type", async () => {

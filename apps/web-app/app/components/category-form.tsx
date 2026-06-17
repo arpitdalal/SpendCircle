@@ -65,12 +65,8 @@ export function NewCategoryForm({
       await createCategory({ circleId, name: parsed.data.name, type, color });
       onClose(); // a dedicated page is done on success — return to where it opened from
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "";
-      // The one rejection a user can fix inline; everything else is generic.
       setError(
-        /already exists/i.test(message)
-          ? "A category with this name already exists for this type."
-          : mutationErrorMessageForUser(caught, "Couldn't create the category. Please try again."),
+        mutationErrorMessageForUser(caught, "Couldn't create the category. Please try again."),
       );
       setSubmitting(false);
     }

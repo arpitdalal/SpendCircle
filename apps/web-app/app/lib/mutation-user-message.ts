@@ -7,7 +7,10 @@ import { ConvexError } from "convex/values";
  * map everything else — including plain Errors, whose .message is dev-only — to the
  * caller's fallback.
  */
-const VERBATIM_MUTATION_ERRORS = new Set(["Circle is archived"]);
+const VERBATIM_MUTATION_ERRORS = new Set([
+  "Circle is archived",
+  "A category with this name already exists for this type",
+]);
 
 export function mutationErrorMessageForUser(error: unknown, fallback: string) {
   if (

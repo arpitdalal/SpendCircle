@@ -492,7 +492,7 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategoryView()] });
     updateCategory.mockRejectedValueOnce(
-      new Error("A category with this name already exists for this type"),
+      new ConvexError("A category with this name already exists for this type"),
     );
 
     await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
@@ -502,7 +502,9 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
     await user.type(input, "Gas");
     await user.click(within(form).getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/already exists/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "A category with this name already exists for this type",
+    );
     expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
   });
 
