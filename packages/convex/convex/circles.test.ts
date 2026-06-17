@@ -300,6 +300,31 @@ describe("updateCircleSettings", () => {
     ).rejects.toThrow();
   });
 
+  it("rejects setup-answer edits before setup is complete, but still allows color", async () => {
+    const t = convexTest(schema, modules);
+    // seedCircle leaves setupAnswers undefined — setup not yet completed.
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    // The first write of setup answers must go through completeCircleSetup (one-shot
+    // starter seeding); this entry point must not flip the Circle to "setup done".
+    await expect(
+      t.mutation(api.circles.updateCircleSettings, {
+        circleId,
+        setupAnswers: { purpose: "trip" },
+      }),
+    ).rejects.toThrow(/Complete circle setup/);
+
+    // A color-only edit is unaffected by the incomplete-setup state.
+    await t.mutation(api.circles.updateCircleSettings, { circleId, color: "green" });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.setupAnswers).toBeUndefined();
+      expect(circle?.color).toBe("green");
+    });
+  });
+
   it("no-ops when nothing changed", async () => {
     const t = convexTest(schema, modules);
     const { owner, circleId } = await t.run(async (ctx) => {
