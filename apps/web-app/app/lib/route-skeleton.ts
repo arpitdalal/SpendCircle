@@ -56,15 +56,24 @@ export function usePendingRouteSkeleton(
     to !== location.pathname &&
     shouldCover(location.pathname, to);
 
+  // Identify the SPECIFIC pending navigation, not just "is something pending". React
+  // Router collapses a second navigation started mid-flight into the same `"loading"`
+  // state, so an `active` boolean stays `true` across two different targets and the
+  // debounce below would never restart — a fast chained nav would inherit the previous
+  // navigation's already-elapsed timer and could flash the skeleton. `location.key` is
+  // the pending target's history-entry id (unique per navigation, even to the same
+  // pathname); fall back to the pathname if a router build omits it.
+  const pendingKey = active ? (navigation.location?.key ?? to) : null;
+
   const [shown, setShown] = useState(false);
   useEffect(() => {
-    if (!active) {
+    if (pendingKey === null) {
       setShown(false);
       return;
     }
     const handle = setTimeout(() => setShown(true), delayMs);
     return () => clearTimeout(handle);
-  }, [active, delayMs]);
+  }, [pendingKey, delayMs]);
 
   return shown;
 }

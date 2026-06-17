@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SKELETON_DELAY_MS } from "~/lib/route-skeleton.js";
@@ -21,19 +21,27 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 import CircleLayout from "./circle-layout.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: thin route-tree stand-ins; the layout is the unit under test.
-function routesWith(transactionsLoader: () => any) {
+function routesWith(transactionsLoader: () => any, searchLoader?: () => any) {
+  const children: Array<Record<string, unknown>> = [
+    { index: true, Component: () => <h2>Dashboard stub</h2> },
+    {
+      path: "transactions",
+      Component: () => <h2>Transactions stub</h2>,
+      loader: transactionsLoader,
+    },
+  ];
+  if (searchLoader) {
+    children.push({
+      path: "search",
+      Component: () => <h2>Search stub</h2>,
+      loader: searchLoader,
+    });
+  }
   return [
     {
       path: "/circles/:circleRef",
       Component: CircleLayout,
-      children: [
-        { index: true, Component: () => <h2>Dashboard stub</h2> },
-        {
-          path: "transactions",
-          Component: () => <h2>Transactions stub</h2>,
-          loader: transactionsLoader,
-        },
-      ],
+      children,
     },
   ];
 }
@@ -111,5 +119,44 @@ describe("CircleLayout shell skeleton", () => {
     await waitFor(() => expect(screen.getByTestId("route-skeleton")).toBeInTheDocument());
 
     slow.resolve();
+  });
+
+  it("restarts the show-delay when a second navigation starts before the first settles", async () => {
+    const slowB = deferred();
+    const slowC = deferred();
+    configureConvex({ circle: makeCircleView() });
+    renderRouteStub(
+      routesWith(
+        () => slowB.promise,
+        () => slowC.promise,
+      ),
+      ["/circles/trip-c1"],
+    );
+
+    expect(await screen.findByText("Dashboard stub")).toBeInTheDocument();
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(tabs().getByRole("link", { name: "Transactions" }));
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(screen.queryByTestId("route-skeleton")).not.toBeInTheDocument();
+
+      fireEvent.click(tabs().getByRole("link", { name: "Search" }));
+      await act(async () => {
+        vi.advanceTimersByTime(40);
+      });
+      expect(screen.queryByTestId("route-skeleton")).not.toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(SKELETON_DELAY_MS);
+      });
+      expect(screen.getByTestId("route-skeleton")).toBeInTheDocument();
+
+      slowC.resolve();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
