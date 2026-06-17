@@ -45,8 +45,21 @@ function toInlineCreatedCategory(
   };
 }
 
-function findCategoryByName(
-  categoryById: ReadonlyMap<string, Category>,
+function buildCategoryNameIndex(categoryById: ReadonlyMap<string, Category>) {
+  const byType = new Map<TransactionType, Map<string, Category>>();
+  for (const category of categoryById.values()) {
+    let typeIndex = byType.get(category.type);
+    if (!typeIndex) {
+      typeIndex = new Map();
+      byType.set(category.type, typeIndex);
+    }
+    typeIndex.set(category.name.toLowerCase(), category);
+  }
+  return byType;
+}
+
+function lookupCategoryByName(
+  index: ReadonlyMap<TransactionType, ReadonlyMap<string, Category>>,
   activeType: TransactionType,
   name: string,
 ) {
@@ -54,12 +67,7 @@ function findCategoryByName(
   if (!normalized) {
     return null;
   }
-  for (const category of categoryById.values()) {
-    if (category.type === activeType && category.name.toLowerCase() === normalized) {
-      return category;
-    }
-  }
-  return null;
+  return index.get(activeType)?.get(normalized) ?? null;
 }
 
 export function TransactionFormCategorySection({
@@ -85,9 +93,11 @@ export function TransactionFormCategorySection({
   const [creating, setCreating] = useState(false);
 
   const trimmedQuery = query.trim();
-  const exactNameMatch = trimmedQuery
-    ? findCategoryByName(categoryById, activeType, trimmedQuery)
-    : null;
+  const categoryNameIndex = useMemo(() => buildCategoryNameIndex(categoryById), [categoryById]);
+  const exactNameMatch = useMemo(
+    () => lookupCategoryByName(categoryNameIndex, activeType, trimmedQuery),
+    [categoryNameIndex, activeType, trimmedQuery],
+  );
   const showCreateAffordance = trimmedQuery.length > 0 && !exactNameMatch && !creating;
   const showReservedName =
     trimmedQuery.length > 0 && exactNameMatch?.status === "archived" && !creating;
@@ -113,16 +123,15 @@ export function TransactionFormCategorySection({
       return;
     }
 
-    const existing = findCategoryByName(categoryById, activeType, trimmedQuery);
-    if (existing?.status === "active") {
-      if (!currentIds.includes(existing.id)) {
-        onIdsChange([...currentIds, existing.id]);
+    if (exactNameMatch?.status === "active") {
+      if (!currentIds.includes(exactNameMatch.id)) {
+        onIdsChange([...currentIds, exactNameMatch.id]);
       }
       setQuery("");
       return;
     }
-    if (existing?.status === "archived") {
-      setInlineError(`A category named '${existing.name}' already exists but is archived`);
+    if (exactNameMatch?.status === "archived") {
+      setInlineError(`A category named '${exactNameMatch.name}' already exists but is archived`);
       return;
     }
 
@@ -161,8 +170,12 @@ export function TransactionFormCategorySection({
       setQuery("");
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "";
+      const isNameCollision = /already exists/i.test(message);
+      if (!isNameCollision) {
+        console.error("inlineCreateCategory failed", caught);
+      }
       setInlineError(
-        /already exists/i.test(message)
+        isNameCollision
           ? "A category with this name already exists for this type."
           : mutationErrorMessageForUser(caught, "Couldn't create the category. Please try again."),
       );
