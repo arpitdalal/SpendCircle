@@ -1,7 +1,9 @@
 import {
   buildRef,
   circleInputSchema,
+  circleSettingsUpdateSchema,
   circleSetupAnswersSchema,
+  colorLabel,
   DEFAULT_COLOR_ID,
   starterCategories,
 } from "@spend-circle/domain";
@@ -141,6 +143,71 @@ export const createCircle = mutation({
     });
 
     return circleId;
+  },
+});
+
+/** Updates Circle Settings the caller owns: Color and Setup answers (CS-2). */
+export const updateCircleSettings = mutation({
+  args: {
+    circleId: v.id("circles"),
+    color: v.optional(v.string()),
+    setupAnswers: v.optional(circleSetupAnswers),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+    if (!access.isOwner) {
+      throw new Error("Only the owner can change circle settings");
+    }
+    access.assertWritable();
+
+    const input = circleSettingsUpdateSchema.parse({
+      color: args.color,
+      setupAnswers: args.setupAnswers,
+    });
+
+    // The FIRST write of setup answers must go through completeCircleSetup, which
+    // also seeds the starter Categories as a one-shot. completeCircleSetup treats
+    // any defined setupAnswers as "already complete", so accepting answers here on a
+    // Circle that hasn't completed setup (setupAnswers still undefined) would flip it
+    // to done and skip that seeding for good — leaving the Circle without its starter
+    // defaults. Defer answer edits until setup is complete; color edits stay allowed.
+    // (Server-side enforcement per ADR 0015 — the UI route gate is courtesy only.
+    // CS-5 re-homes this guard onto the explicit `setupCompletedAt` flag.)
+    if (input.setupAnswers !== undefined && access.circle.setupAnswers === undefined) {
+      throw new Error("Complete circle setup before editing setup answers");
+    }
+
+    const patch: Partial<Doc<"circles">> = {};
+    const changes: HistoryChange[] = [];
+
+    if (input.color !== undefined && input.color !== access.circle.color) {
+      patch.color = input.color;
+      changes.push({
+        field: "color",
+        from: colorLabel(access.circle.color),
+        to: colorLabel(input.color),
+      });
+    }
+
+    if (input.setupAnswers !== undefined) {
+      const answerChanges = setupAnswerChanges(access.circle.setupAnswers, input.setupAnswers);
+      if (answerChanges.length > 0) {
+        patch.setupAnswers = input.setupAnswers;
+        changes.push(...answerChanges);
+      }
+    }
+
+    if (changes.length === 0) {
+      return;
+    }
+
+    await ctx.db.patch(access.circle._id, patch);
+    await recordEvent(ctx, {
+      entity: circleEntity(access.circle._id),
+      actor: access.membership,
+      action: "settings_changed",
+      changes,
+    });
   },
 });
 

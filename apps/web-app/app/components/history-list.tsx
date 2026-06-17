@@ -41,6 +41,9 @@ const FIELD_LABEL: Record<string, string> = {
   // Category History fields (CAT-2).
   name: "Name",
   color: "Color",
+  // Circle Settings fields (CS-2).
+  "setup.purpose": "Circle use",
+  "setup.residenceType": "Residence type",
 };
 
 /** Human labels for the event verbs recorded by `recordEvent`. */
@@ -50,6 +53,7 @@ const ACTION_LABEL: Record<string, string> = {
   "type changed": "changed the type of",
   archived: "archived",
   restored: "restored",
+  settings_changed: "updated settings",
 };
 
 /** Renders one frozen value — a typed money value in the viewer locale (ADR 0021), or a

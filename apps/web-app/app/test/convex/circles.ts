@@ -17,10 +17,13 @@ export interface CirclesState {
    * create flow's navigation to the canonical ref. */
   createCircle?: Mock;
   completeCircleSetup?: Mock;
+  renameCircle?: Mock;
+  updateCircleSettings?: Mock;
 }
 
 export function circlesDouble(state: CirclesState): EntityDouble {
-  const { circles, circle, createCircle, completeCircleSetup } = state;
+  const { circles, circle, createCircle, completeCircleSetup, renameCircle, updateCircleSettings } =
+    state;
   return {
     queries: {
       [getFunctionName(api.circles.listMyCircles)]: () => circles,
@@ -29,6 +32,8 @@ export function circlesDouble(state: CirclesState): EntityDouble {
     mutations: {
       [getFunctionName(api.circles.createCircle)]: createCircle,
       [getFunctionName(api.circles.completeCircleSetup)]: completeCircleSetup,
+      [getFunctionName(api.circles.renameCircle)]: renameCircle,
+      [getFunctionName(api.circles.updateCircleSettings)]: updateCircleSettings,
     },
   };
 }

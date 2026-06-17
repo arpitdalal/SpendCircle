@@ -74,6 +74,8 @@ graph TD
   CS0 --> CS2[CS-2 · Circle Settings: color/mark/setup]
   TXN1 --> CS3[CS-3 · Currency lock after first txn]
   CS0 --> CS4[CS-4 · Circle History view]
+  CS1 --> CS5[CS-5 · Enforce Circle Setup: gate + flag, remove Skip]
+  CS2 --> CS5
 
   %% Categories
   F0 --> CAT1[CAT-1 · Create Category]
@@ -138,7 +140,7 @@ graph TD
 - **Tier 1 — make a Circle useful:** `CAT-1` → `TXN-1`. Then `CS-0`, `MEM-1`, `SET-1`,
   `OBS-1`, `EML-1`, `NTF-1` (all only need `F0`).
 - **Tier 2 — manage what exists:** `CAT-2`, `CAT-3`, `TXN-2`, `TXN-3`, `TXN-4`, `CS-1`,
-  `CS-2`, `CS-3`, `RPT-1`, `RPT-3`, `EXP-1`, `FBK-1`, `OBS-2`.
+  `CS-2`, `CS-3`, `CS-5`, `RPT-1`, `RPT-3`, `EXP-1`, `FBK-1`, `OBS-2`.
 - **Tier 3 — collaborate + report:** `MEM-2…9`, `RPT-2`, `RPT-4`, `RPT-5`, `RPT-6`,
   `EML-2`, `CS-4`. Then `CAT-4` (needs `RPT-2`'s filtered-pagination + URL-filter patterns).
 - **Tier 4 — wire the cross-cutting net + validate under load:** `NTF-2` (fans out to every
@@ -292,6 +294,7 @@ Each slice file in this directory uses this structure:
 - [CS-2 · Circle Settings: Color, Mark, Setup answers](CS-2-circle-settings.md)
 - [CS-3 · Currency lock after first Transaction](CS-3-currency-lock.md)
 - [CS-4 · Circle History view](CS-4-circle-history-view.md)
+- [CS-5 · Enforce Circle Setup: gate + completion flag, remove Skip](CS-5-enforce-circle-setup.md)
 
 ### Categories
 - [CAT-1 · Create Category](CAT-1-create-category.md)
