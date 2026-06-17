@@ -15,6 +15,16 @@ const RESERVED_CIRCLE_REF_SET = new Set<string>(RESERVED_CIRCLE_REFS);
  * so this works for a bare pathname OR a full path+query+hash. */
 const CIRCLE_SCOPED_PATH = /^\/circles\/([^/?#]+)(?:[/?#]|$)/;
 
+/** One browser-style percent-decode of a single path segment. Malformed `%` sequences
+ * return `null` — the segment cannot be normalized, so the path is not Circle-scoped. */
+function decodePathSegment(segment: string) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The Circle ref a path is scoped to (`/circles/<ref>/…` → `<ref>`), or `null` when the
  * path is not Circle-scoped or its first segment is a RESERVED static route (e.g.
@@ -28,7 +38,11 @@ export function circleRefOf(path: string) {
   if (ref == null) {
     return null;
   }
-  return RESERVED_CIRCLE_REF_SET.has(ref) ? null : ref;
+  const decoded = decodePathSegment(ref);
+  if (decoded == null) {
+    return null;
+  }
+  return RESERVED_CIRCLE_REF_SET.has(decoded) ? null : decoded;
 }
 
 /** Whether `path` is a real in-Circle object path (`/circles/<ref>/…`, non-reserved ref).

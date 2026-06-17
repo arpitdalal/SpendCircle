@@ -59,6 +59,8 @@ describe("parseReturnTo", () => {
     ["absolute cross-origin http", "http://evil.com/circles/trip-c1"],
     ["a non-Circle top-level path", "/settings"],
     ["the Create Circle flow above the Circle guard", "/circles/new"],
+    ["a percent-encoded Create Circle route", "/circles/%6e%65%77"],
+    ["a percent-encoded Create Circle route with a child", "/circles/%6e%65%77/transactions"],
     ["a path that only looks like circles", "/circlesX/trip-c1"],
     ["circles with no ref", "/circles"],
     ["circles with an empty ref", "/circles//transactions"],
