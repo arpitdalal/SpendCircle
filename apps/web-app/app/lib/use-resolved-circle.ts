@@ -3,7 +3,7 @@ import { useConvexAuth, useQuery } from "convex/react";
 import { useParams } from "react-router";
 import type { Circle } from "./data.js";
 import { MOCKS } from "./env.js";
-import { mockCircle } from "./fixtures.js";
+import { mockResolvedCircle } from "./fixtures.js";
 import { parseCircleRef } from "./refs.js";
 import { type Resolution, useResolvedRef } from "./use-resolved-ref.js";
 
@@ -31,9 +31,9 @@ export function useResolvedCircle(fallback = "/"): Resolution<Circle> {
     api.circles.getCircle,
     parsed && !MOCKS && isAuthenticated ? { circleId: parsed.id } : "skip",
   );
-  // Mock mode synthesizes the Circle from the ref so E2E can render Circle routes
-  // without a live backend; real mode uses the reactive query (ADR 0006).
-  const value = MOCKS && parsed ? mockCircle(parsed.id) : queried;
+  // Mock mode synthesizes a setup-complete Circle so fixture-backed routes render
+  // offline without hitting the mandatory-setup gate (ADR 0006).
+  const value = MOCKS && parsed ? mockResolvedCircle(parsed.id) : queried;
 
   return useResolvedRef<Circle>({
     rawRef: circleRef,
