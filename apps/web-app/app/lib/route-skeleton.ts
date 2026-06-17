@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigation } from "react-router";
+import { circleRefOf } from "./circle-path.js";
 
 /**
  * The flicker guard (issue #121). Warm/cached navigations settle in <1 frame; a
@@ -7,20 +8,6 @@ import { useLocation, useNavigation } from "react-router";
  * been loading longer than this, so only genuinely slow chunk downloads display it.
  */
 export const SKELETON_DELAY_MS = 120;
-
-/** The Circle ref a pathname is scoped to (`/circles/:ref/…` → `:ref`), or `null` if
- * it is not Circle-scoped. The static `/circles/new` create flow lives ABOVE the
- * Circle guard, so it is NOT Circle-scoped — it is a direct child of the protected
- * layout like Home/Settings. The single source of truth for both predicates below. */
-export function circleRefOf(pathname: string): string | null {
-  const ref = pathname.match(/^\/circles\/([^/]+)/)?.[1];
-  return ref == null || ref === "new" ? null : ref;
-}
-
-/** Whether a pathname is a Circle-scoped route (`/circles/:ref…`). */
-export function isCircleRoute(pathname: string) {
-  return circleRefOf(pathname) !== null;
-}
 
 /**
  * The route-tree partition between the two shell layouts (issue #121). The Circle

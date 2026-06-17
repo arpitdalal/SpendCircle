@@ -18,6 +18,7 @@ import { FilterPanel } from "~/components/ui/filter-panel.js";
 import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-combobox.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import { useFilterPanelDraft } from "~/components/ui/use-filter-panel-draft.js";
+import { circlePath } from "~/lib/circle-path.js";
 import {
   type MonthlySummary,
   useLedgerFilterOptions,
@@ -84,7 +85,7 @@ export default function CircleTransactions() {
     const ledgerOrigin = canonicalLedgerParams(filters, searchParams);
     ledgerOrigin.delete("new");
     const ledgerOriginUrl = withQuery(
-      `/circles/${circle.ref}/transactions`,
+      circlePath(circle.ref, "transactions"),
       ledgerOrigin.toString(),
     );
     navigate(
