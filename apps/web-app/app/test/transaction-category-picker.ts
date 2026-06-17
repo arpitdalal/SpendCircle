@@ -26,3 +26,19 @@ export async function pickTransactionFormCategory(
 ) {
   await pickCombobox(user, form, "Categories", label);
 }
+
+/**
+ * Inline-create a Category in the Transaction form combobox (CAT-3).
+ */
+export async function inlineCreateTransactionFormCategory(
+  user: UserEvent,
+  form: HTMLElement,
+  name: string,
+) {
+  const combo = within(form).getByRole("combobox", { name: "Categories" });
+  await user.click(combo);
+  await user.clear(combo);
+  await user.type(combo, name);
+  await user.click(await screen.findByRole("button", { name: `Create "${name}"` }));
+  await user.keyboard("{Escape}");
+}

@@ -3,6 +3,7 @@ import {
   clickCircleChromeTab,
   createCategoryViaForm,
   expect,
+  inlineCreateFormCategory,
   pickFormCategory,
   test,
 } from "./fixtures.js";
@@ -68,6 +69,34 @@ test("a member records an expense and sees it in the live list", async ({ page }
   const item = page.getByRole("listitem").filter({ hasText: title });
   await expect(item).toBeVisible();
   await expect(item).toContainText("12.50");
+});
+
+test("a member inline-creates a category while recording a transaction", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${Date.now()}-${testInfo.project.name}`;
+  const categoryName = `E2E Inline ${stamp}`;
+  const title = `E2E InlineTxn ${stamp}`;
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
+  await page.getByRole("link", { name: /Personal/ }).click();
+
+  await clickCircleChromeTab(page, "Transactions");
+  await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
+  await page.getByRole("link", { name: "Add expense" }).click();
+
+  const form = page.getByRole("form", { name: /add expense/i });
+  await form.getByLabel("Title").fill(title);
+  await form.getByLabel(/Amount/).fill("8.25");
+  await inlineCreateFormCategory(page, form, categoryName);
+  await expect(form.getByRole("button", { name: `Remove ${categoryName}` })).toBeVisible();
+  await form.getByRole("button", { name: "Add expense" }).click();
+
+  const item = page.getByRole("listitem").filter({ hasText: title });
+  await expect(item).toBeVisible();
+  await expect(item).toContainText("8.25");
+  await expect(item).toContainText(categoryName);
 });
 
 test("the expense form blocks submit and explains a missing category", async ({

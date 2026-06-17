@@ -10,7 +10,7 @@ import {
   toMutationArgs,
   transactionFieldSchemas,
 } from "@spend-circle/domain";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FieldError, FieldGroup } from "~/components/ui/field.js";
 import {
   type Category,
@@ -91,10 +91,28 @@ export function TransactionForm({
   const categories = useCategories(circle.id, activeType, { includeArchived: true });
   const members = useMembers(circle.id);
   const allCategories = categories ?? [];
+  const [inlineCreatedCategories, setInlineCreatedCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    setInlineCreatedCategories((prev) => {
+      if (prev.length === 0) {
+        return prev;
+      }
+      const next = prev.filter((category) => !allCategories.some((row) => row.id === category.id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [allCategories]);
+
   const activeCategories = allCategories.filter((category) => category.status === "active");
-  const categoryById = new Map<string, Category>(
-    allCategories.map((category) => [category.id, category]),
-  );
+  const categoryById = useMemo(() => {
+    const map = new Map<string, Category>(allCategories.map((category) => [category.id, category]));
+    for (const category of inlineCreatedCategories) {
+      if (!map.has(category.id)) {
+        map.set(category.id, category);
+      }
+    }
+    return map;
+  }, [allCategories, inlineCreatedCategories]);
 
   const alreadyAttached = new Set<string>(
     mode.kind === "edit" && !isTypeChanged
@@ -218,6 +236,7 @@ export function TransactionForm({
     setActiveType(pendingType);
     form.setFieldValue("type", pendingType);
     form.setFieldValue("categoryIds", []);
+    setInlineCreatedCategories([]);
     setPendingType(null);
   };
 
@@ -281,10 +300,17 @@ export function TransactionForm({
           </div>
 
           <TransactionFormCategorySection
+            key={activeType}
+            circleId={circle.id}
             categoryById={categoryById}
             alreadyAttached={alreadyAttached}
             activeCategories={activeCategories}
             activeType={activeType}
+            onInlineCreatedCategory={(category) => {
+              setInlineCreatedCategories((prev) =>
+                prev.some((row) => row.id === category.id) ? prev : [...prev, category],
+              );
+            }}
           />
 
           <form.AppField name="paidByMemberId">
