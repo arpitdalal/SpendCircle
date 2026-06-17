@@ -28,7 +28,6 @@ import {
   makeMemberView,
   makeTransactionView,
   pickCombobox,
-  pickTransactionFormCategory,
   renderCircleRoutes,
   testId,
 } from "~/test/convex-react.js";
@@ -55,6 +54,8 @@ const paginatedLoadMore = vi.fn();
 const ROUTES = (
   <>
     <Route path="circles/:circleRef/transactions" element={<CircleTransactions />} />
+    {/* Static `new` outranks the dynamic ref (RR7), the create CTA / back-compat target. */}
+    <Route path="circles/:circleRef/transactions/new" element={<div>new page</div>} />
     <Route
       path="circles/:circleRef/transactions/:transactionRef"
       element={<div>detail page</div>}
@@ -270,14 +271,45 @@ describe("CircleTransactions", () => {
     expect(dest.searchParams.get("returnTo")).toBe(origin);
   });
 
-  it("opens create form from the add CTA and keeps month/filter URL state", async () => {
+  it("navigates the add CTA to the dedicated create route, carrying month + ledger returnTo", async () => {
     const user = userEvent.setup();
-    const { location } = setup();
-    await user.click(screen.getByRole("button", { name: "Add expense" }));
-    expect(location()).toBe(
-      `/circles/${REF}/transactions?month=2026-05&type=all&status=all&new=expense`,
+    const origin = `/circles/${REF}/transactions?month=2026-05&type=expense&status=archived&q=rent`;
+    const { location } = setup({ initialEntries: [origin] });
+    await user.click(screen.getByRole("link", { name: "Add expense" }));
+    const dest = new URL(location(), "http://t");
+    expect(dest.pathname).toBe(`/circles/${REF}/transactions/new`);
+    expect(dest.searchParams.get("type")).toBe("expense");
+    // The selected month feeds the create form's date default.
+    expect(dest.searchParams.get("month")).toBe("2026-05");
+    // The exact filtered ledger round-trips so the create page's close returns here.
+    expect(dest.searchParams.get("returnTo")).toBe(origin);
+  });
+
+  it("redirects an old ?new=expense deep link to the create route (back-compat)", async () => {
+    const { location } = setup({
+      initialEntries: [
+        `/circles/${REF}/transactions?month=2026-05&type=all&status=all&new=expense`,
+      ],
+    });
+    await waitFor(() => {
+      const dest = new URL(location(), "http://t");
+      expect(dest.pathname).toBe(`/circles/${REF}/transactions/new`);
+      expect(dest.searchParams.get("type")).toBe("expense");
+      expect(dest.searchParams.get("month")).toBe("2026-05");
+      // The returnTo origin is the clean ledger URL with `new` stripped.
+      expect(dest.searchParams.get("returnTo")).toBe(
+        `/circles/${REF}/transactions?month=2026-05&type=all&status=all`,
+      );
+    });
+  });
+
+  it("scrubs an invalid ?new value without redirecting", async () => {
+    const { location } = setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all&new=bogus`],
+    });
+    await waitFor(() =>
+      expect(location()).toBe(`/circles/${REF}/transactions?month=2026-05&type=all&status=all`),
     );
-    expect(screen.getByRole("form", { name: /add expense/i })).toBeInTheDocument();
   });
 
   it("archives and restores ledger rows through lifecycle actions", async () => {
@@ -406,46 +438,10 @@ describe("CircleTransactions", () => {
 
   it("hides write actions in archived circles", () => {
     setup({ circle: { status: "archived" }, filteredTransactions: [makeTransactionView()] });
-    expect(screen.queryByRole("button", { name: "Add expense" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Add expense" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Add income" })).not.toBeInTheDocument();
     expect(screen.getByText(/circle is archived/i)).toBeInTheDocument();
     expect(within(screen.getByRole("listitem")).queryByRole("link", { name: /Edit/ })).toBeNull();
-  });
-
-  it("surfaces archived-circle rejection on create submit and re-enables the form", async () => {
-    const user = userEvent.setup();
-    setup();
-    createTransaction.mockRejectedValue(ARCHIVED_CIRCLE_ERROR);
-    await user.click(screen.getByRole("button", { name: "Add expense" }));
-    const form = screen.getByRole("form", { name: /add expense/i });
-    await user.type(within(form).getByLabelText("Title"), "Late entry");
-    await user.type(within(form).getByLabelText(/Amount/), "10");
-    await pickTransactionFormCategory(user, form, "Groceries");
-    await user.click(within(form).getByRole("button", { name: "Add expense" }));
-
-    expect(await within(form).findByText("Circle is archived")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(within(form).getByRole("button", { name: "Add expense" })).toBeEnabled(),
-    );
-  });
-
-  it("treats plain Error with archived message on create as generic fallback", async () => {
-    const user = userEvent.setup();
-    setup();
-    createTransaction.mockRejectedValue(new Error("Circle is archived"));
-    await user.click(screen.getByRole("button", { name: "Add expense" }));
-    const form = screen.getByRole("form", { name: /add expense/i });
-    await user.type(within(form).getByLabelText("Title"), "Late entry");
-    await user.type(within(form).getByLabelText(/Amount/), "10");
-    await pickTransactionFormCategory(user, form, "Groceries");
-    await user.click(within(form).getByRole("button", { name: "Add expense" }));
-
-    expect(
-      await within(form).findByText("Couldn't save the transaction. Please try again."),
-    ).toBeInTheDocument();
-    expect(within(form).queryByText("Circle is archived", { exact: true })).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(within(form).getByRole("button", { name: "Add expense" })).toBeEnabled(),
-    );
   });
 
   it("surfaces archived-circle rejection on archive and re-enables the button", async () => {

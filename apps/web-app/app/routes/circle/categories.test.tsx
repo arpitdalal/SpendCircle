@@ -118,7 +118,7 @@ describe("CircleCategories — list and create (CAT-1)", () => {
     expect(screen.getByText(/No expense categories yet/)).toBeInTheDocument();
   });
 
-  it("switches the list and form to Income when the Income tab is selected", async () => {
+  it("switches the list and the create CTA's type to Income when the Income tab is selected", async () => {
     const user = userEvent.setup();
     setup({
       categories: [
@@ -128,90 +128,37 @@ describe("CircleCategories — list and create (CAT-1)", () => {
     });
     expect(screen.getByText("Groceries")).toBeInTheDocument();
     expect(screen.queryByText("Salary")).not.toBeInTheDocument();
+    // The CTA deep-links the active type tab so the new page opens on the right type.
+    expect(screen.getByRole("link", { name: "New category" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("type=expense"),
+    );
 
     await user.click(screen.getByRole("tab", { name: "Income" }));
 
     expect(screen.getByText("Salary")).toBeInTheDocument();
     expect(screen.queryByText("Groceries")).not.toBeInTheDocument();
-    expect(screen.getByText(/New income category/)).toBeInTheDocument();
-  });
-
-  it("submits a new category with the entered name, selected type, and color", async () => {
-    const user = userEvent.setup();
-    setup({ categories: [] });
-
-    await user.type(screen.getByLabelText(/New expense category/), "Dining");
-    await user.click(screen.getByRole("button", { name: "Teal" }));
-    await user.click(screen.getByRole("button", { name: "Add category" }));
-
-    expect(createCategory).toHaveBeenCalledWith({
-      circleId: "c1",
-      name: "Dining",
-      type: "expense",
-      color: "teal",
-    });
-  });
-
-  it("keeps the new-Category form on the URL type (income deep link)", async () => {
-    const user = userEvent.setup();
-    setup({ categories: [], initialEntries: ["/?type=income"] });
-
-    await user.type(screen.getByLabelText(/New income category/), "Bonus");
-    await user.click(screen.getByRole("button", { name: "Add category" }));
-
-    expect(createCategory).toHaveBeenCalledWith(expect.objectContaining({ type: "income" }));
-  });
-
-  it("clears the name input after a successful create", async () => {
-    const user = userEvent.setup();
-    setup({ categories: [] });
-    const input = screen.getByLabelText<HTMLInputElement>(/New expense category/);
-
-    await user.type(input, "Dining");
-    await user.click(screen.getByRole("button", { name: "Add category" }));
-
-    expect(input.value).toBe("");
-  });
-
-  it("surfaces the unique-name rejection inline", async () => {
-    const user = userEvent.setup();
-    setup({ categories: [] });
-    createCategory.mockRejectedValueOnce(
-      new Error("A category with this name already exists for this type"),
+    expect(screen.getByRole("link", { name: "New category" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("type=income"),
     );
-
-    await user.type(screen.getByLabelText(/New expense category/), "Groceries");
-    await user.click(screen.getByRole("button", { name: "Add category" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(/already exists/i);
   });
 
-  it("shows a generic error for an unexpected failure", async () => {
-    const user = userEvent.setup();
-    setup({ categories: [] });
-    createCategory.mockRejectedValueOnce(new Error("Network down"));
-
-    await user.type(screen.getByLabelText(/New expense category/), "Groceries");
-    await user.click(screen.getByRole("button", { name: "Add category" }));
-
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/Couldn't create the category/i);
-    expect(alert).not.toHaveTextContent(/Network down/);
+  it("points the create CTA at the new-Category route, carrying the list URL as returnTo", () => {
+    // This harness mounts the route at "/", so the origin (and thus returnTo) is that path;
+    // the realistic circle-scoped round-trip is covered in `category-new.test.tsx` + E2E.
+    setup({ categories: [], initialEntries: ["/?type=expense&status=all&q=food"] });
+    const href = screen.getByRole("link", { name: "New category" }).getAttribute("href") ?? "";
+    const dest = new URL(href, "http://t");
+    expect(dest.pathname).toBe("/circles/trip-c1/categories/new");
+    expect(dest.searchParams.get("type")).toBe("expense");
+    expect(dest.searchParams.get("returnTo")).toBe("/?type=expense&status=all&q=food");
   });
 
-  it("disables the submit button until a name is entered", async () => {
-    const user = userEvent.setup();
-    setup({ categories: [] });
-    const submit = screen.getByRole("button", { name: "Add category" });
-    expect(submit).toBeDisabled();
-    await user.type(screen.getByLabelText(/New expense category/), "Dining");
-    expect(submit).toBeEnabled();
-  });
-
-  it("renders a read-only notice instead of the form for an archived Circle", () => {
+  it("renders a read-only notice and no create CTA for an archived Circle", () => {
     setup({ circle: { status: "archived" }, categories: [] });
     expect(screen.getByText(/circle is archived/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add category" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "New category" })).not.toBeInTheDocument();
   });
 
   it("shows a skeleton while the first page resolves", () => {

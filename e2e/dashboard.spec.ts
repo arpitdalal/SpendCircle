@@ -1,4 +1,10 @@
-import { clickCircleChromeTab, expect, pickFormCategory, test } from "./fixtures.js";
+import {
+  clickCircleChromeTab,
+  createCategoryViaForm,
+  expect,
+  pickFormCategory,
+  test,
+} from "./fixtures.js";
 
 /**
  * RPT-3 true-E2E (ADR 0019): the per-Circle Dashboard (the Circle index route) shows
@@ -26,13 +32,12 @@ test("the dashboard shows recent activity and a working Paid By filter", async (
 
   // Seed an expense Category to attach (CAT-1's flow).
   await clickCircleChromeTab(page, "Categories");
-  await page.getByLabel(/New expense category/).fill(categoryName);
-  await page.getByRole("button", { name: "Add category" }).click();
+  await createCategoryViaForm(page, { name: categoryName });
   await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
 
   // Record an expense into the current month (the form defaults the date to today).
   await clickCircleChromeTab(page, "Transactions");
-  await page.getByRole("button", { name: "Add expense" }).click();
+  await page.getByRole("link", { name: "Add expense" }).click();
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
   await form.getByLabel(/Amount/).fill("18.25");

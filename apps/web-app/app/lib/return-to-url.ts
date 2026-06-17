@@ -19,17 +19,23 @@ export const RETURN_TO_PARAM = "returnTo";
 /**
  * Appends `returnTo` (the current origin URL — pathname + search) onto an object-route
  * link so the route's close/back can return to the EXACT origin (ledger month, search
- * filters + page, dashboard scope, etc.). A falsy origin yields the bare path. `path`
- * carries no query of its own (object routes own only their `returnTo`), so the existing
- * {@link withQuery} join is the single encoding seam.
+ * filters + page, dashboard scope, etc.). A falsy origin yields the bare path.
+ *
+ * Most object routes carry no query of their own, but the create routes own a `type`
+ * (and the ledger create its `month` default — issue #96), so `path` may already carry a
+ * query. We MERGE `returnTo` into whatever query `path` brought, splitting on the FIRST
+ * `?` so a route's own params survive and the `?`-vs-empty rule stays in {@link withQuery}.
+ * `returnTo` always overwrites any same-named param on the path (it is never a route's own).
  */
 export function withReturnTo(path: string, returnTo?: string) {
   if (!returnTo) {
     return path;
   }
-  const params = new URLSearchParams();
+  const queryStart = path.indexOf("?");
+  const base = queryStart === -1 ? path : path.slice(0, queryStart);
+  const params = new URLSearchParams(queryStart === -1 ? "" : path.slice(queryStart + 1));
   params.set(RETURN_TO_PARAM, returnTo);
-  return withQuery(path, params.toString());
+  return withQuery(base, params.toString());
 }
 
 /** Cap absurd `returnTo` values (incl. pathological nesting) before any other work. */

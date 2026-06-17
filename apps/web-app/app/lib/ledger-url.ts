@@ -37,3 +37,18 @@ export function transactionDetailHref(circle: ObjectRef, transaction: ObjectRef)
 export function transactionEditHref(circle: ObjectRef, transaction: ObjectRef) {
   return `/circles/${circle.ref}/transactions/${transaction.ref}/edit`;
 }
+
+/**
+ * Canonical new-Transaction route path (issue #96): the dedicated create page's `type`
+ * (required) and `month` (the create form's date default) are the route's OWN params, so
+ * unlike the detail/edit hrefs this builder carries a query. The caller still appends the
+ * validated `returnTo` origin via `withReturnTo`, which MERGES into this query — one home
+ * for the create link so the ledger CTA and the `?new=` back-compat redirect can't drift.
+ */
+export function transactionNewHref(
+  circle: ObjectRef,
+  { type, month }: { type: "expense" | "income"; month: string },
+) {
+  const params = new URLSearchParams({ type, month });
+  return withQuery(`/circles/${circle.ref}/transactions/new`, params.toString());
+}

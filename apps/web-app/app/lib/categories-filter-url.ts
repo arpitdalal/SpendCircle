@@ -1,5 +1,6 @@
 import type { TransactionType } from "@spend-circle/domain";
 
+import { withQuery } from "./ledger-url.js";
 import { cleanText, readLifecycleStatus } from "./url-codec.js";
 
 /**
@@ -84,4 +85,16 @@ export function defaultCategoriesFilters(): CategoriesFilters {
  * "no matches" vs "no Categories yet" empty-state split. */
 export function hasCategoriesNarrowing(filters: CategoriesFilters) {
   return filters.q !== "" || filters.status !== DEFAULT_CATEGORIES_STATUS;
+}
+
+/**
+ * Canonical new-Category route path (issue #96): Categories are type-specific, so the
+ * dedicated create page carries its `type` (defaulted from the list's active tab so the
+ * CTA deep-links the right type) as its OWN param. The caller appends the validated
+ * `returnTo` origin via `withReturnTo`, which merges into this query — the single home for
+ * the create link so the list CTA can't drift.
+ */
+export function categoryNewHref(circle: { ref: string }, { type }: { type: TransactionType }) {
+  const params = new URLSearchParams({ type });
+  return withQuery(`/circles/${circle.ref}/categories/new`, params.toString());
 }

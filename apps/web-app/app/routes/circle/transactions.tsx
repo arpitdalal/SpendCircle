@@ -9,11 +9,11 @@ import {
 } from "@spend-circle/domain";
 import { SlidersHorizontal } from "lucide-react";
 import { type FormEvent, useEffect, useRef } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Skeleton } from "~/components/skeleton.js";
-import { TransactionForm } from "~/components/transaction-form/index.js";
 import { TransactionList } from "~/components/transaction-list.js";
 import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
 import { FilterPanel } from "~/components/ui/filter-panel.js";
 import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-combobox.js";
 import { Segmented } from "~/components/ui/segmented.js";
@@ -25,7 +25,9 @@ import {
   useMonthlySummary,
 } from "~/lib/data.js";
 import { formatMonthLabel } from "~/lib/datetime.js";
+import { transactionNewHref, withQuery } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
+import { withReturnTo } from "~/lib/return-to-url.js";
 import {
   activeFilterCount,
   canonicalLedgerParams,
@@ -39,13 +41,21 @@ import { useCircle } from "~/routes/layouts/circle-layout.js";
 
 export default function CircleTransactions() {
   const circle = useCircle();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const writable = circle.status === "active";
   const filters = readLedgerFilters(searchParams);
   const filterCount = activeFilterCount(filters);
+  // Back-compat: an old `?new=expense|income` deep link is no longer an inline toggle — it
+  // redirects to the dedicated create route (issue #96). A valid value only redirects while
+  // writable; otherwise it's scrubbed below like any unknown param.
   const rawNew = searchParams.get("new");
-  const createType: TransactionType | null =
+  const legacyCreateType: TransactionType | null =
     writable && (rawNew === "expense" || rawNew === "income") ? rawNew : null;
+  // The ledger's full URL (filters, page, month) is the origin a create/edit/detail link
+  // returns to via `returnTo` (#123), so a filtered ledger round-trips for free.
+  const origin = location.pathname + location.search;
   const {
     open: panelOpen,
     openPanel,
@@ -64,17 +74,41 @@ export default function CircleTransactions() {
   // default view can include archived rows (distinguished in the row, not hidden).
   const transactions = useLedgerTransactionFilter(circle.id, toLedgerQuery(filters));
 
+  // An old `?new=expense|income` deep link redirects (replace) to the dedicated create
+  // route, carrying the current month as the form's date default and the clean ledger URL
+  // (no `new`) as the `returnTo` origin — so the back-compat path is indistinguishable from
+  // clicking the CTA. Runs before the canonical scrub so the redirect wins.
   useEffect(() => {
-    const next = canonicalLedgerParams(filters, searchParams);
-    let changed = next.toString() !== searchParams.toString();
-    if (rawNew !== null && !createType) {
-      next.delete("new");
-      changed = true;
+    if (!legacyCreateType) {
+      return;
     }
-    if (changed) {
+    const ledgerOrigin = canonicalLedgerParams(filters, searchParams);
+    ledgerOrigin.delete("new");
+    const ledgerOriginUrl = withQuery(
+      `/circles/${circle.ref}/transactions`,
+      ledgerOrigin.toString(),
+    );
+    navigate(
+      withReturnTo(
+        transactionNewHref(circle, { type: legacyCreateType, month: filters.month }),
+        ledgerOriginUrl,
+      ),
+      { replace: true },
+    );
+  }, [legacyCreateType, circle, filters, searchParams, navigate]);
+
+  useEffect(() => {
+    // A valid `new` value is mid-redirect (above); leave the URL untouched so the scrub
+    // doesn't race it. Any other unknown param (incl. an invalid `new`) is dropped here.
+    if (legacyCreateType) {
+      return;
+    }
+    const next = canonicalLedgerParams(filters, searchParams);
+    next.delete("new");
+    if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [searchParams, filters, rawNew, createType, setSearchParams]);
+  }, [searchParams, filters, legacyCreateType, setSearchParams]);
 
   useEffect(() => {
     // Drop URL-selected ids no longer in the option universe (e.g. a stale deep link).
@@ -129,25 +163,6 @@ export default function CircleTransactions() {
     setPanelOpen(false);
   };
 
-  const openCreate = (type: TransactionType) => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set("new", type);
-      return params;
-    });
-  };
-
-  const closeCreate = () => {
-    setSearchParams(
-      (prev) => {
-        const params = new URLSearchParams(prev);
-        params.delete("new");
-        return params;
-      },
-      { replace: true },
-    );
-  };
-
   const monthLabel = formatMonthLabel(filters.month);
 
   return (
@@ -156,12 +171,24 @@ export default function CircleTransactions() {
         <h2 className="font-display text-lg font-semibold tracking-tight">Transactions</h2>
         {writable ? (
           <div className="flex gap-2">
-            <Button type="button" onClick={() => openCreate("expense")}>
+            <Link
+              to={withReturnTo(
+                transactionNewHref(circle, { type: "expense", month: filters.month }),
+                origin,
+              )}
+              className={buttonVariants()}
+            >
               Add expense
-            </Button>
-            <Button type="button" variant="outline" onClick={() => openCreate("income")}>
+            </Link>
+            <Link
+              to={withReturnTo(
+                transactionNewHref(circle, { type: "income", month: filters.month }),
+                origin,
+              )}
+              className={buttonVariants({ variant: "outline" })}
+            >
               Add income
-            </Button>
+            </Link>
           </div>
         ) : null}
       </div>
@@ -180,15 +207,6 @@ export default function CircleTransactions() {
         <p className="rounded-lg border border-border bg-card p-3 shadow-sm text-sm text-muted-foreground">
           This circle is archived. Restore it to add transactions.
         </p>
-      ) : null}
-
-      {createType ? (
-        <TransactionForm
-          key={`create-${createType}`}
-          circle={circle}
-          mode={{ kind: "create", type: createType, selectedMonth: filters.month }}
-          onClose={closeCreate}
-        />
       ) : null}
 
       <TransactionList
