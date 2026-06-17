@@ -90,6 +90,18 @@ function statusGroup() {
   return screen.getByRole("group", { name: "Status" });
 }
 
+/** The list row (the `<li>`) containing `name`, asserted present so a missing row
+ * fails HERE at the lookup rather than later as an opaque `within(null)`. The "li"
+ * selector narrows the result to `HTMLLIElement` and the null check removes the
+ * `| null`, so no `as` cast is needed to scope `within` to the row. */
+function rowFor(name: string) {
+  const row = screen.getByText(name).closest("li");
+  if (row === null) {
+    throw new Error(`Expected a category row containing "${name}"`);
+  }
+  return row;
+}
+
 /** Both rows used by the lifecycle-mix tests: one active, one archived. */
 function mixedRows() {
   return [
@@ -126,10 +138,8 @@ describe("CircleCategories — list and create (CAT-1; issue #138 all types)", (
         makeCategoryView({ id: testId<Category["id"]>("i1"), name: "Salary", type: "income" }),
       ],
     });
-    const expenseRow = screen.getByText("Groceries").closest("li");
-    const incomeRow = screen.getByText("Salary").closest("li");
-    expect(within(expenseRow as HTMLElement).getByText("expense")).toBeInTheDocument();
-    expect(within(incomeRow as HTMLElement).getByText("income")).toBeInTheDocument();
+    expect(within(rowFor("Groceries")).getByText("expense")).toBeInTheDocument();
+    expect(within(rowFor("Salary")).getByText("income")).toBeInTheDocument();
   });
 
   it("shows the no-categories-yet empty state on the default (unnarrowed) all view", () => {
@@ -196,8 +206,7 @@ describe("CircleCategories — Category Filter status (CAT-4)", () => {
     setup({ categories: mixedRows() });
     const list = screen.getByRole("list");
     expect(within(list).getByText("Groceries")).toBeInTheDocument();
-    const row = screen.getByText("Old Subscriptions").closest("li");
-    expect(within(row as HTMLElement).getByText("Archived")).toBeInTheDocument();
+    expect(within(rowFor("Old Subscriptions")).getByText("Archived")).toBeInTheDocument();
   });
 
   it("narrows to active-only and archived-only through the Status control", async () => {
@@ -686,9 +695,7 @@ describe("CircleCategories — archive / restore (CAT-2)", () => {
     const user = userEvent.setup();
     setup({ categories: mixedRows() });
 
-    const row = screen.getByText("Old Subscriptions").closest("li");
-    expect(row).not.toBeNull();
-    expect(within(row as HTMLElement).getByText("Archived")).toBeInTheDocument();
+    expect(within(rowFor("Old Subscriptions")).getByText("Archived")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Restore Old Subscriptions" }));
     expect(restoreCategory).toHaveBeenCalledWith({ categoryId: "cat-old" });

@@ -62,15 +62,19 @@ export async function createCategoryViaForm(
   { name, type = "expense", color }: { name: string; type?: "expense" | "income"; color?: string },
 ) {
   await page.getByRole("link", { name: "New category" }).click();
+  // Scope EVERY interaction to the create form (its `aria-label` landmark). The list and
+  // the form both expose a `Type` group with an Expense/Income toggle, so an unscoped
+  // locator can hit the list filter while React Router is still committing the `/new`
+  // route. Resolving through the form locator auto-waits for the form to mount first.
+  const form = page.getByRole("form", { name: "New category" });
   if (type === "income") {
-    // The in-form Type toggle (a fieldset of Expense/Income buttons) sets the type now.
-    await page.getByRole("group", { name: "Type" }).getByRole("button", { name: "Income" }).click();
+    await form.getByRole("group", { name: "Type" }).getByRole("button", { name: "Income" }).click();
   }
-  await page.getByLabel(new RegExp(`New ${type} category`)).fill(name);
+  await form.getByLabel(new RegExp(`New ${type} category`)).fill(name);
   if (color) {
-    await page.getByRole("button", { name: color }).click();
+    await form.getByRole("button", { name: color }).click();
   }
-  await page.getByRole("button", { name: "Add category" }).click();
+  await form.getByRole("button", { name: "Add category" }).click();
   // Success navigates back to the categories list (returnTo); the page leaves `/new`.
   await page.waitForURL(/\/categories(?:\?|$)/);
 }
