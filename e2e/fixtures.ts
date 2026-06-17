@@ -56,7 +56,8 @@ export async function inlineCreateFormCategory(page: Page, scope: Locator, name:
   await combo.click();
   await combo.fill(name);
   await page.getByRole("option", { name: `Create "${name}"` }).click();
-  await page.keyboard.press("Escape");
+  // createCategory is async; wait for the chip. Don't Escape — it can clear the selection.
+  await expect(scope.getByRole("button", { name: `Remove ${name}` })).toBeVisible();
 }
 
 /**

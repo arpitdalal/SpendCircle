@@ -75,7 +75,7 @@ test("a member inline-creates a category while recording a transaction", async (
   page,
 }, testInfo) => {
   const stamp = `${Date.now()}-${testInfo.project.name}`;
-  const categoryName = `E2E Inline ${stamp}`;
+  const categoryName = `E2E IC ${stamp}`; // ≤ 40 chars (categoryNameMax)
   const title = `E2E InlineTxn ${stamp}`;
 
   await page.goto("/");
@@ -521,6 +521,7 @@ test("editing from the transaction detail returns to the detail on cancel and on
   // Record an expense into the private month, then open its detail page.
   await clickCircleChromeTab(page, "Transactions");
   await selectMonth(page, month);
+  await expect(page).toHaveURL(new RegExp(`month=${month}`));
   await page.getByRole("link", { name: "Add expense" }).click();
   const form = page.getByRole("form", { name: /add expense/i });
   await form.getByLabel("Title").fill(title);
