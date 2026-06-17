@@ -1,4 +1,4 @@
-import { currentMonth, toPlainDate } from "@spend-circle/domain";
+import { currentMonth, paletteColorForSeed, toPlainDate } from "@spend-circle/domain";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
@@ -316,7 +316,7 @@ describe("TransactionForm — create", () => {
       circleId: "c1",
       name: "Snacks",
       type: "expense",
-      color: "blue",
+      color: paletteColorForSeed("snacks").id,
     });
     expect(within(form).getByRole("button", { name: /Remove Snacks/ })).toBeInTheDocument();
   });
@@ -336,7 +336,7 @@ describe("TransactionForm — create", () => {
       circleId: "c1",
       name: "Snacks",
       type: "expense",
-      color: "blue",
+      color: paletteColorForSeed("snacks").id,
     });
     expect(createTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ categoryIds: [newId] }),
@@ -461,7 +461,7 @@ describe("TransactionForm — create", () => {
       circleId: "c1",
       name: "Rent",
       type: "expense",
-      color: "blue",
+      color: paletteColorForSeed("rent").id,
     });
     expect(within(form).getByRole("button", { name: /Remove Rent/ })).toBeInTheDocument();
     expect(combo).toHaveValue("");
@@ -612,7 +612,7 @@ describe("TransactionForm — edit (TXN-2)", () => {
       circleId: "c1",
       name: "Bonus",
       type: "income",
-      color: "blue",
+      color: paletteColorForSeed("bonus").id,
     });
     expect(within(form).getByRole("button", { name: /Remove Bonus/ })).toBeInTheDocument();
   });

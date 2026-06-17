@@ -4,7 +4,9 @@ import {
   colorHex,
   colorLabel,
   DEFAULT_COLOR_ID,
+  isValidColorId,
   paletteColorForSeed,
+  randomColorId,
 } from "./color.js";
 
 describe("colorHex", () => {
@@ -48,5 +50,13 @@ describe("paletteColorForSeed", () => {
 
   it("handles an empty seed deterministically", () => {
     expect(paletteColorForSeed("")).toEqual(paletteColorForSeed(""));
+  });
+});
+
+describe("randomColorId", () => {
+  it("returns a valid palette color id", () => {
+    for (let i = 0; i < 30; i += 1) {
+      expect(isValidColorId(randomColorId())).toBe(true);
+    }
   });
 });

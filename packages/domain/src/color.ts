@@ -78,3 +78,9 @@ export function paletteColorForSeed(seed: string): PaletteColor {
   const index = Math.abs(hash) % COLOR_PALETTE.length;
   return COLOR_PALETTE[index] ?? COLOR_PALETTE[0];
 }
+
+/** A random palette color id — for forms where the user can change the pick before submit. */
+export function randomColorId(): ColorId {
+  const index = Math.floor(Math.random() * COLOR_PALETTE.length);
+  return (COLOR_PALETTE[index] ?? COLOR_PALETTE[0]).id;
+}

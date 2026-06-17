@@ -1,6 +1,6 @@
 import {
   categoryInputSchema,
-  DEFAULT_COLOR_ID,
+  paletteColorForSeed,
   type TransactionType,
   transactionFieldSchemas,
 } from "@spend-circle/domain";
@@ -135,10 +135,12 @@ export function TransactionFormCategorySection({
       return;
     }
 
+    const seededColor = paletteColorForSeed(trimmedQuery.toLowerCase()).id;
+
     const parsed = categoryInputSchema.safeParse({
       name: trimmedQuery,
       type: activeType,
-      color: DEFAULT_COLOR_ID,
+      color: seededColor,
     });
     if (!parsed.success) {
       setInlineError(parsed.error.issues[0]?.message ?? "Please check the category name.");
@@ -151,18 +153,13 @@ export function TransactionFormCategorySection({
         circleId,
         name: parsed.data.name,
         type: activeType,
-        color: DEFAULT_COLOR_ID,
+        color: seededColor,
       });
       if (!newId) {
         setInlineError("Couldn't create the category. Please try again.");
         return;
       }
-      const created = toInlineCreatedCategory(
-        newId,
-        parsed.data.name,
-        activeType,
-        DEFAULT_COLOR_ID,
-      );
+      const created = toInlineCreatedCategory(newId, parsed.data.name, activeType, seededColor);
       onInlineCreatedCategory(created);
       if (!currentIds.includes(newId)) {
         onIdsChange([...currentIds, newId]);
