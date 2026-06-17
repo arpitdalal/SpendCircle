@@ -84,6 +84,12 @@ function setup(
   });
 }
 
+/** The Status filter's fieldset — scope "All" / "Active" / "Archived" queries here,
+ * since the Type segment (#138) now also has an "All" button. */
+function statusGroup() {
+  return screen.getByRole("group", { name: "Status" });
+}
+
 /** Both rows used by the lifecycle-mix tests: one active, one archived. */
 function mixedRows() {
   return [
@@ -100,25 +106,38 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("CircleCategories — list and create (CAT-1)", () => {
-  it("lists categories of the selected type", () => {
+describe("CircleCategories — list and create (CAT-1; issue #138 all types)", () => {
+  it("lists all types together by default (income + expense interleaved)", () => {
     setup({
       categories: [
-        makeCategoryView(),
-        makeCategoryView({ id: testId<Category["id"]>("c2"), name: "Rent" }),
+        makeCategoryView({ name: "Groceries", type: "expense" }),
+        makeCategoryView({ id: testId<Category["id"]>("i1"), name: "Salary", type: "income" }),
       ],
     });
     const list = screen.getByRole("list");
     expect(within(list).getByText("Groceries")).toBeInTheDocument();
-    expect(within(list).getByText("Rent")).toBeInTheDocument();
+    expect(within(list).getByText("Salary")).toBeInTheDocument();
   });
 
-  it("shows an empty state when there are no categories of the type", () => {
+  it("tags each row with its type via a per-row pill", () => {
+    setup({
+      categories: [
+        makeCategoryView({ name: "Groceries", type: "expense" }),
+        makeCategoryView({ id: testId<Category["id"]>("i1"), name: "Salary", type: "income" }),
+      ],
+    });
+    const expenseRow = screen.getByText("Groceries").closest("li");
+    const incomeRow = screen.getByText("Salary").closest("li");
+    expect(within(expenseRow as HTMLElement).getByText("expense")).toBeInTheDocument();
+    expect(within(incomeRow as HTMLElement).getByText("income")).toBeInTheDocument();
+  });
+
+  it("shows the no-categories-yet empty state on the default (unnarrowed) all view", () => {
     setup({ categories: [] });
-    expect(screen.getByText(/No expense categories yet/)).toBeInTheDocument();
+    expect(screen.getByText("No categories yet.")).toBeInTheDocument();
   });
 
-  it("switches the list and the create CTA's type to Income when the Income tab is selected", async () => {
+  it("narrows the list and re-targets the create CTA's type via the All/Expense/Income filter", async () => {
     const user = userEvent.setup();
     setup({
       categories: [
@@ -126,18 +145,21 @@ describe("CircleCategories — list and create (CAT-1)", () => {
         makeCategoryView({ id: testId<Category["id"]>("i1"), name: "Salary", type: "income" }),
       ],
     });
+    // Default All view: both visible, and the CTA carries no concrete type (the form defaults).
     expect(screen.getByText("Groceries")).toBeInTheDocument();
-    expect(screen.queryByText("Salary")).not.toBeInTheDocument();
-    // The CTA deep-links the active type tab so the new page opens on the right type.
-    expect(screen.getByRole("link", { name: "New category" })).toHaveAttribute(
-      "href",
-      expect.stringContaining("type=expense"),
-    );
+    expect(screen.getByText("Salary")).toBeInTheDocument();
+    expect(
+      new URL(
+        screen.getByRole("link", { name: "New category" }).getAttribute("href") ?? "",
+        "http://t",
+      ).searchParams.get("type"),
+    ).toBeNull();
 
-    await user.click(screen.getByRole("tab", { name: "Income" }));
+    await user.click(screen.getByRole("button", { name: "Income" }));
 
     expect(screen.getByText("Salary")).toBeInTheDocument();
     expect(screen.queryByText("Groceries")).not.toBeInTheDocument();
+    // A concrete type now deep-links the create CTA so the form opens on the right type.
     expect(screen.getByRole("link", { name: "New category" })).toHaveAttribute(
       "href",
       expect.stringContaining("type=income"),
@@ -190,7 +212,8 @@ describe("CircleCategories — Category Filter status (CAT-4)", () => {
     expect(screen.queryByText("Groceries")).not.toBeInTheDocument();
     expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "All" }));
+    // "All" is ambiguous (Type segment also has one) — scope to the Status group.
+    await user.click(within(statusGroup()).getByRole("button", { name: "All" }));
     expect(screen.getByText("Groceries")).toBeInTheDocument();
     expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
   });
@@ -202,7 +225,7 @@ describe("CircleCategories — Category Filter status (CAT-4)", () => {
     await user.click(screen.getByRole("button", { name: "Archived" }));
 
     expect(screen.getByText("No categories match this filter.")).toBeInTheDocument();
-    expect(screen.queryByText(/No expense categories yet/)).not.toBeInTheDocument();
+    expect(screen.queryByText("No categories yet.")).not.toBeInTheDocument();
   });
 });
 
@@ -254,9 +277,9 @@ describe("CircleCategories — Category Filter search (CAT-4)", () => {
 });
 
 describe("CircleCategories — URL-owned filter state (CAT-4, ADR 0016)", () => {
-  it("canonicalizes a bare URL to always carry type and status", async () => {
+  it("canonicalizes a bare URL to always carry type and status (defaults all/all)", async () => {
     const view = setup({ categories: [] });
-    await waitFor(() => expect(view.location()).toBe("/?type=expense&status=all"));
+    await waitFor(() => expect(view.location()).toBe("/?type=all&status=all"));
   });
 
   it("reproduces a filtered view from a deep link", () => {
@@ -278,40 +301,45 @@ describe("CircleCategories — URL-owned filter state (CAT-4, ADR 0016)", () => 
       initialEntries: ["/?type=bogus&status=nope"],
     });
 
-    await waitFor(() => expect(view.location()).toBe("/?type=expense&status=all"));
-    // Default all: both rows visible; default type tab selected.
-    expect(screen.getByRole("tab", { name: "Expense" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(view.location()).toBe("/?type=all&status=all"));
+    // Default all: both rows visible; the All type segment is pressed.
+    expect(
+      within(screen.getByRole("group", { name: "Type" })).getByRole("button", {
+        name: "All",
+        pressed: true,
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
   });
 
   it("type and status changes PUSH history — back returns to the previous filter", async () => {
     const user = userEvent.setup();
     const view = setup({ categories: mixedRows() });
-    await waitFor(() => expect(view.location()).toBe("/?type=expense&status=all"));
+    await waitFor(() => expect(view.location()).toBe("/?type=all&status=all"));
 
-    await user.click(screen.getByRole("button", { name: "Active" }));
-    expect(view.location()).toBe("/?type=expense&status=active");
+    await user.click(screen.getByRole("button", { name: "Expense" }));
+    expect(view.location()).toBe("/?type=expense&status=all");
 
     await user.click(screen.getByRole("button", { name: "test-go-back" }));
-    expect(view.location()).toBe("/?type=expense&status=all");
+    expect(view.location()).toBe("/?type=all&status=all");
     expect(screen.getByText("Old Subscriptions")).toBeInTheDocument();
   });
 
   it("the debounced search REPLACES — back skips the typed states", async () => {
     const user = userEvent.setup();
     const view = setup({ categories: mixedRows() });
-    await waitFor(() => expect(view.location()).toBe("/?type=expense&status=all"));
+    await waitFor(() => expect(view.location()).toBe("/?type=all&status=all"));
 
     // A discrete change first, so there IS a previous entry to land on.
     await user.click(screen.getByRole("button", { name: "Active" }));
-    expect(view.location()).toBe("/?type=expense&status=active");
+    expect(view.location()).toBe("/?type=all&status=active");
 
     await user.type(screen.getByLabelText("Search categories by name"), "groc");
     await waitFor(() => expect(view.location()).toContain("q=groc"));
 
     // Back jumps OVER the search write (it replaced), to the pre-status entry.
     await user.click(screen.getByRole("button", { name: "test-go-back" }));
-    expect(view.location()).toBe("/?type=expense&status=all");
+    expect(view.location()).toBe("/?type=all&status=all");
   });
 });
 
@@ -543,7 +571,7 @@ describe("CircleCategories — open row state answers to page membership (regres
     expect(screen.queryByRole("region", { name: "Groceries history" })).not.toBeInTheDocument();
 
     // Back under all, the remounted row's panel stays closed.
-    await user.click(screen.getByRole("button", { name: "All" }));
+    await user.click(within(statusGroup()).getByRole("button", { name: "All" }));
     expect(screen.getByText("Groceries")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Groceries history" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "History of Groceries" })).toHaveAttribute(
@@ -552,7 +580,7 @@ describe("CircleCategories — open row state answers to page membership (regres
     );
   });
 
-  it("does not carry an open editor across a type-tab switch and back", async () => {
+  it("does not carry an open editor across a type-filter switch and back", async () => {
     const user = userEvent.setup();
     setup({
       categories: [
@@ -564,8 +592,9 @@ describe("CircleCategories — open row state answers to page membership (regres
     await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
     expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: "Income" }));
-    await user.click(screen.getByRole("tab", { name: "Expense" }));
+    // Switch the type segment to Income (drops the Groceries row), then back.
+    await user.click(screen.getByRole("button", { name: "Income" }));
+    await user.click(screen.getByRole("button", { name: "Expense" }));
 
     expect(screen.getByText("Groceries")).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
@@ -618,7 +647,7 @@ describe("CircleCategories — edit mode answers to server capability (regressio
     expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
 
     // The re-mounted archived row (back under all) must NOT render the stranded editor.
-    await user.click(screen.getByRole("button", { name: "All" }));
+    await user.click(within(statusGroup()).getByRole("button", { name: "All" }));
     expect(screen.queryByRole("form", { name: "Edit Groceries" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Restore Groceries" })).toBeInTheDocument();
 

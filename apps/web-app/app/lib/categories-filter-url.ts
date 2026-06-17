@@ -5,10 +5,10 @@ import { cleanText, readLifecycleStatus } from "./url-codec.js";
 
 /**
  * URL codec for the Categories page's **Category Filter** (CAT-4) — a small
- * sibling of `transaction-filter-url.ts`, not an overload of it: the Categories
- * `type` is binary (`expense | income`, the page always shows exactly one type),
- * so it has no `"all"` and the two modules' defaults differ. Filter state lives
- * in the URL so a filtered view is shareable and reproducible (ADR 0016).
+ * sibling of `transaction-filter-url.ts`. The page shows all types by default and
+ * offers an All / Expense / Income filter (issue #138), so `type` is the same
+ * `"all" | TransactionType` shape the ledger uses, defaulting to `"all"`. Filter
+ * state lives in the URL so a filtered view is shareable and reproducible (ADR 0016).
  *
  * Canonical form: `type` and `status` are ALWAYS written (so a copied URL is
  * self-describing), `q` is omitted when empty and trimmed/normalized when
@@ -16,14 +16,17 @@ import { cleanText, readLifecycleStatus } from "./url-codec.js";
  */
 
 export type CategoryLifecycleFilter = "active" | "archived" | "all";
+export type TypeFilter = "all" | TransactionType;
 
 export interface CategoriesFilters {
-  type: TransactionType;
+  type: TypeFilter;
   status: CategoryLifecycleFilter;
   q: string;
 }
 
-export const DEFAULT_CATEGORIES_TYPE: TransactionType = "expense";
+/** All types by default (issue #138), and `"all"` is the canonical default
+ * written to the URL — parity with the ledger's one-picture view. */
+export const DEFAULT_CATEGORIES_TYPE: TypeFilter = "all";
 /** Parity with the ledger's one-picture view: archived rows are distinguished,
  * not hidden, so history is visible without toggling. */
 export const DEFAULT_CATEGORIES_STATUS: CategoryLifecycleFilter = "all";
@@ -37,8 +40,10 @@ export function cleanQueryText(value: string | null) {
   return cleanText(value);
 }
 
-function readType(value: string | null): TransactionType {
-  return value === "expense" || value === "income" ? value : DEFAULT_CATEGORIES_TYPE;
+function readType(value: string | null): TypeFilter {
+  return value === "expense" || value === "income" || value === "all"
+    ? value
+    : DEFAULT_CATEGORIES_TYPE;
 }
 
 function readStatus(value: string | null): CategoryLifecycleFilter {
@@ -81,20 +86,31 @@ export function defaultCategoriesFilters(): CategoriesFilters {
   return { type: DEFAULT_CATEGORIES_TYPE, status: DEFAULT_CATEGORIES_STATUS, q: "" };
 }
 
-/** Whether any narrowing beyond the type tab is applied — drives the
- * "no matches" vs "no Categories yet" empty-state split. */
+/** Whether any narrowing is applied — drives the "no matches" vs "no Categories
+ * yet" empty-state split. A concrete (non-default) type counts now that the
+ * default scope is `"all"` (issue #138): under Expense/Income an empty result is
+ * a filter miss, not "no Categories at all". */
 export function hasCategoriesNarrowing(filters: CategoriesFilters) {
-  return filters.q !== "" || filters.status !== DEFAULT_CATEGORIES_STATUS;
+  return (
+    filters.q !== "" ||
+    filters.status !== DEFAULT_CATEGORIES_STATUS ||
+    filters.type !== DEFAULT_CATEGORIES_TYPE
+  );
 }
 
 /**
- * Canonical new-Category route path (issue #96): Categories are type-specific, so the
- * dedicated create page carries its `type` (defaulted from the list's active tab so the
- * CTA deep-links the right type) as its OWN param. The caller appends the validated
- * `returnTo` origin via `withReturnTo`, which merges into this query — the single home for
- * the create link so the list CTA can't drift.
+ * Canonical new-Category route path (issue #96; revised #138): the dedicated create page
+ * carries an OPTIONAL initial `type` (`expense | income`) so the CTA can deep-link a
+ * concrete type when the list is filtered to one. When the list type is `"all"` there is
+ * no concrete type to seed — `type` is omitted and the form defaults to `expense` (you
+ * can't create an "all" category). The caller appends the validated `returnTo` origin via
+ * `withReturnTo`, which merges into this query — the single home for the create link so the
+ * list CTA can't drift.
  */
-export function categoryNewHref(circle: { ref: string }, { type }: { type: TransactionType }) {
-  const params = new URLSearchParams({ type });
+export function categoryNewHref(circle: { ref: string }, { type }: { type: TypeFilter }) {
+  const params = new URLSearchParams();
+  if (type !== "all") {
+    params.set("type", type);
+  }
   return withQuery(`/circles/${circle.ref}/categories/new`, params.toString());
 }

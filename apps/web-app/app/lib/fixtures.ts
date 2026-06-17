@@ -101,13 +101,13 @@ export const MOCK_CATEGORIES: Category[] = [
  * every other fixture.
  */
 export function mockFilterCategories(filters: {
-  type: TransactionType;
+  type: "all" | TransactionType;
   status: "active" | "archived" | "all";
   query?: string;
 }): Category[] {
   return MOCK_CATEGORIES.filter(
     (category) =>
-      category.type === filters.type &&
+      (filters.type === "all" || category.type === filters.type) &&
       (filters.status === "all" || category.status === filters.status) &&
       textIncludes(category.name, filters.query ?? ""),
   );

@@ -13,14 +13,15 @@ function fakeListCategories(rows: Category[], args: Record<string, unknown>) {
   return rows.filter((c) => c.type === args.type && (includeArchived || c.status === "active"));
 }
 
-/** Models the `filterCategories` backend contract (CAT-4): type-scoped, lifecycle-
- * scoped, name-matched with the SAME domain `textIncludes` the real handler uses —
- * so a route test exercises real narrowing semantics, not a per-file approximation. */
+/** Models the `filterCategories` backend contract (CAT-4; issue #138): type-scoped
+ * (or all types when `type: "all"`), lifecycle-scoped, name-matched with the SAME
+ * domain `textIncludes` the real handler uses — so a route test exercises real
+ * narrowing semantics, not a per-file approximation. */
 function fakeFilterCategories(rows: Category[], args: Record<string, unknown>) {
   const query = typeof args.query === "string" ? args.query : "";
   return rows.filter(
     (c) =>
-      c.type === args.type &&
+      (args.type === "all" || c.type === args.type) &&
       (args.status === "all" || c.status === args.status) &&
       textIncludes(c.name, query),
   );

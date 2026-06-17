@@ -1,9 +1,4 @@
-import {
-  COLOR_PALETTE,
-  categoryUpdateSchema,
-  LIMITS,
-  type TransactionType,
-} from "@spend-circle/domain";
+import { COLOR_PALETTE, categoryUpdateSchema, LIMITS } from "@spend-circle/domain";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { ColorPicker } from "~/components/category-form.js";
@@ -21,6 +16,7 @@ import {
   cleanQueryText,
   hasCategoriesNarrowing,
   readCategoriesFilters,
+  type TypeFilter,
 } from "~/lib/categories-filter-url.js";
 import {
   type CategoriesPage,
@@ -37,7 +33,8 @@ import { withReturnTo } from "~/lib/return-to-url.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
-const TYPE_TABS: ReadonlyArray<{ value: TransactionType; label: string }> = [
+const TYPE_OPTIONS: ReadonlyArray<{ value: TypeFilter; label: string }> = [
+  { value: "all", label: "All" },
   { value: "expense", label: "Expense" },
   { value: "income", label: "Income" },
 ];
@@ -50,20 +47,21 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: CategoryLifecycleFilter; label: str
 
 /**
  * Circle-scoped Categories surface (PRD stories 47–61; CAT-2 adds edit / archive /
- * restore / history; CAT-4 adds the **Category Filter**). A type tab drives both
- * the visible list and the new-Category form, because Categories are type-specific
- * — an Expense form never shows Income Categories. The server owns the unique-name
- * invariant (case-insensitive, per Circle+type, incl. archived); we surface its
- * rejection inline rather than pre-checking client-side.
+ * restore / history; CAT-4 adds the **Category Filter**; issue #138 shows all types
+ * together). All Categories — income and expense — show by default, interleaved
+ * newest-first, with a per-row type pill telling the two apart. An All / Expense /
+ * Income filter narrows to one type. The server owns the unique-name invariant
+ * (case-insensitive, per Circle+type, incl. archived); we surface its rejection
+ * inline rather than pre-checking client-side.
  *
- * The Category Filter — the type tab, a tri-state lifecycle status, and a
+ * The Category Filter — the type segment, a tri-state lifecycle status, and a
  * debounced name search — lives in the **URL** (ADR 0016), so a filtered view is
  * shareable and reproducible, never trapped in `useState`. Discrete changes
  * (type, status) PUSH so back walks the filter history; the debounced search
- * REPLACES so typing a word doesn't bury history. The default scope is `all`
- * (parity with the ledger's one-picture view): archived rows are distinguished —
- * muted name + "Archived" badge — not hidden. The list paginates at the source
- * via `filterCategories` with automatic infinite scroll (README §4).
+ * REPLACES so typing a word doesn't bury history. The default type and status are
+ * both `all` (parity with the ledger's one-picture view): archived rows are
+ * distinguished — muted name + "Archived" badge — not hidden. The list paginates at
+ * the source via `filterCategories` with automatic infinite scroll (README §4).
  *
  * Per-row affordances are gated on the SERVER-returned capability flags
  * (`canEditFields` — the creator only; `canArchive` — creator or Owner) plus a
@@ -76,7 +74,7 @@ export default function CircleCategories() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = readCategoriesFilters(searchParams);
   const writable = circle.status === "active";
-  // The list's full URL (its type tab, status, search) is the origin the New-category CTA
+  // The list's full URL (its type, status, search) is the origin the New-category CTA
   // returns to via `returnTo` (#123), so a filtered view round-trips through the new page.
   const origin = location.pathname + location.search;
   const page = useCategoriesPage(circle.id, {
@@ -94,7 +92,7 @@ export default function CircleCategories() {
     }
   }, [filters, searchParams, setSearchParams]);
 
-  // Discrete control changes (type tab, status segment) PUSH a history entry.
+  // Discrete control changes (type segment, status segment) PUSH a history entry.
   const applyFilters = (next: CategoriesFilters) => {
     setSearchParams(canonicalCategoriesParams(next, searchParams), { replace: false });
   };
@@ -109,33 +107,16 @@ export default function CircleCategories() {
       <div className="space-y-3">
         <h2 className="font-display text-lg font-semibold tracking-tight">Categories</h2>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div
-            role="tablist"
-            aria-label="Category type"
-            className="inline-flex rounded-md bg-muted p-1"
-          >
-            {TYPE_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                role="tab"
-                aria-selected={filters.type === tab.value}
-                onClick={() => {
-                  if (filters.type !== tab.value) {
-                    applyFilters({ ...filters, type: tab.value });
-                  }
-                }}
-                className={cn(
-                  "rounded px-3 py-1 text-sm transition-colors",
-                  filters.type === tab.value
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label="Type"
+            value={filters.type}
+            options={[...TYPE_OPTIONS]}
+            onChange={(type) => {
+              if (filters.type !== type) {
+                applyFilters({ ...filters, type });
+              }
+            }}
+          />
           <Segmented
             label="Status"
             value={filters.status}
@@ -163,12 +144,7 @@ export default function CircleCategories() {
         </p>
       )}
 
-      <CategoryList
-        page={page}
-        type={filters.type}
-        narrowed={hasCategoriesNarrowing(filters)}
-        circle={circle}
-      />
+      <CategoryList page={page} narrowed={hasCategoriesNarrowing(filters)} circle={circle} />
     </div>
   );
 }
@@ -227,7 +203,9 @@ function CategorySearchInput({
 
 /**
  * The Category Filter's result list — one source-paginated page stream of the
- * selected type, lifecycle scope, and search (CAT-4). Each row offers the
+ * selected type scope (all / expense / income), lifecycle scope, and search
+ * (CAT-4; issue #138). Each row carries a type pill so the interleaved All view
+ * reads unambiguously. Each row offers the
  * affordances the SERVER said this viewer may use (`canEditFields` / `canArchive`
  * — ADR 0015) on a writable Circle, and a History disclosure every current Member
  * may open (PRD story 78). One row at a time edits, and one expands history — a
@@ -241,17 +219,15 @@ function CategorySearchInput({
  * reliably than mounting the region only while `LoadingMore`.
  *
  * The two empty states are deliberately distinct: with no narrowing applied an
- * empty result means the type has no Categories yet; with a search or a
- * non-default status it means the filter matched nothing.
+ * empty result means the Circle has no Categories yet; with a search, a
+ * non-default status, or a concrete type it means the filter matched nothing.
  */
 function CategoryList({
   page,
-  type,
   narrowed,
   circle,
 }: {
   page: CategoriesPage;
-  type: TransactionType;
   narrowed: boolean;
   circle: Circle;
 }) {
@@ -284,7 +260,10 @@ function CategoryList({
   if (categories.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        {narrowed ? "No categories match this filter." : `No ${type} categories yet.`}
+        {/* Not-narrowed implies the default All view (a concrete type counts as
+            narrowing now — `hasCategoriesNarrowing`), so the bare empty state is
+            always "no Categories at all", never type-specific. */}
+        {narrowed ? "No categories match this filter." : "No categories yet."}
       </p>
     );
   }
@@ -362,6 +341,11 @@ function CategoryRow({
           />
           <span className={cn("text-sm font-medium", isArchived && "text-muted-foreground")}>
             {category.name}
+          </span>
+          {/* Text pill (not color alone) so expense vs income is legible now that
+              both types interleave under the default All view (issue #138). */}
+          <span className="rounded-full border border-border px-2 py-px text-xs capitalize text-muted-foreground">
+            {category.type}
           </span>
           {isArchived ? (
             <span className="rounded-full border border-border bg-muted px-2 py-px text-xs text-muted-foreground">
