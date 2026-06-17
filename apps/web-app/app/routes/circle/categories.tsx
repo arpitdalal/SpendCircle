@@ -1,5 +1,5 @@
 import { COLOR_PALETTE, categoryUpdateSchema, LIMITS } from "@spend-circle/domain";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ColorPicker } from "~/components/category-form.js";
 import { HistoryList } from "~/components/history-list.js";
@@ -7,6 +7,7 @@ import { InfiniteScrollFooter } from "~/components/infinite-scroll-footer.js";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Button } from "~/components/ui/button.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
+import { DebouncedSearchInput } from "~/components/ui/debounced-search-input.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import {
   type CategoriesFilters,
@@ -127,7 +128,13 @@ export default function CircleCategories() {
             }}
           />
         </div>
-        <CategorySearchInput value={filters.q} onSearch={applySearch} />
+        <DebouncedSearchInput
+          value={filters.q}
+          onSearch={applySearch}
+          normalize={cleanQueryText}
+          label="Search categories by name"
+          placeholder="Search categories…"
+        />
       </div>
 
       {writable ? (
@@ -145,58 +152,6 @@ export default function CircleCategories() {
 
       <CategoryList page={page} narrowed={hasCategoriesNarrowing(filters)} circle={circle} />
     </div>
-  );
-}
-
-/** How long typing may pause before the search commits to the URL. */
-const SEARCH_DEBOUNCE_MS = 250;
-
-/**
- * The Category Filter's name search box. Local state holds the in-flight
- * keystrokes; a ~250ms debounce commits the cleaned text to the URL (replace).
- * `applied` tracks the last value THIS box committed, so an external URL change
- * (back/forward, a shared link) syncs the box without a render-loop, while the
- * box's own canonical echo never clobbers what the user is still typing.
- */
-function CategorySearchInput({
-  value,
-  onSearch,
-}: {
-  value: string;
-  onSearch: (q: string) => void;
-}) {
-  const [text, setText] = useState(value);
-  const applied = useRef(value);
-
-  useEffect(() => {
-    if (value !== applied.current) {
-      applied.current = value;
-      setText(value);
-    }
-  }, [value]);
-
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      const clean = cleanQueryText(text);
-      if (clean !== applied.current) {
-        applied.current = clean;
-        onSearch(clean);
-      }
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(handle);
-  }, [text, onSearch]);
-
-  return (
-    <label className="block">
-      <span className="sr-only">Search categories by name</span>
-      <input
-        type="search"
-        value={text}
-        onChange={(event) => setText(event.currentTarget.value)}
-        placeholder="Search categories…"
-        className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 text-foreground"
-      />
-    </label>
   );
 }
 
