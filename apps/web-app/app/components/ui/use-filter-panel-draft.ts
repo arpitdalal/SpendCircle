@@ -16,8 +16,12 @@ import { useState } from "react";
  * - The draft re-syncs to `applied` whenever the applied filters change underneath — a
  *   sibling navigation, pagination, or the route's own Apply/Reset commit — via an
  *   adjust-during-render compare keyed on a serialization of `applied` (no effect, no flash).
- *   Apply/Reset commit to the URL first, so this compare overrides the close-time discard
- *   with the freshly-applied state.
+ *   The compare is gated on the panel being CLOSED: an applied change underneath an OPEN
+ *   panel can only be a field the panel doesn't own — e.g. Search's live top-bar query,
+ *   written to the URL by a debounce that fires mid-edit — so re-syncing then would discard
+ *   the user's in-progress draft selections. Apply/Reset commit to the URL and close the
+ *   panel in the same batch, so the next render (panel closed) still picks up the
+ *   freshly-applied state, overriding the close-time discard.
  */
 export function useFilterPanelDraft<TFilters>(applied: TFilters) {
   const [open, setOpen] = useState(false);
@@ -25,7 +29,7 @@ export function useFilterPanelDraft<TFilters>(applied: TFilters) {
   const appliedKey = JSON.stringify(applied);
   const [syncedKey, setSyncedKey] = useState(appliedKey);
 
-  if (appliedKey !== syncedKey) {
+  if (!open && appliedKey !== syncedKey) {
     setSyncedKey(appliedKey);
     setDraft(applied);
   }
