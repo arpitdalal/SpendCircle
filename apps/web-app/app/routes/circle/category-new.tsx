@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { NewCategoryForm } from "~/components/category-form.js";
 import { Splash } from "~/components/splash.js";
+import { circlePath } from "~/lib/circle-path.js";
 import { parseReturnTo, RETURN_TO_PARAM } from "~/lib/return-to-url.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -29,7 +30,7 @@ export default function CategoryNew() {
   const [searchParams] = useSearchParams();
   const writable = circle.status === "active";
 
-  const listBase = `/circles/${circle.ref}/categories`;
+  const listBase = circlePath(circle.ref, "categories");
   const returnUrl = parseReturnTo(searchParams.get(RETURN_TO_PARAM), { fallback: listBase });
 
   // The toggle's starting type: a concrete deep-linked `type`, else `expense` (the list may

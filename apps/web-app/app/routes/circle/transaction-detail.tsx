@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { HistoryList } from "~/components/history-list.js";
 import { Splash } from "~/components/splash.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
+import { circlePath } from "~/lib/circle-path.js";
 import { type Circle, type TransactionDetail, useTransactionHistory } from "~/lib/data.js";
 import { formatAuditTimestamp } from "~/lib/datetime.js";
 import { transactionDetailHref, transactionEditHref } from "~/lib/ledger-url.js";
@@ -35,7 +36,7 @@ export default function TransactionDetailRoute() {
   // fallback for the resolver, so an unavailable detail link returns the User to where they
   // opened it FROM. Absent / malformed / out-of-scope falls back to the Circle's ledger.
   const returnTo = parseReturnTo(searchParams.get(RETURN_TO_PARAM), {
-    fallback: `/circles/${circle.ref}/transactions`,
+    fallback: circlePath(circle.ref, "transactions"),
   });
   const resolution = useResolvedTransactionDetail({ fallback: returnTo });
 

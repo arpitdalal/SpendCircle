@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Splash } from "~/components/splash.js";
 import { TransactionForm } from "~/components/transaction-form/index.js";
+import { circlePath } from "~/lib/circle-path.js";
 import { parseReturnTo, RETURN_TO_PARAM } from "~/lib/return-to-url.js";
 import { useResolvedTransaction } from "~/lib/use-resolved-transaction.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -37,7 +38,7 @@ export default function TransactionEdit() {
   // return to the validated `returnTo` origin — the exact URL this editor was opened FROM,
   // with all of its filter/page/month state intact (issue #123). An absent / malformed /
   // out-of-scope value falls back to the Circle's ledger (anti-enumeration, ADR 0016).
-  const ledgerBase = `/circles/${circle.ref}/transactions`;
+  const ledgerBase = circlePath(circle.ref, "transactions");
   const returnUrl = parseReturnTo(searchParams.get(RETURN_TO_PARAM), { fallback: ledgerBase });
 
   // Set the instant we begin leaving (cancel or successful save).

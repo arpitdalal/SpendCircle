@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Splash } from "~/components/splash.js";
 import { TransactionForm } from "~/components/transaction-form/index.js";
+import { circlePath } from "~/lib/circle-path.js";
 import { parseReturnTo, RETURN_TO_PARAM } from "~/lib/return-to-url.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -36,7 +37,7 @@ export default function TransactionNew() {
   // The single safe return target (issue #123): the exact URL the CTA was opened FROM,
   // else the Circle's ledger. Covers close, the invalid-`type` guard, and the archived
   // redirect — a tampered / out-of-scope value is indistinguishable from an absent one.
-  const ledgerBase = `/circles/${circle.ref}/transactions`;
+  const ledgerBase = circlePath(circle.ref, "transactions");
   const returnUrl = parseReturnTo(searchParams.get(RETURN_TO_PARAM), { fallback: ledgerBase });
 
   const rawType = searchParams.get("type");

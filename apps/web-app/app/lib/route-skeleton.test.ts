@@ -1,28 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { coversCircleNavigation, coversShellNavigation, isCircleRoute } from "./route-skeleton.js";
+import { coversCircleNavigation, coversShellNavigation } from "./route-skeleton.js";
 
 /**
  * The route-tree partition the two shell layouts split on (issue #121). These pure
  * predicates decide which layout owns a given navigation's skeleton; the layout
  * integration tests then exercise the debounce + swap on top of them.
  */
-describe("isCircleRoute", () => {
-  it("matches Circle-scoped routes", () => {
-    expect(isCircleRoute("/circles/trip-c1")).toBe(true);
-    expect(isCircleRoute("/circles/trip-c1/transactions")).toBe(true);
-    expect(isCircleRoute("/circles/trip-c1/transactions/groceries-t1/edit")).toBe(true);
-  });
-
-  it("does NOT match the Create Circle flow or non-Circle routes", () => {
-    // `/circles/new` lives above the Circle guard — a protected-layout child, not a Circle.
-    expect(isCircleRoute("/circles/new")).toBe(false);
-    expect(isCircleRoute("/circles/new/anything")).toBe(false);
-    expect(isCircleRoute("/")).toBe(false);
-    expect(isCircleRoute("/settings")).toBe(false);
-    expect(isCircleRoute("/onboarding")).toBe(false);
-  });
-});
-
 describe("layout navigation partition", () => {
   it("the Circle layout covers only SAME-Circle navigations (chrome stays correct)", () => {
     expect(coversCircleNavigation("/circles/trip-c1", "/circles/trip-c1/transactions")).toBe(true);

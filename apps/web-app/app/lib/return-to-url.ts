@@ -1,4 +1,5 @@
 import { useLocation } from "react-router";
+import { isCircleScopedPath } from "./circle-path.js";
 import { withQuery } from "./ledger-url.js";
 
 /**
@@ -49,15 +50,6 @@ const MAX_RETURN_TO_LENGTH = 2048;
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control chars is the point.
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
-
-/**
- * A Circle-scoped object path: `/circles/<ref>` as a COMPLETE first segment, followed by
- * a path/query/hash delimiter or the end of the string. `[^/?#]+` forbids an empty ref
- * (`/circles//…`, `/circles/?…`). This is what encodes ADR 0016's "self-scoping" rule —
- * the `returnTo` carries its own Circle in the prefix, so the check is purely structural
- * and never compares against the current route's Circle.
- */
-const CIRCLE_SCOPED_PATH = /^\/circles\/[^/?#]+(?:[/?#]|$)/;
 
 /**
  * A `..` traversal segment in any of the forms the browser collapses to `..` during the
@@ -111,7 +103,7 @@ export function parseReturnTo(raw: string | null, { fallback }: { fallback: stri
   }
   // Self-scoping (ADR 0016): only an in-Circle object path is a valid return origin —
   // not a top-level `/settings`, not another app area.
-  if (!CIRCLE_SCOPED_PATH.test(raw)) {
+  if (!isCircleScopedPath(raw)) {
     return fallback;
   }
   // Reject `..` traversal that could climb out of the Circle scope after the browser

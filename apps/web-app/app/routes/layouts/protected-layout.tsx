@@ -4,12 +4,9 @@ import { CircleBottomNavSkeleton } from "~/components/circle-mobile-bottom-nav.j
 import { CircleSwitcher } from "~/components/circle-switcher.js";
 import { PageSkeleton } from "~/components/skeleton.js";
 import { Splash } from "~/components/splash.js";
+import { isCircleScopedPath } from "~/lib/circle-path.js";
 import { MOCKS } from "~/lib/env.js";
-import {
-  coversShellNavigation,
-  isCircleRoute,
-  usePendingRouteSkeleton,
-} from "~/lib/route-skeleton.js";
+import { coversShellNavigation, usePendingRouteSkeleton } from "~/lib/route-skeleton.js";
 import { useAppSession } from "~/lib/session.js";
 
 /**
@@ -30,7 +27,7 @@ export default function ProtectedLayout() {
   // it will own a real bar once it resolves.
   const navigation = useNavigation();
   const pendingTo = navigation.location?.pathname;
-  const showBottomNavSkeleton = showSkeleton && pendingTo != null && isCircleRoute(pendingTo);
+  const showBottomNavSkeleton = showSkeleton && pendingTo != null && isCircleScopedPath(pendingTo);
 
   if (session.state === "loading") {
     return <Splash />;
