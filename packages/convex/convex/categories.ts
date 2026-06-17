@@ -7,7 +7,7 @@ import {
 } from "@spend-circle/domain";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { stream } from "convex-helpers/server/stream";
+import { mergedStream, stream } from "convex-helpers/server/stream";
 import type { Doc } from "./_generated/dataModel.js";
 import { type MutationCtx, mutation, type QueryCtx, query } from "./_generated/server.js";
 import {
@@ -181,12 +181,15 @@ export const listCategories = query({
   },
 });
 
-/** The Category Filter's source stream: the status index when the scope is
+/** One type's stream, scoped by lifecycle: the status index when the scope is
  * `active`/`archived` (eq on status, `createdAt` desc), the no-status
  * `createdAt` index when `all` (both statuses interleaved). Either way the index
  * carries the sort key, so pages stay in `createdAt` desc order (with Convex's
- * implicit `_creationTime` desc tiebreak) across page boundaries. */
-function streamCategoriesByStatus(
+ * implicit `_creationTime` desc tiebreak) across page boundaries. Both indexes
+ * fix every field before `createdAt` via `.eq(...)`, so each stream is already
+ * ordered by `createdAt` alone — the precondition `mergedStream` needs to merge
+ * two of them on `["createdAt"]` (see {@link streamCategoriesByStatus}). */
+function streamCategoriesOfType(
   ctx: QueryCtx,
   args: {
     circleId: Doc<"circles">["_id"];
@@ -211,10 +214,38 @@ function streamCategoriesByStatus(
     .order("desc");
 }
 
+/** The Category Filter's source stream. For a concrete type it is the single
+ * lifecycle-scoped stream above. For `type: "all"` it MERGES the expense and
+ * income streams on `["createdAt"]` (desc), preserving newest-first across both
+ * types — neither type index alone can range over both, but each is already
+ * `createdAt`-ordered (it fixes `type` with `.eq`), so the merge reuses the
+ * existing indexes with no schema change. The merge is type-agnostic about
+ * lifecycle: each side honors the `status` scope independently. */
+function streamCategoriesByStatus(
+  ctx: QueryCtx,
+  args: {
+    circleId: Doc<"circles">["_id"];
+    type: "all" | "expense" | "income";
+    status: "active" | "archived" | "all";
+  },
+) {
+  if (args.type !== "all") {
+    return streamCategoriesOfType(ctx, { ...args, type: args.type });
+  }
+  return mergedStream(
+    [
+      streamCategoriesOfType(ctx, { ...args, type: "expense" }),
+      streamCategoriesOfType(ctx, { ...args, type: "income" }),
+    ],
+    ["createdAt"],
+  );
+}
+
 /**
  * The **Category Filter** read (CAT-4): one page of a Circle's Categories of one
- * type, narrowed by lifecycle scope (active / archived / all) and an optional
- * name search — substring, case-insensitive, whitespace-normalized, **name
+ * type — or both, when `type` is `"all"` (issue #138), merged newest-first across
+ * the two type streams — narrowed by lifecycle scope (active / archived / all) and
+ * an optional name search — substring, case-insensitive, whitespace-normalized, **name
  * only**. The management list this feeds grows with the Circle, so it paginates
  * **at the source** (README §4): the status-appropriate index streams rows
  * newest-first and the text match filters in-handler (`filterWith`), filling the
@@ -242,7 +273,7 @@ function streamCategoriesByStatus(
 export const filterCategories = query({
   args: {
     circleId: v.id("circles"),
-    type: transactionType,
+    type: v.union(transactionType, v.literal("all")),
     status: v.union(v.literal("active"), v.literal("archived"), v.literal("all")),
     query: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,

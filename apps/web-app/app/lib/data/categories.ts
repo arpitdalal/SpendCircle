@@ -87,7 +87,7 @@ export interface CategoriesPage {
  */
 export function useCategoriesPage(
   circleId: Circle["id"],
-  filters: { type: TransactionType; status: "active" | "archived" | "all"; query?: string },
+  filters: { type: "all" | TransactionType; status: "active" | "archived" | "all"; query?: string },
 ): CategoriesPage {
   const paginated = useStreamPaginatedQuery(
     api.categories.filterCategories,

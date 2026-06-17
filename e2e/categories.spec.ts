@@ -31,6 +31,41 @@ test("a member creates a category and sees it in the live list", async ({ page }
   await expect(page.getByRole("listitem").filter({ hasText: name })).toBeVisible();
 });
 
+/**
+ * Issue #138: the list shows all types together by default (no tab switch), the
+ * in-form Type toggle picks the type, and each row is tagged with a type pill. One
+ * spec covers the whole new surface against the real create → reactive list path.
+ */
+test("lists income and expense together under the default All view, each type-tagged", async ({
+  page,
+}) => {
+  const nonce = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const expenseName = `E2E All Expense ${nonce}`;
+  const incomeName = `E2E All Income ${nonce}`;
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Personal/ }).click();
+  await clickCircleChromeTab(page, "Categories");
+
+  // The toggle, not a list tab, picks the type — `createCategoryViaForm` flips it.
+  await createCategoryViaForm(page, { name: expenseName });
+  await createCategoryViaForm(page, { name: incomeName, type: "income" });
+
+  // Default All view: both types are visible WITHOUT switching the type filter.
+  const expenseRow = page.getByRole("listitem").filter({ hasText: expenseName });
+  const incomeRow = page.getByRole("listitem").filter({ hasText: incomeName });
+  await expect(expenseRow).toBeVisible();
+  await expect(incomeRow).toBeVisible();
+  // Each row carries its type pill so the interleaved view reads unambiguously.
+  await expect(expenseRow.getByText("expense", { exact: true })).toBeVisible();
+  await expect(incomeRow.getByText("income", { exact: true })).toBeVisible();
+
+  // The Income type filter narrows to income only.
+  await page.getByRole("group", { name: "Type" }).getByRole("button", { name: "Income" }).click();
+  await expect(incomeRow).toBeVisible();
+  await expect(expenseRow).toHaveCount(0);
+});
+
 test("the server rejects a duplicate name inline", async ({ page }) => {
   const name = `E2E Dupe ${Date.now()}`;
 

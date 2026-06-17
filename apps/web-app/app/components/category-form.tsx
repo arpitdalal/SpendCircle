@@ -8,29 +8,42 @@ import {
 } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
 import { Button } from "~/components/ui/button.js";
+import { Segmented } from "~/components/ui/segmented.js";
 import { type Circle, useCreateCategory } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { cn } from "~/lib/utils.js";
 
+const TYPE_OPTIONS: ReadonlyArray<{ value: TransactionType; label: string }> = [
+  { value: "expense", label: "Expense" },
+  { value: "income", label: "Income" },
+];
+
 /**
- * The new-Category form (issue #96): name, the active type, and a palette color picker.
- * Lifted off the Categories list onto its own dedicated route (`category-new.tsx`) so the
- * list no longer stacks a create form above its rows. The owning route guards writability
- * (ADR 0015) and supplies `onClose` — what "done" means here: a successful create or a
- * Cancel navigates back to the validated `returnTo` origin (issue #123). The server owns
- * the unique-name invariant (per Circle+type, case-insensitive, incl. archived); its
- * rejection is the one error a user can fix inline, so it stays on the form.
+ * The new-Category form (issue #96; revised #138): name, an Expense/Income type toggle,
+ * and a palette color picker. Lifted off the Categories list onto its own dedicated route
+ * (`category-new.tsx`) so the list no longer stacks a create form above its rows. The
+ * owning route guards writability (ADR 0015) and supplies `onClose` — what "done" means
+ * here: a successful create or a Cancel navigates back to the validated `returnTo` origin
+ * (issue #123).
+ *
+ * `type` is internal state (the toggle), seeded from `initialType` — the list CTA may
+ * deep-link a concrete type when it's filtered to one, or arrive with none under the
+ * default All view, in which case the route seeds `expense` (issue #138). Toggling only
+ * re-labels and retargets the create; it never wipes the name/color the user has entered.
+ * The server owns the unique-name invariant (per Circle+type, case-insensitive, incl.
+ * archived); its rejection is the one error a user can fix inline, so it stays on the form.
  */
 export function NewCategoryForm({
   circleId,
-  type,
+  initialType,
   onClose,
 }: {
   circleId: Circle["id"];
-  type: TransactionType;
+  initialType: TransactionType;
   onClose: () => void;
 }) {
   const createCategory = useCreateCategory();
+  const [type, setType] = useState<TransactionType>(initialType);
   const [name, setName] = useState("");
   const [color, setColor] = useState<string>(DEFAULT_COLOR_ID);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +87,22 @@ export function NewCategoryForm({
       className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
     >
       <h1 className="font-display text-lg font-semibold tracking-tight">New category</h1>
+
+      <Segmented
+        label="Type"
+        value={type}
+        options={[...TYPE_OPTIONS]}
+        onChange={(next) => {
+          if (next !== type) {
+            setType(next);
+            // A name rejected as a duplicate is per-type, so switching type may clear
+            // the conflict — drop the stale error rather than leave it asserting.
+            if (error) {
+              setError(null);
+            }
+          }
+        }}
+      />
 
       <div className="space-y-1.5">
         <label htmlFor="category-name" className="block text-sm font-medium">

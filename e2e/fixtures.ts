@@ -49,26 +49,32 @@ export async function pickFormCategory(page: Page, scope: Locator, name: string)
 }
 
 /**
- * Create a Category through the dedicated new-Category route (issue #96): from the
- * Categories list, the "New category" CTA opens the create page, submit creates it and
- * navigates back to the list (its `returnTo`). Switches to the Income tab first when
- * needed so the CTA deep-links the right type. The caller asserts the resulting row if it
- * needs to — kept out of here so pagination-sensitive specs don't wait on a row that may
- * land on a later page. Assumes the Categories surface is already showing.
+ * Create a Category through the dedicated new-Category route (issue #96; revised #138):
+ * from the Categories list, the "New category" CTA opens the create page, submit creates it
+ * and navigates back to the list (its `returnTo`). The form now carries an in-form
+ * Expense/Income toggle (not a list tab), so this opens the create page directly and flips
+ * the toggle to Income when needed. The caller asserts the resulting row if it needs to —
+ * kept out of here so pagination-sensitive specs don't wait on a row that may land on a
+ * later page. Assumes the Categories surface is already showing.
  */
 export async function createCategoryViaForm(
   page: Page,
   { name, type = "expense", color }: { name: string; type?: "expense" | "income"; color?: string },
 ) {
-  if (type === "income") {
-    await page.getByRole("tab", { name: "Income" }).click();
-  }
   await page.getByRole("link", { name: "New category" }).click();
-  await page.getByLabel(new RegExp(`New ${type} category`)).fill(name);
-  if (color) {
-    await page.getByRole("button", { name: color }).click();
+  // Scope EVERY interaction to the create form (its `aria-label` landmark). The list and
+  // the form both expose a `Type` group with an Expense/Income toggle, so an unscoped
+  // locator can hit the list filter while React Router is still committing the `/new`
+  // route. Resolving through the form locator auto-waits for the form to mount first.
+  const form = page.getByRole("form", { name: "New category" });
+  if (type === "income") {
+    await form.getByRole("group", { name: "Type" }).getByRole("button", { name: "Income" }).click();
   }
-  await page.getByRole("button", { name: "Add category" }).click();
+  await form.getByLabel(new RegExp(`New ${type} category`)).fill(name);
+  if (color) {
+    await form.getByRole("button", { name: color }).click();
+  }
+  await form.getByRole("button", { name: "Add category" }).click();
   // Success navigates back to the categories list (returnTo); the page leaves `/new`.
   await page.waitForURL(/\/categories(?:\?|$)/);
 }

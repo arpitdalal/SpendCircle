@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalCategoriesParams,
+  categoryNewHref,
   defaultCategoriesFilters,
   hasCategoriesNarrowing,
   readCategoriesFilters,
 } from "./categories-filter-url.js";
 
 describe("readCategoriesFilters", () => {
-  it("reads defaults from an empty URL (type=expense, status=all, q empty)", () => {
+  it("reads defaults from an empty URL (type=all, status=all, q empty)", () => {
     expect(readCategoriesFilters(new URLSearchParams())).toEqual({
-      type: "expense",
+      type: "all",
       status: "all",
       q: "",
     });
@@ -21,14 +22,16 @@ describe("readCategoriesFilters", () => {
     );
   });
 
+  it("reads an explicit type=all", () => {
+    expect(readCategoriesFilters(new URLSearchParams("type=all")).type).toBe("all");
+  });
+
   it("clamps unknown type and status to the defaults", () => {
     expect(readCategoriesFilters(new URLSearchParams("type=bogus&status=nope"))).toEqual({
-      type: "expense",
+      type: "all",
       status: "all",
       q: "",
     });
-    // The Categories type is binary — the transaction modules' "all" is unknown here.
-    expect(readCategoriesFilters(new URLSearchParams("type=all")).type).toBe("expense");
   });
 
   it("trims and collapses whitespace in q", () => {
@@ -39,7 +42,7 @@ describe("readCategoriesFilters", () => {
 describe("canonicalCategoriesParams", () => {
   it("always writes type and status, omits an empty q", () => {
     expect(canonicalCategoriesParams(defaultCategoriesFilters()).toString()).toBe(
-      "type=expense&status=all",
+      "type=all&status=all",
     );
   });
 
@@ -67,14 +70,30 @@ describe("canonicalCategoriesParams", () => {
 });
 
 describe("hasCategoriesNarrowing", () => {
-  it("is false for the defaults (the type tab alone is not narrowing)", () => {
+  it("is false only for the unnarrowed defaults (type=all, status=all, no q)", () => {
     expect(hasCategoriesNarrowing(defaultCategoriesFilters())).toBe(false);
-    expect(hasCategoriesNarrowing({ type: "income", status: "all", q: "" })).toBe(false);
   });
 
-  it("is true when a search or a non-default status applies", () => {
-    expect(hasCategoriesNarrowing({ type: "expense", status: "all", q: "gas" })).toBe(true);
-    expect(hasCategoriesNarrowing({ type: "expense", status: "active", q: "" })).toBe(true);
-    expect(hasCategoriesNarrowing({ type: "expense", status: "archived", q: "" })).toBe(true);
+  it("is true when a search, a non-default status, or a concrete type applies", () => {
+    expect(hasCategoriesNarrowing({ type: "all", status: "all", q: "gas" })).toBe(true);
+    expect(hasCategoriesNarrowing({ type: "all", status: "active", q: "" })).toBe(true);
+    expect(hasCategoriesNarrowing({ type: "all", status: "archived", q: "" })).toBe(true);
+    // A concrete type counts now that the default scope is "all" (issue #138).
+    expect(hasCategoriesNarrowing({ type: "expense", status: "all", q: "" })).toBe(true);
+    expect(hasCategoriesNarrowing({ type: "income", status: "all", q: "" })).toBe(true);
+  });
+});
+
+describe("categoryNewHref", () => {
+  const circle = { ref: "trip-c1" };
+
+  it("carries a concrete type so the create form opens on it", () => {
+    expect(categoryNewHref(circle, { type: "income" })).toBe(
+      "/circles/trip-c1/categories/new?type=income",
+    );
+  });
+
+  it("omits type for the all filter — the form defaults to expense (issue #138)", () => {
+    expect(categoryNewHref(circle, { type: "all" })).toBe("/circles/trip-c1/categories/new");
   });
 });

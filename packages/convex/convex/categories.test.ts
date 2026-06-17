@@ -1188,7 +1188,7 @@ async function filterPage(
   user: Doc<"users"> | null,
   args: {
     circleId: Id<"circles">;
-    type?: "expense" | "income";
+    type?: "all" | "expense" | "income";
     status?: "active" | "archived" | "all";
     query?: string;
     numItems?: number;
@@ -1340,6 +1340,97 @@ describe("filterCategories — lifecycle status (CAT-4)", () => {
     mockCurrentUser.mockResolvedValue(creator);
     await t.mutation(api.categories.restoreCategory, { categoryId });
     expect((await filterPage(t, owner, { circleId, status: "active" })).page).toHaveLength(1);
+  });
+});
+
+describe("filterCategories — all types (issue #138)", () => {
+  it("interleaves expense and income newest-first across the merge", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    // Alternating types, ascending createdAt — the merge must order purely by
+    // createdAt desc, NOT group by type (neither type index alone ranges both).
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Groceries", type: "expense", createdAt: 1 },
+      { name: "Salary", type: "income", createdAt: 2 },
+      { name: "Rent", type: "expense", createdAt: 3 },
+      { name: "Bonus", type: "income", createdAt: 4 },
+    ]);
+
+    const result = await filterPage(t, owner, { circleId, type: "all" });
+    expect(result.page.map((c) => c.name)).toEqual(["Bonus", "Rent", "Salary", "Groceries"]);
+    expect(result.page.map((c) => c.type)).toEqual(["income", "expense", "income", "expense"]);
+  });
+
+  it("honors the lifecycle scope per type under the merge (status=active drops archived)", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Active Expense", type: "expense", createdAt: 1 },
+      { name: "Archived Income", type: "income", status: "archived", createdAt: 2 },
+      { name: "Active Income", type: "income", createdAt: 3 },
+    ]);
+
+    const active = await filterPage(t, owner, { circleId, type: "all", status: "active" });
+    expect(active.page.map((c) => c.name)).toEqual(["Active Income", "Active Expense"]);
+
+    // status=all under the merge surfaces archived rows of either type, interleaved.
+    const all = await filterPage(t, owner, { circleId, type: "all", status: "all" });
+    expect(all.page.map((c) => c.name)).toEqual([
+      "Active Income",
+      "Archived Income",
+      "Active Expense",
+    ]);
+  });
+
+  it("applies the name search across both types under the merge", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Gas Bill", type: "expense", createdAt: 1 },
+      { name: "Gas Refund", type: "income", createdAt: 2 },
+      { name: "Rent", type: "expense", createdAt: 3 },
+    ]);
+
+    const result = await filterPage(t, owner, { circleId, type: "all", query: "gas" });
+    expect(result.page.map((c) => c.name)).toEqual(["Gas Refund", "Gas Bill"]);
+  });
+
+  it("paginates across the merged stream, keeping createdAt desc over page boundaries", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    // 5 rows alternating type by createdAt; pages of 2 cut across the merge, and the
+    // final (partial) page reports done — the same lifecycle the CAT-4 status tests assert.
+    await seedCategories(
+      t,
+      circleId,
+      owner._id,
+      Array.from({ length: 5 }, (_, i) => ({
+        name: `Cat ${i}`,
+        type: i % 2 === 0 ? ("expense" as const) : ("income" as const),
+        createdAt: i,
+      })),
+    );
+
+    const first = await filterPage(t, owner, { circleId, type: "all", numItems: 2 });
+    expect(first.page.map((c) => c.name)).toEqual(["Cat 4", "Cat 3"]);
+    expect(first.isDone).toBe(false);
+
+    const second = await filterPage(t, owner, {
+      circleId,
+      type: "all",
+      numItems: 2,
+      cursor: first.continueCursor,
+    });
+    expect(second.page.map((c) => c.name)).toEqual(["Cat 2", "Cat 1"]);
+
+    const third = await filterPage(t, owner, {
+      circleId,
+      type: "all",
+      numItems: 2,
+      cursor: second.continueCursor,
+    });
+    expect(third.page.map((c) => c.name)).toEqual(["Cat 0"]);
+    expect(third.isDone).toBe(true);
   });
 });
 

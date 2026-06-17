@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,10 +6,11 @@ import type { Circle } from "~/lib/data.js";
 import { configureConvex, makeCircleView, renderCircleRoutes } from "~/test/convex-react.js";
 
 /**
- * Behavior test for the new-Category OBJECT route (jsdom, issue #96). Doubles ONLY Convex's
- * reactive client and runs the REAL route + REAL `NewCategoryForm` + REAL `~/lib/data.js`
- * hooks under a REAL router, so the create page's `type` param, `returnTo` lifecycle, and
- * archived/invalid-`type` guards are exercised exactly as in the app (ADR 0006).
+ * Behavior test for the new-Category OBJECT route (jsdom, issue #96; revised #138). Doubles
+ * ONLY Convex's reactive client and runs the REAL route + REAL `NewCategoryForm` + REAL
+ * `~/lib/data.js` hooks under a REAL router, so the create page's optional `type` seed, the
+ * in-form Expense/Income toggle, the `returnTo` lifecycle, and the archived-Circle guard are
+ * exercised exactly as in the app (ADR 0006).
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
@@ -149,20 +150,71 @@ describe("CategoryNew — inline errors stay on the page", () => {
   });
 });
 
-describe("CategoryNew — guards", () => {
-  it("redirects to the returnTo origin when `type` is missing", async () => {
+describe("CategoryNew — initial type default (issue #138)", () => {
+  it("defaults the toggle to expense (and renders the form) when `type` is missing", async () => {
     const { location } = setup({ url: `/circles/${REF}/categories/new?returnTo=${LIST}` });
-    await waitFor(() => expect(location()).toBe(LIST_ORIGIN));
-    expect(screen.queryByLabelText(/New .* category/)).not.toBeInTheDocument();
+    // No eject any more — the in-form toggle starts on Expense and the user picks the type.
+    expect(await screen.findByLabelText(/New expense category/)).toBeInTheDocument();
+    expect(location()).toBe(`/circles/${REF}/categories/new?returnTo=${LIST}`);
   });
 
-  it("redirects to the returnTo origin for an invalid `type`", async () => {
-    const { location } = setup({
-      url: `/circles/${REF}/categories/new?type=nonsense&returnTo=${LIST}`,
+  it("defaults the toggle to expense for an unrecognized `type` (e.g. arriving with type=all)", async () => {
+    setup({ url: `/circles/${REF}/categories/new?type=all&returnTo=${LIST}` });
+    expect(await screen.findByLabelText(/New expense category/)).toBeInTheDocument();
+  });
+});
+
+describe("CategoryNew — in-form type toggle (issue #138)", () => {
+  it("offers an Expense/Income toggle seeded from the URL type", () => {
+    setup({ url: `/circles/${REF}/categories/new?type=income&returnTo=${LIST}` });
+    const types = screen.getByRole("group", { name: "Type" });
+    expect(
+      within(types).getByRole("button", { name: "Income", pressed: true }),
+    ).toBeInTheDocument();
+    expect(
+      within(types).getByRole("button", { name: "Expense", pressed: false }),
+    ).toBeInTheDocument();
+  });
+
+  it("creates with the toggled type, not the URL's, after flipping it — keeping the typed name", async () => {
+    const user = userEvent.setup();
+    setup(); // arrives type=expense
+    const name = screen.getByLabelText(/New expense category/);
+    await user.type(name, "Bonus");
+
+    // Flip to Income: the name field is preserved and only its label re-renders.
+    await user.click(
+      within(screen.getByRole("group", { name: "Type" })).getByRole("button", { name: "Income" }),
+    );
+    expect(screen.getByLabelText<HTMLInputElement>(/New income category/).value).toBe("Bonus");
+
+    await user.click(screen.getByRole("button", { name: "Add category" }));
+    expect(createCategory).toHaveBeenCalledWith({
+      circleId: "c1",
+      name: "Bonus",
+      type: "income",
+      color: expect.any(String),
     });
-    await waitFor(() => expect(location()).toBe(LIST_ORIGIN));
   });
 
+  it("clears a per-type duplicate-name error when the type toggles (the conflict may not hold)", async () => {
+    const user = userEvent.setup();
+    setup();
+    createCategory.mockRejectedValueOnce(
+      new Error("A category with this name already exists for this type"),
+    );
+    await user.type(screen.getByLabelText(/New expense category/), "Groceries");
+    await user.click(screen.getByRole("button", { name: "Add category" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/already exists/i);
+
+    await user.click(
+      within(screen.getByRole("group", { name: "Type" })).getByRole("button", { name: "Income" }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("CategoryNew — guards", () => {
   it("redirects an archived Circle to the returnTo origin without showing the form", async () => {
     const { location } = setup({ circle: { status: "archived" } });
     await waitFor(() => expect(location()).toBe(LIST_ORIGIN));

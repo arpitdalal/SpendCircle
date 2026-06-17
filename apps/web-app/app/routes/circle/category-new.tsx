@@ -6,20 +6,22 @@ import { parseReturnTo, RETURN_TO_PARAM } from "~/lib/return-to-url.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
 /**
- * The new-Category route — `/circles/:circleRef/categories/new` (issue #96). A dedicated
- * create page so the Categories list no longer renders a new-Category form above its rows
- * alongside per-row edit forms and history panels — the overload this issue removes. Same
- * static-segment + lifecycle pattern as `transaction-new.tsx`.
+ * The new-Category route — `/circles/:circleRef/categories/new` (issue #96; revised #138).
+ * A dedicated create page so the Categories list no longer renders a new-Category form
+ * above its rows alongside per-row edit forms and history panels — the overload that issue
+ * removed. Same static-segment + lifecycle pattern as `transaction-new.tsx`.
  *
- * Own param: `type=expense|income` (required — Categories are type-specific). The list CTA
- * deep-links the active type tab; a missing / invalid type has nothing safe to create, so
- * the route ejects to the validated `returnTo` origin (issue #123) rather than guessing.
+ * Own param: `type=expense|income` is now an OPTIONAL initial default for the form's
+ * in-form type toggle (issue #138), not a hard requirement. The list's All filter deep-links
+ * no type (and you can't create an "all" category), and a filtered list deep-links its
+ * concrete type. A missing / unrecognized `type` seeds `expense` — there's nothing to eject
+ * over, since the toggle lets the user pick either type on the page.
  *
- * Close (cancel / successful save), the invalid-`type` guard, and the archived-Circle
- * redirect all land on `returnTo` — the categories list the CTA was opened FROM, with its
- * type/status/search intact, or the bare list when absent / malformed / out-of-scope. The
- * server enforces writability anyway (ADR 0015), but the page shouldn't offer a form every
- * submit would reject. `closing` + `Splash` keep the form from flashing while leaving.
+ * Close (cancel / successful save) and the archived-Circle redirect land on `returnTo` —
+ * the categories list the CTA was opened FROM, with its type/status/search intact, or the
+ * bare list when absent / malformed / out-of-scope. The server enforces writability anyway
+ * (ADR 0015), but the page shouldn't offer a form every submit would reject. `closing` +
+ * `Splash` keep the form from flashing while leaving.
  */
 export default function CategoryNew() {
   const circle = useCircle();
@@ -30,8 +32,10 @@ export default function CategoryNew() {
   const listBase = `/circles/${circle.ref}/categories`;
   const returnUrl = parseReturnTo(searchParams.get(RETURN_TO_PARAM), { fallback: listBase });
 
+  // The toggle's starting type: a concrete deep-linked `type`, else `expense` (the list may
+  // arrive with `type=all` or none under the default All view). The toggle owns it from here.
   const rawType = searchParams.get("type");
-  const type = rawType === "expense" || rawType === "income" ? rawType : null;
+  const initialType = rawType === "income" ? "income" : "expense";
 
   const [closing, setClosing] = useState(false);
   const close = () => {
@@ -39,21 +43,21 @@ export default function CategoryNew() {
     navigate(returnUrl);
   };
 
-  // An archived Circle is read-only and a missing / invalid `type` has nothing to create:
-  // both eject to the return target. Replace so the dead create URL leaves no Back entry.
+  // Only an archived (read-only) Circle ejects — the form can't write there. Replace so the
+  // dead create URL leaves no Back entry. A missing/invalid `type` no longer ejects: the
+  // in-form toggle defaults to `expense` and the user picks the type on the page (#138).
   useEffect(() => {
-    if (!writable || type === null) {
+    if (!writable) {
       navigate(returnUrl, { replace: true });
     }
-  }, [writable, type, navigate, returnUrl]);
+  }, [writable, navigate, returnUrl]);
 
-  // This splash only ever shows while LEAVING — ejecting (archived / invalid type) or
-  // closing (cancel / save); a valid open renders the form immediately, never this. So the
-  // copy reflects the return, not an open. The inline `type === null` check also narrows
-  // `type` to a concrete `TransactionType` for the form below.
-  if (!writable || type === null || closing) {
+  // This splash only ever shows while LEAVING — ejecting (archived) or closing (cancel /
+  // save); a valid open renders the form immediately, never this. So the copy reflects the
+  // return, not an open.
+  if (!writable || closing) {
     return <Splash label="Returning…" />;
   }
 
-  return <NewCategoryForm circleId={circle.id} type={type} onClose={close} />;
+  return <NewCategoryForm circleId={circle.id} initialType={initialType} onClose={close} />;
 }
