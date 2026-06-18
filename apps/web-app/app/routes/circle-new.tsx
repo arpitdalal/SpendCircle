@@ -3,10 +3,10 @@ import {
   COLOR_PALETTE,
   circleInputSchema,
   colorLabel,
-  DEFAULT_COLOR_ID,
   defaultCurrencyForLocale,
   initials,
   LIMITS,
+  randomColorId,
   SUPPORTED_CURRENCIES,
 } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
@@ -26,7 +26,7 @@ import { cn } from "~/lib/utils.js";
  * - Currency defaults from the viewer's locale with a USD fallback via the shared
  *   domain helper (CONTEXT: Currency) — never hardcoded USD in the UI — and is
  *   chosen from `SUPPORTED_CURRENCIES`.
- * - Color is a palette pick (PRD 11), defaulting to the app's default color.
+ * - Color is a palette pick (PRD 11), defaulting to a random palette color.
  * - The Mark is derived from the name's initials and shown live in a preview; it is
  *   not an editable field here (editing the Mark/Color after creation is CS-2).
  *
@@ -46,7 +46,7 @@ export default function CreateCircle() {
   // as a plain string (the <select> writes back any option value); the shared schema
   // narrows it to a SUPPORTED_CURRENCIES code at submit and the server re-validates.
   const [currency, setCurrency] = useState<string>(() => defaultCurrencyForLocale(viewerLocale()));
-  const [color, setColor] = useState<string>(DEFAULT_COLOR_ID);
+  const [color, setColor] = useState<string>(() => randomColorId());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 

@@ -36,6 +36,20 @@ export function isValidColorId(id: string): id is ColorId {
   return COLOR_IDS.has(id);
 }
 
+export const DEFAULT_COLOR_ID: ColorId = "blue";
+
+/**
+ * Reserved for Personal Circles only — not in {@link COLOR_PALETTE}, so no
+ * regular Circle can pick it. Matches the app iris accent (`app.css` `--primary`:
+ * oklch(0.63 0.2 295)).
+ */
+export const PERSONAL_CIRCLE_COLOR_ID = "iris";
+export const PERSONAL_CIRCLE_COLOR_HEX = "#9470f5";
+
+export function isPersonalCircleColorId(id: string): boolean {
+  return id === PERSONAL_CIRCLE_COLOR_ID;
+}
+
 /**
  * The human-readable name for a palette color id ("blue" → "Blue"). Used to
  * format the frozen color value written into the immutable audit (ADR 0018) so a
@@ -43,10 +57,11 @@ export function isValidColorId(id: string): id is ColorId {
  * so a caller never gets an empty string.
  */
 export function colorLabel(id: string): string {
+  if (isPersonalCircleColorId(id)) {
+    return "Iris";
+  }
   return COLOR_NAMES.get(id) ?? id;
 }
-
-export const DEFAULT_COLOR_ID: ColorId = "blue";
 
 /**
  * The hex for a palette color id ("blue" → "#3b82f6"). The presentational
@@ -56,6 +71,9 @@ export const DEFAULT_COLOR_ID: ColorId = "blue";
  * an empty string or a broken style.
  */
 export function colorHex(id: string): string {
+  if (isPersonalCircleColorId(id)) {
+    return PERSONAL_CIRCLE_COLOR_HEX;
+  }
   return COLOR_HEXES.get(id) ?? COLOR_HEXES.get(DEFAULT_COLOR_ID) ?? COLOR_PALETTE[0].hex;
 }
 

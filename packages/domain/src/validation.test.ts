@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { COLOR_PALETTE, colorLabel } from "./color.js";
+import { COLOR_PALETTE, colorLabel, PERSONAL_CIRCLE_COLOR_ID } from "./color.js";
 import { MAX_AMOUNT_MINOR } from "./money.js";
 import {
   categoryInputSchema,
+  circleInputSchema,
   circleSettingsUpdateSchema,
   LIMITS,
   parseProfileUpdate,
@@ -88,6 +89,22 @@ describe("categoryInputSchema", () => {
     for (const color of COLOR_PALETTE) {
       expect(categoryInputSchema.safeParse({ ...valid, color: color.id }).success).toBe(true);
     }
+  });
+});
+
+describe("circleInputSchema", () => {
+  const valid = { name: "Trip", currency: "USD", color: "teal", mark: "T" } as const;
+
+  it("accepts every palette color id", () => {
+    for (const color of COLOR_PALETTE) {
+      expect(circleInputSchema.safeParse({ ...valid, color: color.id }).success).toBe(true);
+    }
+  });
+
+  it("rejects the reserved Personal Circle color id", () => {
+    expect(circleInputSchema.safeParse({ ...valid, color: PERSONAL_CIRCLE_COLOR_ID }).success).toBe(
+      false,
+    );
   });
 });
 

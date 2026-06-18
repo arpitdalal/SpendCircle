@@ -5,6 +5,8 @@ import {
   colorLabel,
   DEFAULT_COLOR_ID,
   isValidColorId,
+  PERSONAL_CIRCLE_COLOR_HEX,
+  PERSONAL_CIRCLE_COLOR_ID,
   paletteColorForSeed,
   randomColorId,
 } from "./color.js";
@@ -14,6 +16,10 @@ describe("colorHex", () => {
     for (const color of COLOR_PALETTE) {
       expect(colorHex(color.id)).toBe(color.hex);
     }
+  });
+
+  it("returns the iris hex for the Personal Circle color id", () => {
+    expect(colorHex(PERSONAL_CIRCLE_COLOR_ID)).toBe(PERSONAL_CIRCLE_COLOR_HEX);
   });
 
   it("falls back to the default color's hex for an unknown id", () => {
@@ -27,6 +33,10 @@ describe("colorLabel", () => {
   it("returns the palette name for a known id and echoes an unknown id", () => {
     expect(colorLabel("blue")).toBe("Blue");
     expect(colorLabel("not-a-color")).toBe("not-a-color");
+  });
+
+  it("returns Iris for the Personal Circle color id", () => {
+    expect(colorLabel(PERSONAL_CIRCLE_COLOR_ID)).toBe("Iris");
   });
 });
 
@@ -57,6 +67,12 @@ describe("randomColorId", () => {
   it("returns a valid palette color id", () => {
     for (let i = 0; i < 30; i += 1) {
       expect(isValidColorId(randomColorId())).toBe(true);
+    }
+  });
+
+  it("never returns the Personal Circle color id", () => {
+    for (let i = 0; i < 30; i += 1) {
+      expect(randomColorId()).not.toBe(PERSONAL_CIRCLE_COLOR_ID);
     }
   });
 });
