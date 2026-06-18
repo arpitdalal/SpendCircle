@@ -56,7 +56,7 @@ function ResolvedCircleLayout({ circle, showSkeleton }: { circle: Circle; showSk
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-xl font-semibold tracking-tight">{circle.name}</h1>
           <p className="text-xs text-muted-foreground">
-            {circle.kind === "personal" ? "Personal circle" : "Circle"} · {circle.currency}
+            {circle.kind === "personal" ? "Your Circle" : "Circle"} · {circle.currency}
           </p>
         </div>
         {showSettings ? (
