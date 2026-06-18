@@ -23,11 +23,12 @@ EML-2, accepting is MEM-3.
 
 - **Convex** new `packages/convex/convex/invitations.ts`:
   - `createInvitation` mutation: args `{ circleId, email }`. `requireCircleAccess` → Owner-only
-    → `assertWritable()` → reject if Circle is Personal (`kind === "personal"`) → normalize
-    `emailLower` → reject if that email is already an **active Member** or has a **pending**
-    Invitation (resend is MEM-4, not a second create) → generate a cryptographically random
-    opaque token, store `tokenHash` (hash via a server util; never store plaintext) →
-    insert with `status:"pending"`, `expiresAt = now + 7d`, `resendCount: 0`,
+    → `assertWritable()` → reject if Circle Setup is incomplete (`setupCompletedAt` missing)
+    → reject if Circle is Personal (`kind === "personal"`) → normalize `emailLower` → reject
+    if that email is already an **active Member** or has a **pending** Invitation (resend is
+    MEM-4, not a second create) → generate a cryptographically random opaque token, store
+    `tokenHash` (hash via a server util; never store plaintext) → insert with
+    `status:"pending"`, `expiresAt = now + 7d`, `resendCount: 0`,
     `invitedByUserId` → `recordEvent(circleEntity, action:"member invited",
     changes:[{field:"email", to: email}])` → return the plaintext token to the caller **only
     for the email send path** (EML-2), not to general clients.
@@ -41,6 +42,8 @@ EML-2, accepting is MEM-3.
   `by_token_hash`.
 - **Personal Circles reject invites** at the server, structurally (kind check) — the
   always-solo invariant is enforced, not just hidden.
+- **Incomplete Circles reject invites** at the server — setup gates `/members` in the UI, but
+  the mutation must also enforce that no non-owner can join an incomplete Circle.
 - **Create ≠ resend:** a pending invite for the same email must not spawn a second row; resend
   (MEM-4) mutates the existing one and rotates the token.
 
@@ -50,6 +53,7 @@ EML-2, accepting is MEM-3.
   invite event recorded; plaintext token never persisted (assert stored value ≠ token).
 - **Permissions:** non-owner Member ✗; Removed Member ✗; non-member ✗; unauthenticated ✗.
 - **Personal Circle:** invite ✗ (structural).
+- **Incomplete regular Circle:** invite ✗ until `setupCompletedAt` is set.
 - **Duplicates:** inviting an existing active Member ✗; inviting an email with a pending
   invite ✗ (directs to resend); inviting an email of a Removed Member ✓ (re-invite allowed).
 - **Lifecycle:** invite on an archived Circle ✗.
@@ -58,8 +62,8 @@ EML-2, accepting is MEM-3.
 ## Done when
 
 - An Owner can create a hashed, 7-day, single-use Invitation for a regular Circle; Personal
-  Circles and duplicates rejected; event recorded; token never stored in plaintext; tests
-  green; gates pass.
+  Circles, incomplete Circles, and duplicates rejected; event recorded; token never stored in
+  plaintext; tests green; gates pass.
 
 ## Out of scope
 

@@ -24,10 +24,11 @@ per Circle+email**, and **≤100 invitation emails/User/day** overall (PRD rate-
     `null`/empty, never a leak) → pending invites for the Circle (email, createdAt, expiresAt,
     resendCount; **never the token/hash**).
   - `resendInvitation` mutation: Owner-only → `assertWritable()` → load pending invite →
-    enforce caps (≤3/day this Circle+email via `resendCount`/time window; ≤100/day this User)
-    → generate a **new** token, overwrite `tokenHash` (older link now invalid since lookup is
-    by current hash), bump `resendCount`, refresh `expiresAt` to now+7d → record event →
-    return plaintext token for EML-2.
+    reject if Circle Setup is incomplete (`setupCompletedAt` missing) → enforce caps (≤3/day
+    this Circle+email via `resendCount`/time window; ≤100/day this User) → generate a **new**
+    token, overwrite `tokenHash` (older link now invalid since lookup is by current hash), bump
+    `resendCount`, refresh `expiresAt` to now+7d → record event → return plaintext token for
+    EML-2.
   - `revokeInvitation` mutation: Owner-only → `assertWritable()` → set `status:"revoked"`
     (link no longer acceptable) → record event.
 - **Web:** Owner-only pending-invitations list with resend/revoke actions and rate-limit
@@ -39,6 +40,8 @@ per Circle+email**, and **≤100 invitation emails/User/day** overall (PRD rate-
 - **Resend rotates the hash**, so MEM-3's `by_token_hash` lookup of an old link simply misses
   → generic invalid. That's how "only the latest unexpired link can be accepted" is enforced
   without tracking old tokens.
+- **No invite flow on incomplete Circles:** resend has the same setup-complete guard as create
+  and accept, so a stale pending Invitation cannot be refreshed before setup finishes.
 - **Caps enforced server-side** with clear, non-enumerating errors.
 
 ## How to test
@@ -49,12 +52,14 @@ per Circle+email**, and **≤100 invitation emails/User/day** overall (PRD rate-
 - **Revoke:** pending → revoked; subsequent accept ✗ (generic invalid); event recorded.
 - **Rate limits:** 4th resend same Circle+email within a day ✗; 101st invitation email/day for
   a User ✗; limits reset across the day boundary.
+- **Incomplete regular Circle:** resend pending invite ✗ until `setupCompletedAt` is set.
 - **Lifecycle/permissions:** resend/revoke on archived Circle ✗; non-owner ✗.
 
 ## Done when
 
 - Owner-only listing; resend rotates + caps; revoke invalidates; all rate limits enforced
-  server-side; events recorded; comprehensive tests green; gates pass.
+  server-side; incomplete Circles cannot refresh invite links; events recorded; comprehensive
+  tests green; gates pass.
 
 ## Out of scope
 

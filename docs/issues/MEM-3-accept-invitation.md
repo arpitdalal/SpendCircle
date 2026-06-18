@@ -28,11 +28,12 @@ The `/invite/:token` public route already exists in the routing skeleton.
     → look up by `by_token_hash` → if missing/expired/non-pending → generic "invitation
     invalid" (don't distinguish) and count a throttled failed attempt → compare
     `emailLower` to the User's current Google Account Email; mismatch → generic invalid +
-    throttle → **upsert membership**: find the (Circle, User) row via `by_circle_and_user`; if
-    it exists and is `removed`, flip to `active`, refresh materialized `displayName`/`image`
-    from the User, clear `removedAt`; else insert a fresh active member row → mark Invitation
-    `accepted` → `recordEvent(circleEntity, action:"member joined", changes:[{field:"member",
-    to: <display name>}])`.
+    throttle → load Circle and reject generically if Circle Setup is incomplete
+    (`setupCompletedAt` missing) → **upsert membership**: find the (Circle, User) row via
+    `by_circle_and_user`; if it exists and is `removed`, flip to `active`, refresh materialized
+    `displayName`/`image` from the User, clear `removedAt`; else insert a fresh active member
+    row → mark Invitation `accepted` → `recordEvent(circleEntity, action:"member joined",
+    changes:[{field:"member", to: <display name>}])`.
   - `getInvitationPreview` query (for the landing screen): by hashed token, returns Circle
     name, Owner display name + image, invited email — **only enough to render the invite
     screen**, and only the generic-invalid signal otherwise.
@@ -47,6 +48,8 @@ The `/invite/:token` public route already exists in the routing skeleton.
   Transactions resolve to the rejoined identity automatically (PRD 44) — never create a second
   member row.
 - **Single-use:** accepting flips the Invitation to `accepted`; the link can't be reused.
+- **Setup complete before join:** acceptance rechecks the Circle before writing membership, so
+  a stale invite can never add a non-owner to an incomplete Circle.
 - **Generic failures + throttle** so attackers can't enumerate Circles/emails (PRD).
 
 ## How to test
@@ -57,6 +60,7 @@ The `/invite/:token` public route already exists in the routing skeleton.
   attempt throttled.
 - **Expired:** past `expiresAt` → generic invalid.
 - **Used/revoked:** already-accepted or revoked → generic invalid.
+- **Incomplete regular Circle:** pending invite accept ✗ generically; no membership created.
 - **Rejoin:** previously Removed Member accepts a fresh invite → the **same** member row
   reactivates (assert id unchanged), identity refreshed, removedAt cleared; their old
   Transactions now resolve to current identity.
@@ -67,8 +71,8 @@ The `/invite/:token` public route already exists in the routing skeleton.
 ## Done when
 
 - Only the matching Google email can accept; links are single-use; rejoin reactivates the
-  existing row; failures are generic + throttled; events recorded; comprehensive tests green;
-  gates pass.
+  existing row; incomplete Circles cannot be joined; failures are generic + throttled; events
+  recorded; comprehensive tests green; gates pass.
 
 ## Out of scope
 
