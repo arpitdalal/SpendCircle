@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 
 const DEFAULT_DEBOUNCE_MS = 250;
 
@@ -31,6 +31,14 @@ export function DebouncedSearchInput({
   // react-doctor-disable-next-line react-doctor/no-derived-useState -- local draft state; external URL value resyncs below without clobbering in-flight typing.
   const [text, setText] = useState(value);
   const applied = useRef(value);
+  const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const clearPending = useCallback(() => {
+    if (pending.current !== undefined) {
+      clearTimeout(pending.current);
+      pending.current = undefined;
+    }
+  }, []);
 
   useEffect(() => {
     if (value !== applied.current) {
@@ -48,16 +56,17 @@ export function DebouncedSearchInput({
   });
 
   useEffect(() => {
-    const handle = setTimeout(() => flush(text), debounceMs);
-    return () => clearTimeout(handle);
-  }, [text, debounceMs]);
+    clearPending();
+    pending.current = setTimeout(() => {
+      pending.current = undefined;
+      flush(text);
+    }, debounceMs);
+    return clearPending;
+  }, [text, debounceMs, clearPending]);
 
   function commit() {
-    const clean = normalize(text);
-    if (clean !== applied.current) {
-      applied.current = clean;
-      onSearch(clean);
-    }
+    clearPending();
+    flush(text);
   }
 
   return (
