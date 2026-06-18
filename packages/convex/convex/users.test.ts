@@ -45,6 +45,7 @@ describe("createUserWithPersonalCircle", () => {
       expect(circles[0]?.kind).toBe("personal");
       expect(circles[0]?.name).toBe("Ada's Circle");
       expect(circles[0]?.mark).toBe("AC");
+      expect(circles[0]?.color).toBe("iris");
       expect(circles[0]?.ownerUserId).toBe(userId);
       expect(circles[0]?.setupCompletedAt).toBeTypeOf("number");
 

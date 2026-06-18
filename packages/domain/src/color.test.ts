@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   COLOR_PALETTE,
+  circleSettingsColorChoices,
   colorHex,
   colorLabel,
   DEFAULT_COLOR_ID,
+  isValidCircleSettingsColorId,
   isValidColorId,
+  PERSONAL_CIRCLE_COLOR,
+  PERSONAL_CIRCLE_COLOR_HEX,
+  PERSONAL_CIRCLE_COLOR_ID,
   paletteColorForSeed,
   randomColorId,
 } from "./color.js";
@@ -14,6 +19,10 @@ describe("colorHex", () => {
     for (const color of COLOR_PALETTE) {
       expect(colorHex(color.id)).toBe(color.hex);
     }
+  });
+
+  it("returns the iris hex for the Personal Circle color id", () => {
+    expect(colorHex(PERSONAL_CIRCLE_COLOR_ID)).toBe(PERSONAL_CIRCLE_COLOR_HEX);
   });
 
   it("falls back to the default color's hex for an unknown id", () => {
@@ -27,6 +36,10 @@ describe("colorLabel", () => {
   it("returns the palette name for a known id and echoes an unknown id", () => {
     expect(colorLabel("blue")).toBe("Blue");
     expect(colorLabel("not-a-color")).toBe("not-a-color");
+  });
+
+  it("returns Iris for the Personal Circle color id", () => {
+    expect(colorLabel(PERSONAL_CIRCLE_COLOR_ID)).toBe("Iris");
   });
 });
 
@@ -58,5 +71,28 @@ describe("randomColorId", () => {
     for (let i = 0; i < 30; i += 1) {
       expect(isValidColorId(randomColorId())).toBe(true);
     }
+  });
+
+  it("never returns the Personal Circle color id", () => {
+    for (let i = 0; i < 30; i += 1) {
+      expect(randomColorId()).not.toBe(PERSONAL_CIRCLE_COLOR_ID);
+    }
+  });
+});
+
+describe("circleSettingsColorChoices", () => {
+  it("includes iris first for Personal Circles only", () => {
+    expect(circleSettingsColorChoices("personal")[0]).toEqual(PERSONAL_CIRCLE_COLOR);
+    expect(circleSettingsColorChoices("personal")).toHaveLength(COLOR_PALETTE.length + 1);
+    expect(circleSettingsColorChoices("regular")).toEqual(COLOR_PALETTE);
+  });
+});
+
+describe("isValidCircleSettingsColorId", () => {
+  it("accepts palette ids for any kind and iris only for personal", () => {
+    expect(isValidCircleSettingsColorId("teal", "regular")).toBe(true);
+    expect(isValidCircleSettingsColorId("teal", "personal")).toBe(true);
+    expect(isValidCircleSettingsColorId(PERSONAL_CIRCLE_COLOR_ID, "personal")).toBe(true);
+    expect(isValidCircleSettingsColorId(PERSONAL_CIRCLE_COLOR_ID, "regular")).toBe(false);
   });
 });

@@ -38,6 +38,7 @@ const PERSONAL = makeCircleView({
   name: "Personal",
   kind: "personal",
   mark: "P",
+  color: "iris",
 });
 const TRIP = makeCircleView({
   id: testId<Circle["id"]>("c1"),

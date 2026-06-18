@@ -1,6 +1,7 @@
 import {
   type ComparisonRangeMonths,
   comparisonWindowMonths,
+  PERSONAL_CIRCLE_COLOR_ID,
   type PlainMonth,
   type TransactionType,
   textIncludes,
@@ -35,7 +36,7 @@ export const MOCK_CIRCLES: Circle[] = [
     name: "Mock's Circle",
     kind: "personal",
     currency: "USD",
-    color: "blue",
+    color: PERSONAL_CIRCLE_COLOR_ID,
     mark: "M",
     status: "active",
     setupAnswers: undefined,

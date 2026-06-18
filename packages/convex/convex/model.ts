@@ -1,8 +1,8 @@
 import {
-  DEFAULT_COLOR_ID,
   DEFAULT_CURRENCY,
   initials,
   isSupportedCurrency,
+  PERSONAL_CIRCLE_COLOR_ID,
   personalCircleName,
 } from "@spend-circle/domain";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -56,7 +56,7 @@ export async function createUserWithPersonalCircle(
     name: personalName,
     kind: "personal",
     currency,
-    color: DEFAULT_COLOR_ID,
+    color: PERSONAL_CIRCLE_COLOR_ID,
     mark: initials(personalName),
     ownerUserId: userId,
     status: "active",

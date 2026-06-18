@@ -59,6 +59,7 @@ export async function seedCircle(
   opts: {
     archived?: boolean;
     kind?: "personal" | "regular";
+    color?: string;
     currency?: string;
     currencyLocked?: boolean;
   } = {},
@@ -69,7 +70,7 @@ export async function seedCircle(
     name: "Trip",
     kind: opts.kind ?? "regular",
     currency: opts.currency ?? "USD",
-    color: "blue",
+    color: opts.color ?? "blue",
     mark: "T",
     ownerUserId: owner._id,
     status: opts.archived ? "archived" : "active",

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { COLOR_PALETTE, colorLabel } from "./color.js";
+import { COLOR_PALETTE, colorLabel, PERSONAL_CIRCLE_COLOR_ID } from "./color.js";
 import { MAX_AMOUNT_MINOR } from "./money.js";
 import {
   categoryInputSchema,
+  circleInputSchema,
   circleSettingsUpdateSchema,
   LIMITS,
+  parseCircleSettingsUpdate,
   parseProfileUpdate,
   toMutationArgs,
   transactionCreateSchema,
@@ -91,6 +93,22 @@ describe("categoryInputSchema", () => {
   });
 });
 
+describe("circleInputSchema", () => {
+  const valid = { name: "Trip", currency: "USD", color: "teal", mark: "T" } as const;
+
+  it("accepts every palette color id", () => {
+    for (const color of COLOR_PALETTE) {
+      expect(circleInputSchema.safeParse({ ...valid, color: color.id }).success).toBe(true);
+    }
+  });
+
+  it("rejects the reserved Personal Circle color id", () => {
+    expect(circleInputSchema.safeParse({ ...valid, color: PERSONAL_CIRCLE_COLOR_ID }).success).toBe(
+      false,
+    );
+  });
+});
+
 describe("circleSettingsUpdateSchema (server contract)", () => {
   it("accepts an empty payload (all fields optional ≡ no-op edit)", () => {
     expect(circleSettingsUpdateSchema.parse({})).toEqual({});
@@ -112,10 +130,32 @@ describe("circleSettingsUpdateSchema (server contract)", () => {
     expect(circleSettingsUpdateSchema.safeParse({ color: "chartreuse" }).success).toBe(false);
   });
 
+  it("rejects iris on the palette-only schema", () => {
+    expect(circleSettingsUpdateSchema.safeParse({ color: PERSONAL_CIRCLE_COLOR_ID }).success).toBe(
+      false,
+    );
+  });
+
   it("rejects an invalid setup purpose", () => {
     expect(
       circleSettingsUpdateSchema.safeParse({ setupAnswers: { purpose: "vacation" } }).success,
     ).toBe(false);
+  });
+});
+
+describe("parseCircleSettingsUpdate (kind-aware CS-2 contract)", () => {
+  it("accepts iris for Personal Circles and rejects it for regular Circles", () => {
+    expect(parseCircleSettingsUpdate({ color: PERSONAL_CIRCLE_COLOR_ID }, "personal")).toEqual({
+      color: PERSONAL_CIRCLE_COLOR_ID,
+    });
+    expect(() =>
+      parseCircleSettingsUpdate({ color: PERSONAL_CIRCLE_COLOR_ID }, "regular"),
+    ).toThrow();
+  });
+
+  it("accepts palette colors for both kinds", () => {
+    expect(parseCircleSettingsUpdate({ color: "teal" }, "personal")).toEqual({ color: "teal" });
+    expect(parseCircleSettingsUpdate({ color: "teal" }, "regular")).toEqual({ color: "teal" });
   });
 });
 

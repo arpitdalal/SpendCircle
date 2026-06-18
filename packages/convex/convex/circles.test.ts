@@ -1,6 +1,7 @@
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
+import { createUserWithPersonalCircle } from "./model.js";
 import schema from "./schema.js";
 import { addMember, makeCategory, seedCircle, seedFixture, seedTransaction } from "./test/seed.js";
 
@@ -347,6 +348,76 @@ describe("updateCircleSettings", () => {
     await expect(
       t.mutation(api.circles.updateCircleSettings, { circleId, color: "chartreuse" }),
     ).rejects.toThrow();
+  });
+
+  it("rejects iris on a regular Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.circles.updateCircleSettings, { circleId, color: "iris" }),
+    ).rejects.toThrow();
+  });
+
+  it("lets a Personal Circle owner select iris and records the palette label in history", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) =>
+      seedCircle(ctx, { kind: "personal", color: "green" }),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.updateCircleSettings, { circleId, color: "iris" });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.color).toBe("iris");
+
+      const events = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+        .collect();
+      expect(events.at(-1)?.changes).toEqual([{ field: "color", from: "Green", to: "Iris" }]);
+    });
+  });
+
+  it("lets a bootstrapped Personal Circle owner restore iris after another palette color", async () => {
+    const t = convexTest(schema, modules);
+
+    const userId = await t.run((ctx) =>
+      createUserWithPersonalCircle(ctx, {
+        email: "ada@example.com",
+        displayName: "Ada Lovelace",
+      }),
+    );
+
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const owner = await ctx.db.get(userId);
+      if (!owner) {
+        throw new Error("seed failed");
+      }
+      const circle = await ctx.db
+        .query("circles")
+        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", userId).eq("kind", "personal"))
+        .unique();
+      if (!circle) {
+        throw new Error("personal circle missing");
+      }
+      return { owner, circleId: circle._id };
+    });
+
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(circleId))?.color).toBe("iris");
+    });
+
+    await t.mutation(api.circles.updateCircleSettings, { circleId, color: "teal" });
+    await t.mutation(api.circles.updateCircleSettings, { circleId, color: "iris" });
+
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(circleId))?.color).toBe("iris");
+    });
   });
 
   it("rejects setup-answer edits before setup is complete, but still allows color", async () => {

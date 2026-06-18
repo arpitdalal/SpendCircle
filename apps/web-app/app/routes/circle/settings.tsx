@@ -1,7 +1,7 @@
 import {
   CIRCLE_PURPOSES,
   type CircleSetupAnswers,
-  COLOR_PALETTE,
+  circleSettingsColorChoices,
   colorHex,
   colorLabel,
   LIMITS,
@@ -147,6 +147,8 @@ export default function CircleSettings() {
     }
   }
 
+  const colorChoices = circleSettingsColorChoices(circle.kind);
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
@@ -214,7 +216,7 @@ export default function CircleSettings() {
       >
         <legend className="text-sm font-medium">Color</legend>
         <div className="flex flex-wrap gap-2">
-          {COLOR_PALETTE.map((paletteColor) => (
+          {colorChoices.map((paletteColor) => (
             <button
               key={paletteColor.id}
               type="button"
