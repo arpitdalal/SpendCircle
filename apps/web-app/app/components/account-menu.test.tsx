@@ -32,6 +32,7 @@ describe("AccountMenu", () => {
     email: "alex@example.com",
     displayName: "Alex Tester",
     image: undefined,
+    onboardingComplete: true,
   };
 
   it("opens the menu and navigates to Settings", async () => {

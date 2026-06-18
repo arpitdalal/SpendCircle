@@ -24,6 +24,12 @@ export const LIMITS = {
 
 const colorId = z.string().refine(isValidColorId, { message: "Unsupported color" });
 
+/** Server-facing profile edit input (USR-1). */
+export const profileUpdateSchema = z.object({
+  displayName: z.string().trim().min(1, "Name is required").max(LIMITS.circleNameMax),
+});
+export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
+
 export const circleInputSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(LIMITS.circleNameMax),
   currency: z.string().refine(isSupportedCurrency, { message: "Unsupported currency" }),

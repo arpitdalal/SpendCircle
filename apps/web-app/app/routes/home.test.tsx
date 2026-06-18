@@ -24,7 +24,7 @@ describe("Home (render smoke)", () => {
     configureConvex({ circles: MOCK_CIRCLES }); // the `listMyCircles` subscription resolved
     renderWithRouter(<Home />);
     expect(screen.getByRole("heading", { name: "Your circles" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Personal/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Your Circle/ })).toBeInTheDocument();
   });
 
   it("disambiguates same-named circles by Circle Color label", () => {

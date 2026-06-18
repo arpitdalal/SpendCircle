@@ -18,7 +18,7 @@ export default [
 
   // Authenticated app. The protected layout shows a splash while auth resolves,
   // redirects to /signin when unauthenticated, and renders the onboarding branch
-  // until the User is bootstrapped.
+  // until the User is bootstrapped and product-onboarded.
   layout("routes/layouts/protected-layout.tsx", [
     index("routes/home.tsx"),
     route("onboarding", "routes/onboarding.tsx"),

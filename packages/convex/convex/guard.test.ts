@@ -37,6 +37,7 @@ async function seed(
     acceptedPrivacyVersion: "2026-05-01",
     acceptedAt: now,
     analyticsOptOut: false,
+    onboardingCompletedAt: now,
     createdAt: now,
   });
   const circleId = await ctx.db.insert("circles", {
@@ -221,6 +222,7 @@ describe("requireTransactionAccess", () => {
       acceptedPrivacyVersion: "2026-05-01",
       acceptedAt: now,
       analyticsOptOut: false,
+      onboardingCompletedAt: now,
       createdAt: now,
     });
     const memberId = await ctx.db.insert("members", {

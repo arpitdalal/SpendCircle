@@ -1,12 +1,106 @@
+import { LIMITS, profileUpdateSchema } from "@spend-circle/domain";
+import { type FormEvent, useState } from "react";
+import { Navigate } from "react-router";
 import { Splash } from "~/components/splash.js";
+import { Button } from "~/components/ui/button.js";
+import { Field, FieldError, FieldLabel } from "~/components/ui/field.js";
+import { Input } from "~/components/ui/input.js";
+import { useCompleteOnboarding } from "~/lib/data.js";
+import { useAppSession } from "~/lib/session.js";
 
 /**
- * Onboarding branch: a Google session exists but the Spend Circle User record
- * has not propagated yet (ADR 0017). The User and Personal Circle are created by
- * the Better Auth `onCreateUser` trigger during the OAuth callback, so this is a
- * brief splash; when the reactive session flips to "ready" the protected layout
- * redirects to the app shell.
+ * `/onboarding` serves two gated states (ADR 0017, USR-1):
+ *  - bootstrap: Google session exists but the Spend Circle User row has not
+ *    propagated yet → brief splash while the auth trigger runs.
+ *  - product onboarding: the User exists but has not confirmed their profile →
+ *    the confirm/edit Display Name form.
  */
-export default function Onboarding() {
-  return <Splash label="Setting up your account…" />;
+export default function OnboardingRoute() {
+  const session = useAppSession();
+
+  if (session.state === "loading") {
+    return <Splash />;
+  }
+  if (session.state === "bootstrap") {
+    return <Splash label="Setting up your account…" />;
+  }
+  if (session.state !== "ready") {
+    return <Navigate to="/signin" replace />;
+  }
+  if (session.user.onboardingComplete) {
+    return <Navigate to="/" replace />;
+  }
+  return <OnboardingForm user={session.user} />;
+}
+
+function OnboardingForm({ user }: { user: { email: string; displayName: string } }) {
+  const completeOnboarding = useCompleteOnboarding();
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+
+    const parsed = profileUpdateSchema.safeParse({ displayName });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "Invalid display name");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await completeOnboarding({ displayName: parsed.data.displayName });
+    } catch (caught) {
+      console.error("completeOnboarding failed", caught);
+      setError("Couldn't finish setup. Please try again.");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto flex min-h-[60dvh] max-w-md flex-col justify-center space-y-6 px-4 py-8">
+      <div className="space-y-2 text-center">
+        <h1 className="font-display text-2xl font-semibold tracking-tight">Welcome</h1>
+        <p className="text-sm text-muted-foreground">
+          Confirm how your name appears in Circles before you get started.
+        </p>
+      </div>
+
+      <form
+        onSubmit={onSubmit}
+        className="space-y-5 rounded-xl border border-border bg-card p-5 shadow-sm"
+      >
+        <Field>
+          <FieldLabel htmlFor="onboarding-display-name">Display name</FieldLabel>
+          <Input
+            id="onboarding-display-name"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            maxLength={LIMITS.circleNameMax}
+            autoComplete="name"
+            required
+          />
+        </Field>
+
+        <Field>
+          <FieldLabel htmlFor="onboarding-email">Google account email</FieldLabel>
+          <Input
+            id="onboarding-email"
+            value={user.email}
+            readOnly
+            disabled
+            className="opacity-80"
+          />
+        </Field>
+
+        {error ? <FieldError>{error}</FieldError> : null}
+
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? "Continuing…" : "Continue"}
+        </Button>
+      </form>
+    </div>
+  );
 }

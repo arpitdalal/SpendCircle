@@ -40,6 +40,8 @@ export default defineSchema({
     acceptedAt: v.number(),
     // Product analytics opt-out (ADR 0013); operational monitoring is unaffected.
     analyticsOptOut: v.boolean(),
+    // null until Onboarding completes; a number means the User confirmed their profile (USR-1).
+    onboardingCompletedAt: v.union(v.number(), v.null()),
     createdAt: v.number(),
   }).index("by_email", ["email"]),
 
@@ -67,9 +69,9 @@ export default defineSchema({
   // (the by_circle_and_user .unique() lookup depends on this). PRD stories 42–44.
   //
   // `displayName`/`image` are the per-Circle MATERIALIZED identity, not a
-  // one-time snapshot (ADR 0018): the `onUpdateUser` trigger in auth.ts mirrors
-  // the User's current Google profile onto ACTIVE member rows when the profile
-  // changes, freezes them while the Member is "removed", and refreshes on rejoin.
+  // one-time snapshot (ADR 0018): in-app profile edits mirror the User's owned
+  // Display Name onto ACTIVE member rows via `setUserDisplayName` (USR-1 / ADR 0024),
+  // freeze them while the Member is "removed", and refresh on rejoin.
   // Paid By / Recorded By and the Member List read this materialized identity
   // (active ⇒ current, removed ⇒ frozen); the immutable history does not — it
   // keeps the name as it read when each event was written (ADR 0018).

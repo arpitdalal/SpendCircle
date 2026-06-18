@@ -10,9 +10,9 @@ import { coversShellNavigation, usePendingRouteSkeleton } from "~/lib/route-skel
 import { useAppSession } from "~/lib/session.js";
 
 /**
- * Gates the authenticated app across the three auth states (ADR 0017). The
- * permission check is the reactive session result, so live sign-out / revocation
- * stay reactive with no second non-reactive guard path.
+ * Gates the authenticated app across auth states (ADR 0017) and the product
+ * Onboarding funnel (USR-1). The permission check is the reactive session
+ * result, so live sign-out / revocation stay reactive with no second guard path.
  */
 export default function ProtectedLayout() {
   const session = useAppSession();
@@ -35,10 +35,12 @@ export default function ProtectedLayout() {
   if (session.state === "unauthenticated") {
     return <Navigate to="/signin" replace />;
   }
-  if (session.state === "onboarding") {
+  if (session.state === "bootstrap") {
     return onOnboarding ? <Outlet /> : <Navigate to="/onboarding" replace />;
   }
-  // Ready: keep the onboarding route from lingering once bootstrapped.
+  if (!session.user.onboardingComplete) {
+    return onOnboarding ? <Outlet /> : <Navigate to="/onboarding" replace />;
+  }
   if (onOnboarding) {
     return <Navigate to="/" replace />;
   }

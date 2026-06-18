@@ -1,4 +1,10 @@
-import { DEFAULT_COLOR_ID, DEFAULT_CURRENCY, isSupportedCurrency } from "@spend-circle/domain";
+import {
+  DEFAULT_COLOR_ID,
+  DEFAULT_CURRENCY,
+  initials,
+  isSupportedCurrency,
+  personalCircleName,
+} from "@spend-circle/domain";
 import type { Id } from "./_generated/dataModel.js";
 import type { MutationCtx } from "./_generated/server.js";
 
@@ -29,6 +35,7 @@ export async function createUserWithPersonalCircle(
   profile: NewUserProfile,
 ): Promise<Id<"users">> {
   const now = Date.now();
+  const personalName = personalCircleName(profile.displayName);
 
   const userId = await ctx.db.insert("users", {
     email: profile.email,
@@ -38,6 +45,7 @@ export async function createUserWithPersonalCircle(
     acceptedPrivacyVersion: CURRENT_PRIVACY_VERSION,
     acceptedAt: now,
     analyticsOptOut: false,
+    onboardingCompletedAt: null,
     createdAt: now,
   });
 
@@ -45,11 +53,11 @@ export async function createUserWithPersonalCircle(
     profile.currency && isSupportedCurrency(profile.currency) ? profile.currency : DEFAULT_CURRENCY;
 
   const circleId = await ctx.db.insert("circles", {
-    name: "Personal",
+    name: personalName,
     kind: "personal",
     currency,
     color: DEFAULT_COLOR_ID,
-    mark: "P",
+    mark: initials(personalName),
     ownerUserId: userId,
     status: "active",
     currencyLocked: false,
@@ -71,26 +79,22 @@ export async function createUserWithPersonalCircle(
 }
 
 /**
- * Mirrors a User's current Google profile onto their Spend Circle User row and
- * every ACTIVE membership's materialized identity (ADR 0018). This is the single
- * propagation path for member `displayName`/`image`: removed memberships are left
- * untouched so they stay frozen at the name they showed when the Member left, and
- * refresh again only when the row is reactivated on rejoin.
- *
- * Invoked by the Better Auth `onUpdateUser` trigger (auth.ts) and reusable as the
- * propagation invariant in tests. No-ops when the User has not been bootstrapped.
+ * Mirrors a User's owned Display Name onto their Spend Circle User row and every
+ * ACTIVE membership's materialized identity (ADR 0018, USR-1). Removed memberships
+ * are left untouched so they stay frozen at the name they showed when the Member
+ * left. Profile Picture is not synced here — Google seeds it once (ADR 0024).
  */
-export async function propagateUserProfile(
+export async function setUserDisplayName(
   ctx: MutationCtx,
   userId: Id<"users">,
-  profile: { displayName: string; image?: string },
+  displayName: string,
 ): Promise<void> {
   const user = await ctx.db.get(userId);
   if (!user) {
     return;
   }
 
-  await ctx.db.patch(userId, { displayName: profile.displayName, image: profile.image });
+  await ctx.db.patch(userId, { displayName });
 
   const memberships = await ctx.db
     .query("members")
@@ -98,10 +102,23 @@ export async function propagateUserProfile(
     .collect();
   for (const membership of memberships) {
     if (membership.status === "active") {
-      await ctx.db.patch(membership._id, {
-        displayName: profile.displayName,
-        image: profile.image,
-      });
+      await ctx.db.patch(membership._id, { displayName });
     }
   }
+}
+
+/**
+ * Keeps the Spend Circle User's Google Account Email current (ADR 0024). Email is
+ * not part of materialized member identity, so this is a single-row patch.
+ */
+export async function syncUserEmail(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  email: string,
+): Promise<void> {
+  const user = await ctx.db.get(userId);
+  if (!user) {
+    return;
+  }
+  await ctx.db.patch(userId, { email });
 }

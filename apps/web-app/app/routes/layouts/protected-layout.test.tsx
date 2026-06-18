@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +16,7 @@ import { deferred, renderRouteStub } from "~/test/router-stub.js";
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
+import OnboardingRoute from "../onboarding.js";
 import ProtectedLayout from "./protected-layout.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: thin route-tree stand-ins; the layout is the unit under test.
@@ -121,5 +122,52 @@ describe("ProtectedLayout shell skeleton", () => {
     slow.resolve();
     expect(await screen.findByText("Circle stub")).toBeInTheDocument();
     expect(screen.queryByTestId("circle-bottom-nav-skeleton")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProtectedLayout onboarding gate", () => {
+  it("redirects not-onboarded Users to onboarding, but not when already there", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ onboardingComplete: false }),
+      circles: [],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [
+            { index: true, Component: () => <h2>Home stub</h2> },
+            { path: "onboarding", Component: OnboardingRoute },
+          ],
+        },
+      ],
+      ["/"],
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Welcome" })).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Home stub")).not.toBeInTheDocument();
+  });
+
+  it("lets onboarded Users render child routes normally", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ onboardingComplete: true }),
+      circles: [],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [{ index: true, Component: () => <h2>Home stub</h2> }],
+        },
+      ],
+      ["/"],
+    );
+
+    expect(await screen.findByText("Home stub")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Welcome" })).not.toBeInTheDocument();
   });
 });

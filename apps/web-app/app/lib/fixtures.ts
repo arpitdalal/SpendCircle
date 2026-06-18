@@ -32,11 +32,11 @@ export const MOCK_CIRCLES: Circle[] = [
   {
     id: "mock-personal" as Circle["id"],
     ref: "personal-mock-personal",
-    name: "Personal",
+    name: "Mock's Circle",
     kind: "personal",
     currency: "USD",
     color: "blue",
-    mark: "P",
+    mark: "M",
     status: "active",
     setupAnswers: undefined,
     setupComplete: true,

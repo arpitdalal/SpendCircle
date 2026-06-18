@@ -12,11 +12,22 @@ import {
  * One bounded backfill page for GH-91's Transaction search projection rows.
  * Run repeatedly with the returned cursor until `isDone` is true.
  */
-function requireOperatorKey(operatorKey: string) {
-  const expected = process.env.TRANSACTION_SEARCH_BACKFILL_KEY;
+function requireOperatorKey(operatorKey: string, expected: string | undefined, label: string) {
   if (!expected || operatorKey !== expected) {
-    throw new Error("Invalid transaction search backfill key");
+    throw new Error(`Invalid ${label} backfill key`);
   }
+}
+
+function requireTransactionSearchBackfillKey(operatorKey: string) {
+  requireOperatorKey(
+    operatorKey,
+    process.env.TRANSACTION_SEARCH_BACKFILL_KEY,
+    "transaction search",
+  );
+}
+
+function requireUserOnboardingBackfillKey(operatorKey: string) {
+  requireOperatorKey(operatorKey, process.env.USER_ONBOARDING_BACKFILL_KEY, "user onboarding");
 }
 
 async function upsertBackfillState(
@@ -44,7 +55,7 @@ export const backfillTransactionSearchText = mutation({
     reset: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    requireOperatorKey(args.operatorKey);
+    requireTransactionSearchBackfillKey(args.operatorKey);
     const existing = await ctx.db
       .query("transactionSearchBackfills")
       .withIndex("by_key", (q) => q.eq("key", transactionSearchBackfillKey))
@@ -87,6 +98,34 @@ export const backfillTransactionSearchText = mutation({
       scanned: result.page.length,
       totalSynced,
       totalScanned,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
+/**
+ * Grandfathers existing Users as onboarded before `onboardingCompletedAt` becomes
+ * required (USR-1). Run repeatedly with the returned cursor until `isDone` is true.
+ */
+export const backfillUserOnboardingCompleted = mutation({
+  args: {
+    operatorKey: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    requireUserOnboardingBackfillKey(args.operatorKey);
+    const result = await ctx.db.query("users").paginate(args.paginationOpts);
+    let patched = 0;
+    for (const user of result.page) {
+      if (user.onboardingCompletedAt === null) {
+        await ctx.db.patch(user._id, { onboardingCompletedAt: user.createdAt });
+        patched += 1;
+      }
+    }
+    return {
+      patched,
+      scanned: result.page.length,
       isDone: result.isDone,
       continueCursor: result.continueCursor,
     };
