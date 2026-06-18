@@ -34,13 +34,14 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
   const moreItems = items.slice(PRIMARY_SLOT_COUNT);
 
   const moreActive = moreItems.some((item) => isCircleNavItemActive(location.pathname, item));
+  const routeLocation = location.pathname + location.search + location.hash;
 
   // Close the More sheet on navigation before commit so it doesn't paint open on a route
-  // it no longer belongs to. Keep previous-location bookkeeping in state so discarded
-  // StrictMode/concurrent renders can't advance it.
-  const [prevLocation, setPrevLocation] = useState(location);
-  if (location !== prevLocation) {
-    setPrevLocation(location);
+  // it no longer belongs to. Track the semantic route, not the location object identity,
+  // so same-route rerenders don't close/remount the sheet while a link is being clicked.
+  const [prevRouteLocation, setPrevRouteLocation] = useState(routeLocation);
+  if (routeLocation !== prevRouteLocation) {
+    setPrevRouteLocation(routeLocation);
     setMoreOpen(false);
   }
 

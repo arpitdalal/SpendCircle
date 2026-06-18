@@ -121,4 +121,14 @@ describe("CircleMobileBottomNav", () => {
     expect(view.location()).toBe(`/circles/${circle.ref}/transactions`);
     expect(screen.queryByRole("dialog", { name: "More" })).not.toBeInTheDocument();
   });
+
+  it("keeps More open on same-route navigation under StrictMode", async () => {
+    const user = userEvent.setup();
+    const view = renderStrictMobileNav(`/circles/${circle.ref}`);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("dialog", { name: "More" })).toBeInTheDocument();
+    await view.navigate(`/circles/${circle.ref}`);
+    expect(view.location()).toBe(`/circles/${circle.ref}`);
+    expect(screen.getByRole("dialog", { name: "More" })).toBeInTheDocument();
+  });
 });
