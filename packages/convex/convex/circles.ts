@@ -1,10 +1,10 @@
 import {
   buildRef,
   circleInputSchema,
-  circleSettingsUpdateSchema,
   circleSetupAnswersSchema,
   colorLabel,
   DEFAULT_COLOR_ID,
+  parseCircleSettingsUpdate,
   starterCategories,
 } from "@spend-circle/domain";
 import { v } from "convex/values";
@@ -162,10 +162,13 @@ export const updateCircleSettings = mutation({
     }
     access.assertWritable();
 
-    const input = circleSettingsUpdateSchema.parse({
-      color: args.color,
-      setupAnswers: args.setupAnswers,
-    });
+    const input = parseCircleSettingsUpdate(
+      {
+        color: args.color,
+        setupAnswers: args.setupAnswers,
+      },
+      access.circle.kind,
+    );
 
     // Setup answers must not be edited until the owner has finished Circle Setup via
     // completeCircleSetup (one-shot starter seeding). The explicit completion flag

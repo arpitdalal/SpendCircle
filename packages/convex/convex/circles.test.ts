@@ -349,6 +349,37 @@ describe("updateCircleSettings", () => {
     ).rejects.toThrow();
   });
 
+  it("rejects iris on a regular Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.circles.updateCircleSettings, { circleId, color: "iris" }),
+    ).rejects.toThrow();
+  });
+
+  it("lets a Personal Circle owner select iris and records the palette label in history", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) =>
+      seedCircle(ctx, { kind: "personal", color: "green" }),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.updateCircleSettings, { circleId, color: "iris" });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.color).toBe("iris");
+
+      const events = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+        .collect();
+      expect(events.at(-1)?.changes).toEqual([{ field: "color", from: "Green", to: "Iris" }]);
+    });
+  });
+
   it("rejects setup-answer edits before setup is complete, but still allows color", async () => {
     const t = convexTest(schema, modules);
     // seedCircle leaves setup incomplete — setupCompletedAt is null.

@@ -46,8 +46,30 @@ export const DEFAULT_COLOR_ID: ColorId = "blue";
 export const PERSONAL_CIRCLE_COLOR_ID = "iris";
 export const PERSONAL_CIRCLE_COLOR_HEX = "#9470f5";
 
+/** Personal Circle settings-only swatch — not in {@link COLOR_PALETTE}. */
+export const PERSONAL_CIRCLE_COLOR = {
+  id: PERSONAL_CIRCLE_COLOR_ID,
+  name: "Iris",
+  hex: PERSONAL_CIRCLE_COLOR_HEX,
+} as const satisfies PaletteColor;
+
 export function isPersonalCircleColorId(id: string): boolean {
   return id === PERSONAL_CIRCLE_COLOR_ID;
+}
+
+/** Color swatches for Circle settings (CS-2): iris is Personal-only. */
+export function circleSettingsColorChoices(kind: "personal" | "regular"): readonly PaletteColor[] {
+  if (kind === "personal") {
+    return [PERSONAL_CIRCLE_COLOR, ...COLOR_PALETTE];
+  }
+  return COLOR_PALETTE;
+}
+
+export function isValidCircleSettingsColorId(id: string, kind: "personal" | "regular"): boolean {
+  if (isValidColorId(id)) {
+    return true;
+  }
+  return kind === "personal" && isPersonalCircleColorId(id);
 }
 
 /**

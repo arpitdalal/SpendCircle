@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   COLOR_PALETTE,
+  circleSettingsColorChoices,
   colorHex,
   colorLabel,
   DEFAULT_COLOR_ID,
+  isValidCircleSettingsColorId,
   isValidColorId,
+  PERSONAL_CIRCLE_COLOR,
   PERSONAL_CIRCLE_COLOR_HEX,
   PERSONAL_CIRCLE_COLOR_ID,
   paletteColorForSeed,
@@ -74,5 +77,22 @@ describe("randomColorId", () => {
     for (let i = 0; i < 30; i += 1) {
       expect(randomColorId()).not.toBe(PERSONAL_CIRCLE_COLOR_ID);
     }
+  });
+});
+
+describe("circleSettingsColorChoices", () => {
+  it("includes iris first for Personal Circles only", () => {
+    expect(circleSettingsColorChoices("personal")[0]).toEqual(PERSONAL_CIRCLE_COLOR);
+    expect(circleSettingsColorChoices("personal")).toHaveLength(COLOR_PALETTE.length + 1);
+    expect(circleSettingsColorChoices("regular")).toEqual(COLOR_PALETTE);
+  });
+});
+
+describe("isValidCircleSettingsColorId", () => {
+  it("accepts palette ids for any kind and iris only for personal", () => {
+    expect(isValidCircleSettingsColorId("teal", "regular")).toBe(true);
+    expect(isValidCircleSettingsColorId("teal", "personal")).toBe(true);
+    expect(isValidCircleSettingsColorId(PERSONAL_CIRCLE_COLOR_ID, "personal")).toBe(true);
+    expect(isValidCircleSettingsColorId(PERSONAL_CIRCLE_COLOR_ID, "regular")).toBe(false);
   });
 });

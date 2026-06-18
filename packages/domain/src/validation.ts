@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isValidColorId } from "./color.js";
+import { isValidCircleSettingsColorId, isValidColorId } from "./color.js";
 import { isSupportedCurrency } from "./currency.js";
 import { isValidPlainDate } from "./date.js";
 import { type AmountParseError, isValidMinorUnits, parseAmountToMinorUnits } from "./money.js";
@@ -83,12 +83,31 @@ export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
  * Server-facing Circle Settings input (CS-2), parallel to {@link categoryUpdateSchema}.
  * Both fields are optional: an absent field means "leave it unchanged", and each present
  * field is validated by the same rule as on create/setup so the entry points can't drift.
+ * Personal Circles may also select the reserved iris color; regular Circles may not.
  */
 export const circleSettingsUpdateSchema = z.object({
   color: colorId.optional(),
   setupAnswers: circleSetupAnswersSchema.optional(),
 });
 export type CircleSettingsUpdateInput = z.infer<typeof circleSettingsUpdateSchema>;
+
+/** Kind-aware CS-2 parse — iris is valid only for Personal Circles. */
+export function parseCircleSettingsUpdate(
+  input: { color?: string; setupAnswers?: z.input<typeof circleSetupAnswersSchema> },
+  kind: "personal" | "regular",
+) {
+  const colorForKind = z
+    .string()
+    .refine((id) => isValidCircleSettingsColorId(id, kind), { message: "Unsupported color" })
+    .optional();
+
+  return z
+    .object({
+      color: colorForKind,
+      setupAnswers: circleSetupAnswersSchema.optional(),
+    })
+    .parse(input);
+}
 
 /**
  * The Transaction fields shared by the form schema and the server-facing create

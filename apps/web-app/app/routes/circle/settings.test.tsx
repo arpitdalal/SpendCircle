@@ -82,6 +82,37 @@ describe("Circle settings", () => {
     expect(screen.getByText("dashboard")).toBeInTheDocument();
   });
 
+  it("shows iris on Personal Circle settings and can restore it after another pick", async () => {
+    const user = userEvent.setup();
+    const updateCircleSettings = vi.fn().mockResolvedValue(undefined);
+    const circle = makeCircleView({
+      ref: "personal-c0",
+      kind: "personal",
+      color: "green",
+      setupComplete: true,
+    });
+    configureConvex({ members: [ownerMember], updateCircleSettings });
+    renderCircleRoutes(
+      circle,
+      <>
+        <Route path="/circles/:circleRef" element={<div>dashboard</div>} />
+        <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />
+      </>,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    expect(screen.getByRole("button", { name: "Iris" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Iris" }));
+    expect(updateCircleSettings).toHaveBeenCalledWith({ circleId: circle.id, color: "iris" });
+    expect(screen.getByTestId("mark-tint")).toHaveAttribute("data-color-hex", colorHex("iris"));
+  });
+
+  it("does not offer iris on regular circle settings", () => {
+    renderSettings(makeCircleView({ ref: "trip-c1", kind: "regular", color: "blue" }));
+    expect(screen.queryByRole("button", { name: "Iris" })).not.toBeInTheDocument();
+  });
+
   it("does not call mutations when setup answers are unchanged", async () => {
     const user = userEvent.setup();
     const updateCircleSettings = vi.fn();
