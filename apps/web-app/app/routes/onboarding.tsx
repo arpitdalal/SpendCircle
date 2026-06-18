@@ -35,6 +35,7 @@ export default function OnboardingRoute() {
 
 function OnboardingForm({ user }: { user: { email: string; displayName: string } }) {
   const completeOnboarding = useCompleteOnboarding();
+  // react-doctor-disable-next-line react-doctor/no-derived-useState -- editable form field seeded ONCE from the prop; the box is then user-owned. Onboarding shows for a single user whose displayName can't change underneath the open form, so there's no stale-prop case to re-sync.
   const [displayName, setDisplayName] = useState(user.displayName);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

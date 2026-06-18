@@ -45,6 +45,7 @@ export default function Settings() {
 function ProfileSettingsForm({ user }: { user: SessionUser }) {
   const updateProfile = useUpdateProfile();
   const { show } = useSnackbar();
+  // react-doctor-disable-next-line react-doctor/no-derived-useState -- editable form field seeded ONCE from the prop; reset-on-user-change is already handled by `key={session.user.id}` at the call site (line 27), which remounts this form so useState re-initializes.
   const [displayName, setDisplayName] = useState(user.displayName);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

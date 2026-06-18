@@ -39,6 +39,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
   // Close the More sheet on navigation before commit so it doesn't paint open on a route
   // it no longer belongs to. Track the semantic route, not the location object identity,
   // so same-route rerenders don't close/remount the sheet while a link is being clicked.
+  // react-doctor-disable-next-line react-doctor/rerender-state-only-in-handlers -- value IS read during render (the comparison below) to drive React's canonical "adjust state during render" reset. useRef is wrong here: React discourages mutating a ref during render, and set-state-during-render is the blessed pattern for this. The rule only checks JSX-reachability, so it misfires.
   const [prevRouteLocation, setPrevRouteLocation] = useState(routeLocation);
   if (routeLocation !== prevRouteLocation) {
     setPrevRouteLocation(routeLocation);
