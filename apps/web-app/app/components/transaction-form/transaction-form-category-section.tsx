@@ -1,5 +1,6 @@
 import {
   categoryInputSchema,
+  MUTATION_ERRORS,
   paletteColorForSeed,
   type TransactionType,
   transactionFieldSchemas,
@@ -20,7 +21,7 @@ import {
 import { FieldError, FieldLegend, FieldSet } from "~/components/ui/field.js";
 import { type Category, type Circle, useCreateCategory } from "~/lib/data.js";
 import { useTypedAppFormContext } from "~/lib/form.js";
-import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
+import { mutationErrorCode, mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { cn } from "~/lib/utils.js";
 import { transactionFormContextOptions } from "./transaction-form-options.js";
 
@@ -166,12 +167,11 @@ export function TransactionFormCategorySection({
       }
       setQuery("");
     } catch (caught) {
-      const duplicateNameMessage = "A category with this name already exists for this type";
       const userMessage = mutationErrorMessageForUser(
         caught,
         "Couldn't create the category. Please try again.",
       );
-      if (userMessage !== duplicateNameMessage) {
+      if (mutationErrorCode(caught) !== MUTATION_ERRORS.categoryNameDuplicate.code) {
         console.error("inlineCreateCategory failed", caught);
       }
       setInlineError(userMessage);

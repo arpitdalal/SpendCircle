@@ -2,6 +2,8 @@ import {
   categoryInputSchema,
   categoryUpdateSchema,
   colorLabel,
+  MUTATION_ERRORS,
+  mutationErrorData,
   normalizeSearchText,
   textIncludes,
 } from "@spend-circle/domain";
@@ -26,6 +28,10 @@ import { newActorCache, toHistoryEventView } from "./historyView.js";
 import schema from "./schema.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
+
+function duplicateCategoryNameError() {
+  return new ConvexError(mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate));
+}
 
 /** The viewer a Category view is shaped FOR — drives the capability flags below. */
 export interface CategoryViewer {
@@ -106,7 +112,7 @@ export async function createCategoryForMember(ctx: MutationCtx, args: CreateCate
     if (args.duplicate === "skip") {
       return { created: false };
     }
-    throw new ConvexError("A category with this name already exists for this type");
+    throw duplicateCategoryNameError();
   }
 
   const categoryId = await ctx.db.insert("categories", {
@@ -324,7 +330,7 @@ export const createCategory = mutation({
     access.assertWritable(); // an archived Circle is read-only (PRD story 79)
     const result = await createCategoryForMember(ctx, { access, ...args, duplicate: "throw" });
     if (!result.created) {
-      throw new ConvexError("A category with this name already exists for this type");
+      throw duplicateCategoryNameError();
     }
     return result.categoryId;
   },
@@ -392,7 +398,7 @@ export const updateCategory = mutation({
         )
         .first();
       if (existing && existing._id !== category._id) {
-        throw new ConvexError("A category with this name already exists for this type");
+        throw duplicateCategoryNameError();
       }
       patch.name = input.name;
       patch.nameLower = nameLower;
@@ -520,7 +526,7 @@ export const restoreCategory = mutation({
       )
       .collect();
     if (sameName.some((other) => other._id !== category._id)) {
-      throw new ConvexError("A category with this name already exists for this type");
+      throw duplicateCategoryNameError();
     }
 
     // Setting `archivedAt` to undefined removes the field (it is schema-optional).

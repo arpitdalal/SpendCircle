@@ -1,5 +1,5 @@
 import { api } from "@spend-circle/convex";
-import { addMonths, currentMonth } from "@spend-circle/domain";
+import { addMonths, currentMonth, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { getFunctionName } from "convex/server";
@@ -44,7 +44,7 @@ const REF = "trip-c1";
 const NOW_MONTH = currentMonth(new Date());
 const FILTER_LEDGER = getFunctionName(api.search.filterLedgerTransactions);
 /** Matches `assertWritable` in `packages/convex/convex/guard.ts` — realistic prod rejection. */
-const ARCHIVED_CIRCLE_ERROR = new ConvexError("Circle is archived");
+const ARCHIVED_CIRCLE_ERROR = new ConvexError(mutationErrorData(MUTATION_ERRORS.circleArchived));
 
 const createTransaction = vi.fn();
 const archiveTransaction = vi.fn();
@@ -454,7 +454,7 @@ describe("CircleTransactions", () => {
     });
     archiveTransaction.mockRejectedValue(ARCHIVED_CIRCLE_ERROR);
     await user.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
-    expect(await screen.findByText("Circle is archived")).toBeInTheDocument();
+    expect(await screen.findByText(MUTATION_ERRORS.circleArchived.message)).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Archive Weekly shop" })).toBeEnabled(),
     );
@@ -470,7 +470,7 @@ describe("CircleTransactions", () => {
     });
     restoreTransaction.mockRejectedValue(ARCHIVED_CIRCLE_ERROR);
     await user.click(screen.getByRole("button", { name: "Restore Old buy" }));
-    expect(await screen.findByText("Circle is archived")).toBeInTheDocument();
+    expect(await screen.findByText(MUTATION_ERRORS.circleArchived.message)).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Restore Old buy" })).toBeEnabled(),
     );

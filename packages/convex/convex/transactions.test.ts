@@ -1,4 +1,9 @@
-import { buildRef, transactionSearchText } from "@spend-circle/domain";
+import {
+  buildRef,
+  MUTATION_ERRORS,
+  mutationErrorData,
+  transactionSearchText,
+} from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
@@ -647,7 +652,9 @@ describe("createTransaction — lifecycle edges", () => {
         circleId: f.circleId,
         ...baseExpense([f.cat]),
       }),
-    ).rejects.toThrow("Circle is archived");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
   });
 });
 
@@ -1374,7 +1381,9 @@ describe("updateTransaction — lifecycle edges", () => {
     mockCurrentUser.mockResolvedValue(f.owner);
     await expect(
       t.mutation(api.transactions.updateTransaction, { transactionId: id, title: "x" }),
-    ).rejects.toThrow("Circle is archived");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
   });
 });
 
@@ -1534,7 +1543,9 @@ describe("archiveTransaction — frozen & state edges (TXN-3)", () => {
     mockCurrentUser.mockResolvedValue(f.owner);
     await expect(
       t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
-    ).rejects.toThrow("Circle is archived");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
   });
 });
 
@@ -1644,7 +1655,9 @@ describe("restoreTransaction (TXN-3)", () => {
     mockCurrentUser.mockResolvedValue(f.owner);
     await expect(
       t.mutation(api.transactions.restoreTransaction, { transactionId: id }),
-    ).rejects.toThrow("Circle is archived");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
   });
 
   it("records a 'restored' event with the moderator as actor and no field changes", async () => {

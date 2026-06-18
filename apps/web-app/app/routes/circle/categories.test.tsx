@@ -1,3 +1,4 @@
+import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
@@ -492,7 +493,7 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategoryView()] });
     updateCategory.mockRejectedValueOnce(
-      new ConvexError("A category with this name already exists for this type"),
+      new ConvexError(mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate)),
     );
 
     await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
@@ -503,7 +504,7 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
     await user.click(within(form).getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "A category with this name already exists for this type",
+      MUTATION_ERRORS.categoryNameDuplicate.message,
     );
     expect(screen.getByRole("form", { name: "Edit Groceries" })).toBeInTheDocument();
   });
@@ -528,7 +529,9 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
   it("surfaces ConvexError archived guard on category save inline", async () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategoryView()] });
-    updateCategory.mockRejectedValueOnce(new ConvexError("Circle is archived"));
+    updateCategory.mockRejectedValueOnce(
+      new ConvexError(mutationErrorData(MUTATION_ERRORS.circleArchived)),
+    );
 
     await user.click(screen.getByRole("button", { name: "Edit Groceries" }));
     const form = screen.getByRole("form", { name: "Edit Groceries" });
@@ -537,7 +540,9 @@ describe("CircleCategories — edit flow (CAT-2)", () => {
     await user.type(input, "Food");
     await user.click(within(form).getByRole("button", { name: "Save" }));
 
-    expect(await within(form).findByText("Circle is archived")).toBeInTheDocument();
+    expect(
+      await within(form).findByText(MUTATION_ERRORS.circleArchived.message),
+    ).toBeInTheDocument();
   });
 });
 
@@ -711,12 +716,14 @@ describe("CircleCategories — archive / restore (CAT-2)", () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategoryView()] });
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    archiveCategory.mockRejectedValueOnce(new ConvexError("Circle is archived"));
+    archiveCategory.mockRejectedValueOnce(
+      new ConvexError(mutationErrorData(MUTATION_ERRORS.circleArchived)),
+    );
 
     await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Circle is archived");
+    expect(alert).toHaveTextContent(MUTATION_ERRORS.circleArchived.message);
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
   });
