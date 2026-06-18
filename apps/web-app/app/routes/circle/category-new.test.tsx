@@ -1,4 +1,4 @@
-import { COLOR_PALETTE } from "@spend-circle/domain";
+import { COLOR_PALETTE, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
@@ -157,13 +157,13 @@ describe("CategoryNew — inline errors stay on the page", () => {
     const user = userEvent.setup();
     setup();
     createCategory.mockRejectedValueOnce(
-      new ConvexError("A category with this name already exists for this type"),
+      new ConvexError(mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate)),
     );
     await user.type(screen.getByLabelText(/New expense category/), "Groceries");
     await user.click(screen.getByRole("button", { name: "Add category" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "A category with this name already exists for this type",
+      MUTATION_ERRORS.categoryNameDuplicate.message,
     );
   });
 
@@ -231,12 +231,12 @@ describe("CategoryNew — in-form type toggle (issue #138)", () => {
     const user = userEvent.setup();
     setup();
     createCategory.mockRejectedValueOnce(
-      new ConvexError("A category with this name already exists for this type"),
+      new ConvexError(mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate)),
     );
     await user.type(screen.getByLabelText(/New expense category/), "Groceries");
     await user.click(screen.getByRole("button", { name: "Add category" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "A category with this name already exists for this type",
+      MUTATION_ERRORS.categoryNameDuplicate.message,
     );
 
     await user.click(

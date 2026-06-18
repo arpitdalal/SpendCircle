@@ -44,8 +44,9 @@ export interface TransactionsState {
    * Plain spies the caller configures. To assert a backend-guard *rejection* path
    * (`assertWritable` / `requireCircleAccess` throws because the Circle was archived or
    * went inaccessible mid-submit), pass a rejecting spy on the mutation under test, e.g.
-   * `createTransaction: vi.fn().mockRejectedValue(new ConvexError("Circle is archived"))`
-   * (from `convex/values`, matching production) and assert the route's error handling.
+   * `createTransaction: vi.fn().mockRejectedValue(new ConvexError(mutationErrorData(...)))`
+   * (from `convex/values` + domain error data, matching production) and assert the
+   * route's error handling.
    * Intentionally NOT abstracted into a dedicated `rejects` knob: the spy already exposes
    * the full mock surface; add a typed helper only when a shared rejection contract emerges. */
   createTransaction?: Mock;

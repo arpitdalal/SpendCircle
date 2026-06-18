@@ -1,4 +1,4 @@
-import { currentMonth } from "@spend-circle/domain";
+import { currentMonth, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
@@ -30,7 +30,7 @@ import TransactionNew from "./transaction-new.js";
 const REF = "trip-c1";
 const createTransaction = vi.fn();
 /** Matches `assertWritable` in `packages/convex/convex/guard.ts` — realistic prod rejection. */
-const ARCHIVED_CIRCLE_ERROR = new ConvexError("Circle is archived");
+const ARCHIVED_CIRCLE_ERROR = new ConvexError(mutationErrorData(MUTATION_ERRORS.circleArchived));
 
 // The validated `returnTo` origin a create page is opened with (issue #123): a filtered
 // ledger. Close / save / invalid-`type` / archived redirect all land back here.
@@ -195,7 +195,9 @@ describe("TransactionNew — submit errors (stay on the page)", () => {
     await pickTransactionFormCategory(user, form, "Groceries");
     await user.click(within(form).getByRole("button", { name: "Add expense" }));
 
-    expect(await within(form).findByText("Circle is archived")).toBeInTheDocument();
+    expect(
+      await within(form).findByText(MUTATION_ERRORS.circleArchived.message),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(within(form).getByRole("button", { name: "Add expense" })).toBeEnabled(),
     );

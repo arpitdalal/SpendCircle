@@ -1,3 +1,4 @@
+import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
@@ -166,20 +167,18 @@ describe("resolveCircleAccess", () => {
 
     const result = await t.run(async (ctx) => {
       const access = await resolveCircleAccess(ctx, circleId);
-      let message: string | null = null;
+      let data: unknown = null;
       try {
         access?.assertWritable();
       } catch (error) {
-        if (error instanceof ConvexError && typeof error.data === "string") {
-          message = error.data;
-        } else if (error instanceof Error) {
-          message = error.message;
+        if (error instanceof ConvexError) {
+          data = error.data;
         }
       }
-      return { isWritable: access?.isWritable, message };
+      return { isWritable: access?.isWritable, data };
     });
     expect(result.isWritable).toBe(false);
-    expect(result.message).toBe("Circle is archived");
+    expect(result.data).toEqual(mutationErrorData(MUTATION_ERRORS.circleArchived));
   });
 });
 

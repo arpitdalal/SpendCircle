@@ -1,4 +1,10 @@
-import { currentMonth, paletteColorForSeed, toPlainDate } from "@spend-circle/domain";
+import {
+  currentMonth,
+  MUTATION_ERRORS,
+  mutationErrorData,
+  paletteColorForSeed,
+  toPlainDate,
+} from "@spend-circle/domain";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
@@ -387,13 +393,13 @@ describe("TransactionForm — create", () => {
     const user = userEvent.setup();
     renderForm(createExpense, { categories: [] });
     createCategory.mockRejectedValueOnce(
-      new ConvexError("A category with this name already exists for this type"),
+      new ConvexError(mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate)),
     );
     const form = screen.getByRole("form", { name: /add expense/i });
     await inlineCreateTransactionFormCategory(user, form, "Snacks", { waitForSelection: false });
 
     expect(
-      await screen.findByText("A category with this name already exists for this type"),
+      await screen.findByText(MUTATION_ERRORS.categoryNameDuplicate.message),
     ).toBeInTheDocument();
     expect(within(form).queryByRole("button", { name: /Remove Snacks/ })).not.toBeInTheDocument();
   });
@@ -402,11 +408,13 @@ describe("TransactionForm — create", () => {
     const user = userEvent.setup();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     renderForm(createExpense, { categories: [] });
-    createCategory.mockRejectedValueOnce(new ConvexError("Circle is archived"));
+    createCategory.mockRejectedValueOnce(
+      new ConvexError(mutationErrorData(MUTATION_ERRORS.circleArchived)),
+    );
     const form = screen.getByRole("form", { name: /add expense/i });
     await inlineCreateTransactionFormCategory(user, form, "Snacks", { waitForSelection: false });
 
-    expect(await screen.findByText("Circle is archived")).toBeInTheDocument();
+    expect(await screen.findByText(MUTATION_ERRORS.circleArchived.message)).toBeInTheDocument();
     expect(within(form).queryByRole("button", { name: /Remove Snacks/ })).not.toBeInTheDocument();
     consoleError.mockRestore();
   });
@@ -431,7 +439,7 @@ describe("TransactionForm — create", () => {
     const user = userEvent.setup();
     renderForm(createExpense, { categories: [] });
     createCategory.mockRejectedValueOnce(
-      new ConvexError("A category with this name already exists for this type"),
+      new ConvexError(mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate)),
     );
     const form = screen.getByRole("form", { name: /add expense/i });
     const combo = within(form).getByRole("combobox", { name: "Categories" });
@@ -441,7 +449,7 @@ describe("TransactionForm — create", () => {
 
     expect(combo).toHaveValue("Rent");
     expect(
-      await screen.findByText("A category with this name already exists for this type"),
+      await screen.findByText(MUTATION_ERRORS.categoryNameDuplicate.message),
     ).toBeInTheDocument();
     await user.keyboard("{Escape}");
   });

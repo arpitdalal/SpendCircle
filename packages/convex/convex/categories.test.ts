@@ -1,3 +1,4 @@
+import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { ConvexError } from "convex/values";
 import { convexTest, type TestConvex } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -252,7 +253,7 @@ describe("createCategory — uniqueness (case-insensitive, includes archived)", 
     } catch (error) {
       expect(error).toBeInstanceOf(ConvexError);
       if (error instanceof ConvexError) {
-        expect(error.data).toBe("A category with this name already exists for this type");
+        expect(error.data).toEqual(mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate));
       }
     }
   });
@@ -275,7 +276,9 @@ describe("createCategory — uniqueness (case-insensitive, includes archived)", 
         type: "expense",
         color: "red",
       }),
-    ).rejects.toThrow(/already exists/);
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate),
+    });
   });
 
   it("allows the same name across different types", async () => {
@@ -327,7 +330,9 @@ describe("createCategory — uniqueness (case-insensitive, includes archived)", 
         type: "expense",
         color: "red",
       }),
-    ).rejects.toThrow(/already exists/);
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate),
+    });
   });
 
   it("isolates uniqueness per Circle (same name allowed in a different Circle)", async () => {
@@ -510,7 +515,9 @@ describe("createCategory — lifecycle edges", () => {
     mockCurrentUser.mockResolvedValue(owner);
     await expect(
       t.mutation(api.categories.createCategory, { circleId, ...EXPENSE }),
-    ).rejects.toThrow("Circle is archived");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
   });
 });
 
@@ -764,7 +771,9 @@ describe("updateCategory — rename uniqueness", () => {
 
     await expect(
       t.mutation(api.categories.updateCategory, { categoryId, name: "Gas" }),
-    ).rejects.toThrow(/already exists/);
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate),
+    });
   });
 
   it("rejects a case-only collision with ANOTHER category", async () => {
@@ -775,7 +784,9 @@ describe("updateCategory — rename uniqueness", () => {
 
     await expect(
       t.mutation(api.categories.updateCategory, { categoryId, name: "GAS" }),
-    ).rejects.toThrow(/already exists/);
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate),
+    });
   });
 
   it("rejects renaming into an ARCHIVED name (still reserved)", async () => {
@@ -789,7 +800,9 @@ describe("updateCategory — rename uniqueness", () => {
 
     await expect(
       t.mutation(api.categories.updateCategory, { categoryId, name: "gas" }),
-    ).rejects.toThrow(/already exists/);
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate),
+    });
   });
 
   it("allows renaming to a free name and to a name held by the OTHER type", async () => {
@@ -826,7 +839,9 @@ describe("updateCategory — input edges and lifecycle", () => {
     mockCurrentUser.mockResolvedValue(creator);
     await expect(
       t.mutation(api.categories.updateCategory, { categoryId, name: "Food" }),
-    ).rejects.toThrow("Circle is archived");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
   });
 
   it("rejects edits to an Archived Category (frozen until restored)", async () => {
@@ -951,13 +966,13 @@ describe("archiveCategory / restoreCategory — moderation", () => {
     await t.mutation(api.categories.archiveCategory, { categoryId });
     await t.run((ctx) => ctx.db.patch(circleId, { status: "archived", archivedAt: Date.now() }));
 
-    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toThrow(
-      "Circle is archived",
-    );
+    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
     await t.run((ctx) => ctx.db.patch(categoryId, { status: "active" }));
-    await expect(t.mutation(api.categories.archiveCategory, { categoryId })).rejects.toThrow(
-      "Circle is archived",
-    );
+    await expect(t.mutation(api.categories.archiveCategory, { categoryId })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
   });
 
   it("rejects a restore that would collide with a now-active same-name category", async () => {
@@ -981,9 +996,9 @@ describe("archiveCategory / restoreCategory — moderation", () => {
       });
     });
 
-    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toThrow(
-      /already exists/,
-    );
+    await expect(t.mutation(api.categories.restoreCategory, { categoryId })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.categoryNameDuplicate),
+    });
     await t.run(async (ctx) => {
       const category = await ctx.db.get(categoryId);
       expect(category?.status).toBe("archived"); // unchanged — the restore failed atomically

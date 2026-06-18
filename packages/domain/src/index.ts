@@ -3,6 +3,7 @@ export * from "./currency.js";
 export * from "./date.js";
 export * from "./initials.js";
 export * from "./money.js";
+export * from "./mutation-errors.js";
 export * from "./ref.js";
 export * from "./setup.js";
 export * from "./text.js";
