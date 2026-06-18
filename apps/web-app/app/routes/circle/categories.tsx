@@ -195,15 +195,17 @@ function CategoryList({
   // changes can drop the row — unmounting closes the UI, but the id up here must
   // not outlive it, or widening the filter would remount the row with a fresh
   // editor/panel popping open unbidden (and an in-progress edit silently gone).
-  // The list-membership counterpart of CategoryRow's capability effect below.
-  useEffect(() => {
-    if (editingId !== null && !categories.some((category) => category.id === editingId)) {
-      setEditingId(null);
-    }
-    if (historyId !== null && !categories.some((category) => category.id === historyId)) {
-      setHistoryId(null);
-    }
-  }, [categories, editingId, historyId]);
+  // Adjusted during render (not in an effect) so the stale id is cleared in the
+  // same commit the row leaves — no extra render painting a dropped editor. React
+  // restarts the render immediately when these run, and each guard self-terminates
+  // (the id is null on the retry). The list-membership counterpart of CategoryRow's
+  // capability effect below.
+  if (editingId !== null && !categories.some((category) => category.id === editingId)) {
+    setEditingId(null);
+  }
+  if (historyId !== null && !categories.some((category) => category.id === historyId)) {
+    setHistoryId(null);
+  }
 
   if (status === "LoadingFirstPage") {
     return (

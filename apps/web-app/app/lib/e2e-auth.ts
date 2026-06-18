@@ -30,10 +30,12 @@ export function installE2EAuthHelper(): void {
         const deadline = Date.now() + 30_000;
         while (Date.now() < deadline) {
           try {
+            // react-doctor-disable-next-line react-doctor/async-await-in-loop -- retry/poll loop; each await depends on the prior attempt's outcome (the backend trigger may not have run yet), so iterations are inherently sequential — Promise.all doesn't apply.
             await convex.mutation(api.users.completeOnboarding, { displayName: name });
             return;
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
+            // react-doctor-disable-next-line react-doctor/js-set-map-lookups -- String.prototype.includes (substring match on an error message), not Array membership; a Set can't model substring search.
             if (message.includes("Onboarding already completed")) {
               return;
             }

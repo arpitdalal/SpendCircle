@@ -4,7 +4,7 @@
     "overrides": [
       {
         "files": ["**/components/ui/input-group.tsx"],
-        "rules": ["react-doctor/prefer-tag-over-role"]
+        "rules": ["react-doctor/prefer-tag-over-role", "react-doctor/no-multi-comp"]
       },
       {
         "files": ["**/components/ui/label.tsx"],
@@ -13,16 +13,14 @@
       {
         "files": ["**/app/components/ui/debounced-search-input.tsx"],
         "rules": [
-          "react-doctor/no-derived-state-effect",
-          "react-doctor/no-adjust-state-on-prop-change",
+          "react-doctor/no-derived-state",
+          "react-doctor/no-reset-all-state-on-prop-change",
           "react-doctor/no-event-handler"
         ]
       },
       {
         "files": ["**/app/routes/circle/categories.tsx"],
         "rules": [
-          "react-doctor/no-derived-state-effect",
-          "react-doctor/no-adjust-state-on-prop-change",
           "react-doctor/no-event-handler",
           "react-doctor/no-prop-callback-in-effect",
           "react-doctor/no-chain-state-updates"
@@ -46,7 +44,7 @@
       },
       {
         "files": ["**/app/routes/circle/transactions.tsx"],
-        "rules": ["react-doctor/no-derived-state-effect"]
+        "rules": ["react-doctor/no-derived-state", "react-doctor/no-event-handler"]
       },
       {
         "files": [
