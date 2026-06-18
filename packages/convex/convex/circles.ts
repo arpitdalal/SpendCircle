@@ -260,14 +260,15 @@ export const completeCircleSetup = mutation({
 
     await ctx.db.patch(args.circleId, patch);
 
-    if (circleChanges.length > 0) {
-      await recordEvent(ctx, {
-        entity: circleEntity(args.circleId),
-        actor: access.membership,
-        action: "setup_completed",
-        changes: circleChanges,
-      });
-    }
+    // Setup completion is a milestone in its own right — record it even when the owner
+    // finishes with default answers (no answer diff). `changes` is empty in that case,
+    // like a created/archived event.
+    await recordEvent(ctx, {
+      entity: circleEntity(args.circleId),
+      actor: access.membership,
+      action: "setup_completed",
+      changes: circleChanges,
+    });
 
     const createdCategoryIds: Id<"categories">[] = [];
     for (const category of starterCategories(answers)) {

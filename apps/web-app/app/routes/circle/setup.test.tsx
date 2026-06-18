@@ -2,6 +2,8 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { describe, expect, it, vi } from "vitest";
+import type { Member } from "~/lib/data.js";
+import { testId } from "~/test/convex/ids.js";
 import {
   type ConvexState,
   configureConvex,
@@ -16,7 +18,7 @@ import CircleSetup from "./setup.js";
 
 const ownerMember = makeMemberView({ role: "owner", isSelf: true });
 const regularMember = makeMemberView({
-  id: makeMemberView().id,
+  id: testId<Member["id"]>("member-maya"),
   role: "member",
   isSelf: true,
   displayName: "Maya Member",
@@ -98,7 +100,7 @@ describe("Circle setup", () => {
     expect(screen.queryByRole("button", { name: "Finish setup" })).not.toBeInTheDocument();
   });
 
-  it("redirects non-owners to the dashboard", async () => {
+  it("shows a waiting notice to non-owners instead of looping", async () => {
     const completeCircleSetup = vi.fn();
     const circle = makeCircleView({ ref: "trip-c1", setupComplete: false });
     const view = renderSetup(circle, {
@@ -106,9 +108,8 @@ describe("Circle setup", () => {
       members: [regularMember],
     });
 
-    await waitFor(() => {
-      expect(view.location()).toBe(`/circles/${circle.ref}`);
-    });
+    expect(await screen.findByText(/owner is still setting things up/i)).toBeInTheDocument();
+    expect(view.location()).toBe(`/circles/${circle.ref}/setup`);
     expect(completeCircleSetup).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Finish setup" })).not.toBeInTheDocument();
   });

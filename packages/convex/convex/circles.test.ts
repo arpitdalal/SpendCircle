@@ -120,7 +120,9 @@ describe("completeCircleSetup", () => {
         .query("histories")
         .withIndex("by_entity", (q) => q.eq("entityId", circleId))
         .collect();
-      expect(circleEvents).toHaveLength(0);
+      expect(circleEvents).toHaveLength(1);
+      expect(circleEvents[0]?.action).toBe("setup_completed");
+      expect(circleEvents[0]?.changes).toEqual([]);
     });
   });
 

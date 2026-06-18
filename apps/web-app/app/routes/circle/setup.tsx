@@ -48,7 +48,11 @@ export default function CircleSetup() {
   }
 
   if (!viewerIsOwner(members)) {
-    return <Navigate to={dashboardPath} replace />;
+    return (
+      <p className="text-sm text-muted-foreground">
+        The circle owner is still setting things up. Check back soon.
+      </p>
+    );
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {

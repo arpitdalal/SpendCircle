@@ -120,6 +120,20 @@ describe("HistoryList — content", () => {
     expect(screen.getByText("Residence type:")).toBeInTheDocument();
     expect(screen.getByText("Color:")).toBeInTheDocument();
   });
+
+  it("labels setup completion even when there are no answer changes", () => {
+    renderList([
+      {
+        id: "h1",
+        action: "setup_completed",
+        createdAt: Date.UTC(2026, 4, 16, 14, 5),
+        actor: { displayName: "Olive Owner" },
+        changes: [],
+      },
+    ]);
+
+    expect(screen.getByText(/completed setup/)).toBeInTheDocument();
+  });
 });
 
 describe("HistoryList — read states", () => {
