@@ -54,6 +54,7 @@ const ACTION_LABEL: Record<string, string> = {
   archived: "archived",
   restored: "restored",
   settings_changed: "updated settings",
+  setup_completed: "completed setup",
 };
 
 /** Renders one frozen value — a typed money value in the viewer locale (ADR 0021), or a

@@ -43,6 +43,7 @@ function toCircleView(circle: Doc<"circles">) {
     mark: circle.mark,
     status: circle.status,
     setupAnswers: circle.setupAnswers,
+    setupComplete: circle.setupCompletedAt !== undefined,
     currencyLocked: circle.currencyLocked,
   };
 }
@@ -165,15 +166,12 @@ export const updateCircleSettings = mutation({
       setupAnswers: args.setupAnswers,
     });
 
-    // The FIRST write of setup answers must go through completeCircleSetup, which
-    // also seeds the starter Categories as a one-shot. completeCircleSetup treats
-    // any defined setupAnswers as "already complete", so accepting answers here on a
-    // Circle that hasn't completed setup (setupAnswers still undefined) would flip it
-    // to done and skip that seeding for good — leaving the Circle without its starter
-    // defaults. Defer answer edits until setup is complete; color edits stay allowed.
-    // (Server-side enforcement per ADR 0015 — the UI route gate is courtesy only.
-    // CS-5 re-homes this guard onto the explicit `setupCompletedAt` flag.)
-    if (input.setupAnswers !== undefined && access.circle.setupAnswers === undefined) {
+    // Setup answers must not be edited until the owner has finished Circle Setup via
+    // completeCircleSetup (one-shot starter seeding). The explicit completion flag
+    // separates workflow milestone from answer data — a completed Circle with empty
+    // answers can still edit answers here. Color edits stay allowed either way.
+    // (Server-side enforcement per ADR 0015 — the UI route gate is courtesy only.)
+    if (input.setupAnswers !== undefined && access.circle.setupCompletedAt === undefined) {
       throw new Error("Complete circle setup before editing setup answers");
     }
 
@@ -251,24 +249,26 @@ export const completeCircleSetup = mutation({
       throw new Error("Only the owner can complete circle setup");
     }
     access.assertWritable();
-    if (access.circle.setupAnswers !== undefined) {
+    if (access.circle.setupCompletedAt !== undefined) {
       throw new Error("Circle setup is already complete");
     }
 
     const answers = circleSetupAnswersSchema.parse(args.answers);
+    const now = Date.now();
     const circleChanges: HistoryChange[] = setupAnswerChanges(access.circle.setupAnswers, answers);
-    const patch: Partial<Doc<"circles">> = { setupAnswers: answers };
+    const patch: Partial<Doc<"circles">> = { setupAnswers: answers, setupCompletedAt: now };
 
     await ctx.db.patch(args.circleId, patch);
 
-    if (circleChanges.length > 0) {
-      await recordEvent(ctx, {
-        entity: circleEntity(args.circleId),
-        actor: access.membership,
-        action: "setup_completed",
-        changes: circleChanges,
-      });
-    }
+    // Setup completion is a milestone in its own right — record it even when the owner
+    // finishes with default answers (no answer diff). `changes` is empty in that case,
+    // like a created/archived event.
+    await recordEvent(ctx, {
+      entity: circleEntity(args.circleId),
+      actor: access.membership,
+      action: "setup_completed",
+      changes: circleChanges,
+    });
 
     const createdCategoryIds: Id<"categories">[] = [];
     for (const category of starterCategories(answers)) {

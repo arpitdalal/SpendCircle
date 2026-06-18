@@ -39,6 +39,7 @@ export const MOCK_CIRCLES: Circle[] = [
     mark: "P",
     status: "active",
     setupAnswers: undefined,
+    setupComplete: true,
     currencyLocked: false,
   },
 ];
@@ -302,8 +303,21 @@ export function mockCircle(id: string): Circle {
     mark: "M",
     status: "active",
     setupAnswers: undefined,
+    // Mock-synthesized Circles stand in for fixture-backed routes offline (ADR 0006).
+    // They are always past setup — there is no Convex `completeCircleSetup` in MOCKS.
+    setupComplete: true,
     currencyLocked: false,
   };
+}
+
+/**
+ * Resolves a Circle for mock-mode route guards (`useResolvedCircle`). Prefer a
+ * `MOCK_CIRCLES` list entry when the parsed id matches so the guard sees the same
+ * Circle as `listMyCircles`; otherwise synthesize a complete ad-hoc Circle for deep
+ * links into fixture routes.
+ */
+export function mockResolvedCircle(id: string) {
+  return MOCK_CIRCLES.find((circle) => circle.id === id) ?? mockCircle(id);
 }
 
 /**

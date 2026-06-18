@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SKELETON_DELAY_MS } from "~/lib/route-skeleton.js";
-import { configureConvex, makeCircleView } from "~/test/convex-react.js";
+import { configureConvex, makeCircleView, makeMemberView } from "~/test/convex-react.js";
 import { installIntersectionObserverStub } from "~/test/intersection-observer-stub.js";
 import { deferred, renderRouteStub } from "~/test/router-stub.js";
 
@@ -18,6 +18,7 @@ import { deferred, renderRouteStub } from "~/test/router-stub.js";
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
+import CircleSetup from "../circle/setup.js";
 import CircleLayout from "./circle-layout.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: thin route-tree stand-ins; the layout is the unit under test.
@@ -158,5 +159,51 @@ describe("CircleLayout shell skeleton", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("CircleLayout setup gate", () => {
+  const ownerMember = makeMemberView({ role: "owner", isSelf: true });
+
+  it("redirects incomplete Circles to setup, but not when already on setup", async () => {
+    configureConvex({
+      circle: makeCircleView({ ref: "trip-c1", setupComplete: false }),
+      members: [ownerMember],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/circles/:circleRef",
+          Component: CircleLayout,
+          children: [
+            { index: true, Component: () => <h2>Dashboard stub</h2> },
+            { path: "setup", Component: CircleSetup },
+          ],
+        },
+      ],
+      ["/circles/trip-c1"],
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Circle setup" })).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Dashboard stub")).not.toBeInTheDocument();
+  });
+
+  it("lets complete Circles render child routes normally", async () => {
+    configureConvex({ circle: makeCircleView({ ref: "trip-c1", setupComplete: true }) });
+    renderRouteStub(
+      [
+        {
+          path: "/circles/:circleRef",
+          Component: CircleLayout,
+          children: [{ index: true, Component: () => <h2>Dashboard stub</h2> }],
+        },
+      ],
+      ["/circles/trip-c1"],
+    );
+
+    expect(await screen.findByText("Dashboard stub")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Circle setup" })).not.toBeInTheDocument();
   });
 });

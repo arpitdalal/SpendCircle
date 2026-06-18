@@ -1,4 +1,10 @@
-import { clickCircleChromeTab, createCategoryViaForm, expect, test } from "./fixtures.js";
+import {
+  clickCircleChromeTab,
+  createCategoryViaForm,
+  createRegularCircleAndFinishSetup,
+  expect,
+  test,
+} from "./fixtures.js";
 
 /**
  * TRUE-E2E (ADR 0019): create a Category through the real frontend → Convex
@@ -163,13 +169,7 @@ test("the category filter searches, scopes by status, reloads from the URL, and 
   const otherName = `E2E Filter Other ${nonce}`;
 
   // An isolated Circle keeps the seeding out of the Personal Circle's pickers.
-  await page.goto("/");
-  await page.getByRole("button", { name: "Circles" }).click();
-  await page.getByRole("menu").getByRole("menuitem", { name: "Create circle" }).click();
-  await page.getByLabel("Name").fill(`E2E Filter Circle ${nonce}`);
-  await page.getByRole("button", { name: "Create circle" }).click();
-  await page.getByRole("button", { name: "Skip" }).click();
-  await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+  await createRegularCircleAndFinishSetup(page, { name: `E2E Filter Circle ${nonce}` });
   await clickCircleChromeTab(page, "Categories");
 
   // Seed 26 matching + 1 non-matching expense Categories (page size is 25). Each create
