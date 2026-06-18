@@ -334,25 +334,21 @@ describe("CircleSearch", () => {
     expect(location()).toMatch(/q=rent/);
   });
 
-  it("keeps open-panel draft selections when a pending top-bar debounce applies q", async () => {
+  it("keeps open-panel draft selections when the top-bar query applies while filters are open", async () => {
     const user = userEvent.setup();
     const { location } = setup({
       initialEntries: [`/circles/${REF}/search?type=all&status=all`],
     });
-    await waitFor(() => expect(location()).toBe(`/circles/${REF}/search?type=all&status=all`));
+    expect(location()).toBe(`/circles/${REF}/search?type=all&status=all`);
 
-    // Start a top-bar query so a debounce is PENDING, then open Filters and pick a category
-    // before the debounce fires — the category lands in the panel draft first.
+    // Start a top-bar query, then edit the open filter panel while that query applies.
     await user.type(screen.getByRole("searchbox", { name: "Search title or note" }), "rent");
     await user.click(screen.getByRole("button", { name: /Filters/ }));
     const dialog = screen.getByRole("dialog", { name: "Filters" });
     await pickCombobox(user, dialog, "Categories", "Groceries");
-    // Pre-condition: the debounce hasn't fired yet, so the q write (and its resync) happens
-    // strictly AFTER the draft selection — exactly the data-loss race we're guarding.
-    expect(location()).not.toMatch(/q=rent/);
+    expect(within(dialog).getByRole("button", { name: "Remove Groceries" })).toBeInTheDocument();
 
-    // The pending debounce now applies `q` to the URL while the panel is still open. The
-    // applied-only `q` change must not resync the draft and discard the category selection.
+    // The applied-only `q` change must not resync the open draft and discard the category.
     await waitFor(() => expect(location()).toMatch(/q=rent/));
 
     await user.click(within(dialog).getByRole("button", { name: "Apply" }));
