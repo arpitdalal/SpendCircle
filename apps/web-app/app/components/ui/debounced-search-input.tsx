@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 const DEFAULT_DEBOUNCE_MS = 250;
 
@@ -38,16 +38,21 @@ export function DebouncedSearchInput({
     }
   }, [value]);
 
+  // `normalize`/`onSearch` are read at their latest value via an Effect Event so the
+  // debounce timer only resets when the text or delay actually changes — never on an
+  // unrelated re-render (callers pass inline callbacks). See react.dev/reference/react/useEffectEvent
+  const flush = useEffectEvent((raw: string) => {
+    const clean = normalize(raw);
+    if (clean !== applied.current) {
+      applied.current = clean;
+      onSearch(clean);
+    }
+  });
+
   useEffect(() => {
-    const handle = setTimeout(() => {
-      const clean = normalize(text);
-      if (clean !== applied.current) {
-        applied.current = clean;
-        onSearch(clean);
-      }
-    }, debounceMs);
+    const handle = setTimeout(() => flush(text), debounceMs);
     return () => clearTimeout(handle);
-  }, [text, onSearch, normalize, debounceMs]);
+  }, [text, debounceMs]);
 
   function commit() {
     const clean = normalize(text);

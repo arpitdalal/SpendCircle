@@ -28,8 +28,7 @@ export function InfiniteScrollFooter({
 
   return (
     <>
-      <div
-        role="status"
+      <output
         aria-live="polite"
         aria-atomic="true"
         aria-label={listAriaLabel}
@@ -40,7 +39,7 @@ export function InfiniteScrollFooter({
         )}
       >
         {status === "LoadingMore" ? loadingCopy : "\u00a0"}
-      </div>
+      </output>
       {status === "CanLoadMore" ? (
         <div
           ref={sentinelRef}

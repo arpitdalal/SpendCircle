@@ -90,7 +90,7 @@ export function TransactionForm({
 
   const categories = useCategories(circle.id, activeType, { includeArchived: true });
   const members = useMembers(circle.id);
-  const allCategories = categories ?? [];
+  const allCategories = useMemo(() => categories ?? [], [categories]);
   const [inlineCreatedCategories, setInlineCreatedCategories] = useState<Category[]>([]);
 
   useEffect(() => {

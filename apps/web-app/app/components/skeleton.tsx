@@ -36,10 +36,10 @@ export function SkeletonRegion({
   children: ReactNode;
 }) {
   return (
-    <div role="status" aria-busy="true" data-testid={testId} className={className}>
+    <output aria-busy="true" data-testid={testId} className={cn("block", className)}>
       <span className="sr-only">{label}</span>
       {children}
-    </div>
+    </output>
   );
 }
 
@@ -56,11 +56,7 @@ export function LoadingStatus({ loading, label }: { loading: boolean; label: str
   if (!loading) {
     return null;
   }
-  return (
-    <span role="status" className="sr-only">
-      {label}
-    </span>
-  );
+  return <output className="sr-only">{label}</output>;
 }
 
 /** Three stat-card placeholders shaped like the totals grid the Dashboard and the
