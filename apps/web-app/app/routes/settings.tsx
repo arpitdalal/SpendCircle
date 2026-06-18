@@ -84,7 +84,7 @@ function ProfileSettingsForm({ user }: { user: SessionUser }) {
           id="settings-display-name"
           value={displayName}
           onChange={(event) => setDisplayName(event.target.value)}
-          maxLength={LIMITS.circleNameMax}
+          maxLength={LIMITS.displayNameMax}
           autoComplete="name"
           required
         />
@@ -92,7 +92,7 @@ function ProfileSettingsForm({ user }: { user: SessionUser }) {
 
       <Field>
         <FieldLabel htmlFor="settings-email">Google account email</FieldLabel>
-        <Input id="settings-email" value={user.email} readOnly disabled className="opacity-80" />
+        <Input id="settings-email" value={user.email} readOnly className="opacity-80" />
       </Field>
 
       {error ? <FieldError>{error}</FieldError> : null}

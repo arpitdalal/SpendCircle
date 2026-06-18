@@ -231,6 +231,12 @@ describe("completeOnboarding", () => {
       expect(circle?.name).toBe("Ada's Circle");
       expect(circle?.mark).toBe("AC");
 
+      const ownerMembership = await ctx.db
+        .query("members")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .first();
+      expect(ownerMembership?.displayName).toBe("Ada King");
+
       const history = await ctx.db.query("histories").collect();
       expect(history).toHaveLength(0);
     });

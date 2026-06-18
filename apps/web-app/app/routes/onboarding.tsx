@@ -78,7 +78,7 @@ function OnboardingForm({ user }: { user: { email: string; displayName: string }
             id="onboarding-display-name"
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
-            maxLength={LIMITS.circleNameMax}
+            maxLength={LIMITS.displayNameMax}
             autoComplete="name"
             required
           />
@@ -86,13 +86,7 @@ function OnboardingForm({ user }: { user: { email: string; displayName: string }
 
         <Field>
           <FieldLabel htmlFor="onboarding-email">Google account email</FieldLabel>
-          <Input
-            id="onboarding-email"
-            value={user.email}
-            readOnly
-            disabled
-            className="opacity-80"
-          />
+          <Input id="onboarding-email" value={user.email} readOnly className="opacity-80" />
         </Field>
 
         {error ? <FieldError>{error}</FieldError> : null}

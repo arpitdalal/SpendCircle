@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -84,5 +84,25 @@ describe("Settings profile form", () => {
 
     expect(screen.getByText("Name is required")).toBeInTheDocument();
     expect(updateProfile).not.toHaveBeenCalled();
+  });
+
+  it("saves a valid display name and shows confirmation", async () => {
+    const updateProfile = vi.fn().mockResolvedValue(undefined);
+    configureConvex({
+      currentUser: makeCurrentUserView({ displayName: "Ada Lovelace" }),
+      updateProfile,
+    });
+    const user = userEvent.setup();
+    renderSettings();
+
+    const input = await screen.findByLabelText("Display name");
+    await user.clear(input);
+    await user.type(input, "  Bob Builder  ");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(updateProfile).toHaveBeenCalledWith({ displayName: "Bob Builder" });
+    });
+    expect(screen.getByText("Profile updated.")).toBeInTheDocument();
   });
 });

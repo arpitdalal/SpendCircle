@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Link } from "react-router";
+import { createRoutesStub, Link } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SKELETON_DELAY_MS } from "~/lib/route-skeleton.js";
+import { SnackbarProvider } from "~/lib/snackbar.js";
 import { configureConvex, makeCurrentUserView } from "~/test/convex-react.js";
 import { installIntersectionObserverStub } from "~/test/intersection-observer-stub.js";
 import { deferred, renderRouteStub } from "~/test/router-stub.js";
@@ -165,6 +166,60 @@ describe("ProtectedLayout onboarding gate", () => {
         },
       ],
       ["/"],
+    );
+
+    expect(await screen.findByText("Home stub")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Welcome" })).not.toBeInTheDocument();
+  });
+
+  it("completes onboarding and lets the User reach the app shell", async () => {
+    let currentUser = makeCurrentUserView({
+      onboardingComplete: false,
+      displayName: "Ada Lovelace",
+    });
+    const completeOnboarding = vi.fn(async () => {
+      currentUser = makeCurrentUserView({
+        onboardingComplete: true,
+        displayName: "Ada King",
+      });
+    });
+    configureConvex({
+      currentUser: () => currentUser,
+      circles: [],
+      completeOnboarding,
+    });
+
+    const routes = [
+      {
+        path: "/",
+        Component: ProtectedLayout,
+        children: [
+          { index: true, Component: () => <h2>Home stub</h2> },
+          { path: "onboarding", Component: OnboardingRoute },
+        ],
+      },
+    ];
+    const Stub = createRoutesStub(routes);
+    const view = render(
+      <SnackbarProvider>
+        <Stub initialEntries={["/onboarding"]} />
+      </SnackbarProvider>,
+    );
+
+    const user = userEvent.setup();
+    const input = await screen.findByLabelText("Display name");
+    await user.clear(input);
+    await user.type(input, "  Ada King  ");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(completeOnboarding).toHaveBeenCalledWith({ displayName: "Ada King" });
+    });
+
+    view.rerender(
+      <SnackbarProvider>
+        <Stub key="session-updated" initialEntries={["/onboarding"]} />
+      </SnackbarProvider>,
     );
 
     expect(await screen.findByText("Home stub")).toBeInTheDocument();
