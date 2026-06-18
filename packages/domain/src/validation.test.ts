@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { COLOR_PALETTE, colorLabel } from "./color.js";
+import { COLOR_PALETTE, colorLabel, NEW_CIRCLE_COLOR } from "./color.js";
 import { MAX_AMOUNT_MINOR } from "./money.js";
 import {
   categoryInputSchema,
+  circleInputSchema,
   circleSettingsUpdateSchema,
   LIMITS,
   parseProfileUpdate,
@@ -112,10 +113,38 @@ describe("circleSettingsUpdateSchema (server contract)", () => {
     expect(circleSettingsUpdateSchema.safeParse({ color: "chartreuse" }).success).toBe(false);
   });
 
+  it("rejects the create-time iris color (not re-selectable in Settings)", () => {
+    expect(circleSettingsUpdateSchema.safeParse({ color: NEW_CIRCLE_COLOR.id }).success).toBe(
+      false,
+    );
+  });
+
   it("rejects an invalid setup purpose", () => {
     expect(
       circleSettingsUpdateSchema.safeParse({ setupAnswers: { purpose: "vacation" } }).success,
     ).toBe(false);
+  });
+});
+
+describe("circleInputSchema (create contract)", () => {
+  const valid = {
+    name: "Home",
+    currency: "USD",
+    color: NEW_CIRCLE_COLOR.id,
+    mark: "H",
+  } as const;
+
+  it("accepts the reserved create-time iris color", () => {
+    expect(circleInputSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("defaults color to iris when omitted", () => {
+    const { color: _color, ...withoutColor } = valid;
+    expect(circleInputSchema.parse(withoutColor).color).toBe(NEW_CIRCLE_COLOR.id);
+  });
+
+  it("rejects a palette color id on create", () => {
+    expect(circleInputSchema.safeParse({ ...valid, color: "teal" }).success).toBe(false);
   });
 });
 

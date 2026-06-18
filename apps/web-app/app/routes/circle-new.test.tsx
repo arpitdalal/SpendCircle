@@ -1,4 +1,4 @@
-import { buildRef } from "@spend-circle/domain";
+import { buildRef, NEW_CIRCLE_COLOR } from "@spend-circle/domain";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
@@ -45,16 +45,15 @@ describe("Create Circle", () => {
     const view = renderCreate();
 
     await user.type(screen.getByLabelText("Name"), "My Home");
-    await user.click(screen.getByRole("button", { name: "Teal" }));
     await user.click(screen.getByRole("button", { name: "Create circle" }));
 
     // The Mark is derived from the name's initials ("My Home" → "MH"); the locale
-    // default Currency (jsdom en-US → USD) and the chosen Color ride along.
+    // default Currency (jsdom en-US → USD) and the reserved create-time iris Color ride along.
     expect(createCircle).toHaveBeenCalledTimes(1);
     expect(createCircle).toHaveBeenCalledWith({
       name: "My Home",
       currency: "USD",
-      color: "teal",
+      color: NEW_CIRCLE_COLOR.id,
       mark: "MH",
     });
 

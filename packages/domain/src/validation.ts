@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isValidColorId } from "./color.js";
+import { isNewCircleColorId, isValidColorId, NEW_CIRCLE_COLOR } from "./color.js";
 import { isSupportedCurrency } from "./currency.js";
 import { isValidPlainDate } from "./date.js";
 import { type AmountParseError, isValidMinorUnits, parseAmountToMinorUnits } from "./money.js";
@@ -28,6 +28,16 @@ export const LIMITS = {
 
 const colorId = z.string().refine(isValidColorId, { message: "Unsupported color" });
 
+const circleCreateColorId = z
+  .string()
+  .refine(isNewCircleColorId, { message: "Unsupported color" })
+  .default(NEW_CIRCLE_COLOR.id);
+
+/** Palette colors only — the create-time iris color is not re-selectable in Settings. */
+const circleSettingsColorId = z
+  .string()
+  .refine((id) => isValidColorId(id) && !isNewCircleColorId(id), { message: "Unsupported color" });
+
 /** Server-facing profile edit input (USR-1). */
 export const profileUpdateSchema = z.object({
   displayName: z.string().trim().min(1, "Name is required").max(LIMITS.displayNameMax),
@@ -53,7 +63,7 @@ export function parseProfileUpdate(input: { displayName: string }): ProfileUpdat
 export const circleInputSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(LIMITS.circleNameMax),
   currency: z.string().refine(isSupportedCurrency, { message: "Unsupported currency" }),
-  color: colorId,
+  color: circleCreateColorId,
   mark: z.string().trim().min(1).max(2),
 });
 export type CircleInput = z.infer<typeof circleInputSchema>;
@@ -85,7 +95,7 @@ export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
  * field is validated by the same rule as on create/setup so the entry points can't drift.
  */
 export const circleSettingsUpdateSchema = z.object({
-  color: colorId.optional(),
+  color: circleSettingsColorId.optional(),
   setupAnswers: circleSetupAnswersSchema.optional(),
 });
 export type CircleSettingsUpdateInput = z.infer<typeof circleSettingsUpdateSchema>;

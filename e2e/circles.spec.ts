@@ -22,8 +22,6 @@ test("a user creates a regular circle from the shell and can finish setup", asyn
 
   await expect(page.getByRole("heading", { name: "Create a circle" })).toBeVisible();
   await page.getByLabel("Name").fill(name);
-  // Pick a non-default palette color so the choice is exercised, not the default.
-  await page.getByRole("button", { name: "Teal" }).click();
   await page.getByRole("button", { name: "Create circle" }).click();
 
   // Lands on the new Circle's canonical setup route (ADR 0016 + CS-1).

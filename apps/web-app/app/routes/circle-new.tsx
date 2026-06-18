@@ -1,12 +1,11 @@
 import {
   buildRef,
-  COLOR_PALETTE,
   circleInputSchema,
   colorLabel,
-  DEFAULT_COLOR_ID,
   defaultCurrencyForLocale,
   initials,
   LIMITS,
+  newCircleColorId,
   SUPPORTED_CURRENCIES,
 } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
@@ -17,16 +16,17 @@ import { buttonVariants } from "~/components/ui/button-variants.js";
 import { useCreateCircle } from "~/lib/data.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { useSnackbar } from "~/lib/snackbar.js";
-import { cn } from "~/lib/utils.js";
 
 /**
  * Create a regular Circle (CS-0; PRD stories 6, 10, 11). Name (required) plus a
- * Currency, a Color, and an auto-derived Circle Mark:
+ * Currency and an auto-derived Circle Mark:
  *
  * - Currency defaults from the viewer's locale with a USD fallback via the shared
  *   domain helper (CONTEXT: Currency) — never hardcoded USD in the UI — and is
  *   chosen from `SUPPORTED_CURRENCIES`.
- * - Color is a palette pick (PRD 11), defaulting to the app's default color.
+ * - Color is the reserved iris accent ({@link newCircleColorId}) assigned at
+ *   creation — outside the picker palette so new Circles stand out; the Owner
+ *   can change it later in Settings (CS-2).
  * - The Mark is derived from the name's initials and shown live in a preview; it is
  *   not an editable field here (editing the Mark/Color after creation is CS-2).
  *
@@ -46,7 +46,7 @@ export default function CreateCircle() {
   // as a plain string (the <select> writes back any option value); the shared schema
   // narrows it to a SUPPORTED_CURRENCIES code at submit and the server re-validates.
   const [currency, setCurrency] = useState<string>(() => defaultCurrencyForLocale(viewerLocale()));
-  const [color, setColor] = useState<string>(DEFAULT_COLOR_ID);
+  const color = newCircleColorId();
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -103,10 +103,12 @@ export default function CreateCircle() {
         className="space-y-5 rounded-xl border border-border bg-card p-5 shadow-sm"
       >
         <div className="flex items-center gap-3">
-          {/* Live Mark preview: the derived initials tinted with the chosen Color. */}
+          {/* Live Mark preview: the derived initials tinted with the create-time Color. */}
           <CircleMark mark={mark} color={color} className="size-12 text-base" />
           <p className="text-xs text-muted-foreground">
-            The mark is made from your circle’s initials and color.
+            The mark is made from your circle’s initials. New circles start with the{" "}
+            {colorLabel(color)} accent so they’re easy to spot — you can change the color later in
+            settings.
           </p>
         </div>
 
@@ -154,27 +156,6 @@ export default function CreateCircle() {
             transactions.
           </p>
         </div>
-
-        <fieldset className="space-y-1.5">
-          <legend className="text-sm font-medium">Color</legend>
-          <div className="flex flex-wrap gap-2">
-            {COLOR_PALETTE.map((paletteColor) => (
-              <button
-                key={paletteColor.id}
-                type="button"
-                aria-label={paletteColor.name}
-                aria-pressed={color === paletteColor.id}
-                onClick={() => setColor(paletteColor.id)}
-                style={{ backgroundColor: paletteColor.hex }}
-                className={cn(
-                  "size-7 rounded-full ring-offset-2 ring-offset-background transition",
-                  color === paletteColor.id ? "ring-2 ring-ring" : "ring-0",
-                )}
-              />
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">{colorLabel(color)}</p>
-        </fieldset>
 
         {error ? (
           <p id="circle-error" role="alert" className="text-sm text-destructive">

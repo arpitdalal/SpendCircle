@@ -4,7 +4,7 @@ import {
   circleSettingsUpdateSchema,
   circleSetupAnswersSchema,
   colorLabel,
-  DEFAULT_COLOR_ID,
+  NEW_CIRCLE_COLOR,
   starterCategories,
 } from "@spend-circle/domain";
 import { v } from "convex/values";
@@ -117,7 +117,7 @@ export const createCircle = mutation({
       name: input.name,
       kind: "regular",
       currency: input.currency,
-      color: input.color || DEFAULT_COLOR_ID,
+      color: NEW_CIRCLE_COLOR.id,
       mark: input.mark,
       ownerUserId: user._id,
       status: "active",

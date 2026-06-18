@@ -1,8 +1,16 @@
+import { NEW_CIRCLE_COLOR } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import schema from "./schema.js";
-import { addMember, makeCategory, seedCircle, seedFixture, seedTransaction } from "./test/seed.js";
+import {
+  addMember,
+  makeCategory,
+  makeUser,
+  seedCircle,
+  seedFixture,
+  seedTransaction,
+} from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({
@@ -453,5 +461,40 @@ describe("updateCircleSettings", () => {
       expect(categories).toHaveLength(1);
       expect(categories[0]?.name).toBe("Rent");
     });
+  });
+});
+
+describe("createCircle", () => {
+  it("assigns the reserved iris create-time color", async () => {
+    const t = convexTest(schema, modules);
+    const owner = await t.run((ctx) => makeUser(ctx, "creator@example.com", "Casey Creator"));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const circleId = await t.mutation(api.circles.createCircle, {
+      name: "New Trip",
+      currency: "USD",
+      color: NEW_CIRCLE_COLOR.id,
+      mark: "NT",
+    });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.color).toBe(NEW_CIRCLE_COLOR.id);
+    });
+  });
+
+  it("rejects a palette color id on create", async () => {
+    const t = convexTest(schema, modules);
+    const owner = await t.run((ctx) => makeUser(ctx, "creator@example.com", "Casey Creator"));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.circles.createCircle, {
+        name: "New Trip",
+        currency: "USD",
+        color: "teal",
+        mark: "NT",
+      }),
+    ).rejects.toThrow();
   });
 });

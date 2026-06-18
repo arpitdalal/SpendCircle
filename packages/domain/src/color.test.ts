@@ -4,7 +4,10 @@ import {
   colorHex,
   colorLabel,
   DEFAULT_COLOR_ID,
+  isNewCircleColorId,
   isValidColorId,
+  NEW_CIRCLE_COLOR,
+  newCircleColorId,
   paletteColorForSeed,
   randomColorId,
 } from "./color.js";
@@ -14,6 +17,10 @@ describe("colorHex", () => {
     for (const color of COLOR_PALETTE) {
       expect(colorHex(color.id)).toBe(color.hex);
     }
+  });
+
+  it("returns the iris hex for the create-time circle color id", () => {
+    expect(colorHex(NEW_CIRCLE_COLOR.id)).toBe(NEW_CIRCLE_COLOR.hex);
   });
 
   it("falls back to the default color's hex for an unknown id", () => {
@@ -27,6 +34,10 @@ describe("colorLabel", () => {
   it("returns the palette name for a known id and echoes an unknown id", () => {
     expect(colorLabel("blue")).toBe("Blue");
     expect(colorLabel("not-a-color")).toBe("not-a-color");
+  });
+
+  it("returns Iris for the create-time circle color id", () => {
+    expect(colorLabel(NEW_CIRCLE_COLOR.id)).toBe("Iris");
   });
 });
 
@@ -58,5 +69,17 @@ describe("randomColorId", () => {
     for (let i = 0; i < 30; i += 1) {
       expect(isValidColorId(randomColorId())).toBe(true);
     }
+  });
+});
+
+describe("newCircleColorId", () => {
+  it("returns the reserved create-time iris color id", () => {
+    expect(newCircleColorId()).toBe(NEW_CIRCLE_COLOR.id);
+    expect(isNewCircleColorId(newCircleColorId())).toBe(true);
+  });
+
+  it("is not a palette color id", () => {
+    expect(isValidColorId(newCircleColorId())).toBe(false);
+    expect(COLOR_PALETTE.map((color) => color.id)).not.toContain(newCircleColorId());
   });
 });

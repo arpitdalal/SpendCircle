@@ -43,10 +43,36 @@ export function isValidColorId(id: string): id is ColorId {
  * so a caller never gets an empty string.
  */
 export function colorLabel(id: string): string {
+  if (isNewCircleColorId(id)) {
+    return NEW_CIRCLE_COLOR.name;
+  }
   return COLOR_NAMES.get(id) ?? id;
 }
 
 export const DEFAULT_COLOR_ID: ColorId = "blue";
+
+/**
+ * The reserved Circle Color assigned at regular-Circle creation (CS-0). Mirrors
+ * the app's iris `--primary` accent (oklch(0.63 0.2 295)) — outside
+ * {@link COLOR_PALETTE} so new Circles stand out and no Circle can pick this
+ * color later in Settings.
+ */
+export const NEW_CIRCLE_COLOR = {
+  id: "iris",
+  name: "Iris",
+  hex: "#4c23e4",
+} as const satisfies PaletteColor;
+
+export type NewCircleColorId = typeof NEW_CIRCLE_COLOR.id;
+
+export function isNewCircleColorId(id: string): id is NewCircleColorId {
+  return id === NEW_CIRCLE_COLOR.id;
+}
+
+/** The color id every new regular Circle is created with (not picker-selectable). */
+export function newCircleColorId(): NewCircleColorId {
+  return NEW_CIRCLE_COLOR.id;
+}
 
 /**
  * The hex for a palette color id ("blue" → "#3b82f6"). The presentational
@@ -56,6 +82,9 @@ export const DEFAULT_COLOR_ID: ColorId = "blue";
  * an empty string or a broken style.
  */
 export function colorHex(id: string): string {
+  if (isNewCircleColorId(id)) {
+    return NEW_CIRCLE_COLOR.hex;
+  }
   return COLOR_HEXES.get(id) ?? COLOR_HEXES.get(DEFAULT_COLOR_ID) ?? COLOR_PALETTE[0].hex;
 }
 
