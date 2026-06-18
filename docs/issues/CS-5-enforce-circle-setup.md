@@ -37,31 +37,31 @@ This slice makes setup **mandatory** for regular Circles and tracks completion *
 
 ### Backend (`packages/convex/convex`)
 
-- **Schema** (`schema.ts`): add `setupCompletedAt: v.optional(v.number())` to `circles`. Optional
-  (nullable) so this is **not** a breaking required-field migration (same approach noted at
-  `schema.ts:154`).
+- **Schema** (`schema.ts`): add required `setupCompletedAt: v.union(v.number(), v.null())` to
+  `circles`. `null` means incomplete; a number means complete. Existing rows must be backfilled
+  before this lands.
 - **Bootstrap** (`model.ts`): the Personal Circle insert sets `setupCompletedAt: now` — Personal
   Circles are complete by definition and never visit `/setup`.
-- **`createCircle`** (`circles.ts`): a regular Circle leaves `setupCompletedAt` **unset** — the
+- **`createCircle`** (`circles.ts`): a regular Circle sets `setupCompletedAt: null` — the
   owner must Finish setup. (No other change.)
 - **`completeCircleSetup`** (`circles.ts`): set `setupCompletedAt: now` in the patch, and change
-  the "already complete" guard to check `access.circle.setupCompletedAt !== undefined` (was
+  the "already complete" guard to check `access.circle.setupCompletedAt !== null` (was
   `setupAnswers !== undefined`). Starter seeding and the `setup_completed` history event are
   unchanged (CS-1). The default path (`answers = {}`) still seeds the 9 shared starters
   (`starterCategories({})`).
 - **`updateCircleSettings`** (`circles.ts`): **re-home the interim guard** added in PR #153.
   Replace "reject `setupAnswers` when `circle.setupAnswers === undefined`" with "reject
-  `setupAnswers` edits unless `circle.setupCompletedAt !== undefined`." This keeps the one-shot
+  `setupAnswers` edits unless `circle.setupCompletedAt !== null`." This keeps the one-shot
   invariant *and* correctly allows post-setup answer edits (the original presence-based guard was
   only correct for the pre-flag model). `color` edits remain allowed regardless.
-- **`toCircleView`** (`circles.ts`): expose a derived `setupComplete: circle.setupCompletedAt !== undefined`
+- **`toCircleView`** (`circles.ts`): expose a derived `setupComplete: circle.setupCompletedAt !== null`
   on the client view (keep `setupAnswers` for the settings form). The route gate reads this.
 - **Backfill** (`maintenance.ts`): an operator-key-guarded, paginated mutation
-  (`backfillCircleSetupCompleted`) that sets `setupCompletedAt` on every existing Circle missing
-  it — **grandfather all existing Circles as complete** so the new gate applies only to Circles
-  created from here on. Without this, any already-skipped Circle (and its Members) is trapped on
-  `/setup`. Follow the `backfillTransactionSearchText` pattern (bounded page + cursor + operator
-  key).
+  (`backfillCircleSetupCompleted`) that sets `setupCompletedAt` on every existing Circle before
+  making the field required — **grandfather all existing Circles as complete** so the new gate
+  applies only to Circles created from here on. Without this, any already-skipped Circle (and its
+  Members) is trapped on `/setup`. Follow the `backfillTransactionSearchText` pattern (bounded
+  page + cursor + operator key).
 
 ### Web (`apps/web-app/app`)
 
@@ -105,7 +105,7 @@ This slice makes setup **mandatory** for regular Circles and tracks completion *
 - **Mutation invariant (direct call):** calling `updateCircleSettings` with `setupAnswers` on an
   incomplete Circle is rejected server-side; on a complete Circle it succeeds (answers editable in
   CS-2 settings). `color` edits succeed in both states.
-- **Backfill:** existing Circles (seeded with no `setupCompletedAt`) become complete after the
+- **Backfill:** existing Circles become complete after the
   backfill runs to `isDone`; their Members are not redirected to `/setup`.
 
 ## Done when

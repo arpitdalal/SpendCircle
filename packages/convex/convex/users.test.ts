@@ -78,6 +78,7 @@ describe("propagateUserProfile", () => {
         mark: "T",
         ownerUserId: userId,
         status: "active",
+        setupCompletedAt: now,
         currencyLocked: false,
         createdAt: now,
       });
@@ -98,6 +99,7 @@ describe("propagateUserProfile", () => {
         mark: "O",
         ownerUserId: userId,
         status: "active",
+        setupCompletedAt: now,
         currencyLocked: false,
         createdAt: now,
       });

@@ -156,7 +156,7 @@ describe("completeCircleSetup", () => {
 
     await t.run(async (ctx) => {
       expect((await ctx.db.get(circleId))?.setupAnswers).toBeUndefined();
-      expect((await ctx.db.get(circleId))?.setupCompletedAt).toBeUndefined();
+      expect((await ctx.db.get(circleId))?.setupCompletedAt).toBeNull();
       expect(
         await ctx.db
           .query("categories")
@@ -351,7 +351,7 @@ describe("updateCircleSettings", () => {
 
   it("rejects setup-answer edits before setup is complete, but still allows color", async () => {
     const t = convexTest(schema, modules);
-    // seedCircle leaves setup incomplete — no setupCompletedAt yet.
+    // seedCircle leaves setup incomplete — setupCompletedAt is null.
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     mockCurrentUser.mockResolvedValue(owner);
 
@@ -370,7 +370,7 @@ describe("updateCircleSettings", () => {
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(circleId);
       expect(circle?.setupAnswers).toBeUndefined();
-      expect(circle?.setupCompletedAt).toBeUndefined();
+      expect(circle?.setupCompletedAt).toBeNull();
       expect(circle?.color).toBe("green");
     });
   });

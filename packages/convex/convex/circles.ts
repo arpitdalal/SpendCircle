@@ -43,7 +43,7 @@ function toCircleView(circle: Doc<"circles">) {
     mark: circle.mark,
     status: circle.status,
     setupAnswers: circle.setupAnswers,
-    setupComplete: circle.setupCompletedAt !== undefined,
+    setupComplete: circle.setupCompletedAt !== null,
     currencyLocked: circle.currencyLocked,
   };
 }
@@ -121,6 +121,7 @@ export const createCircle = mutation({
       mark: input.mark,
       ownerUserId: user._id,
       status: "active",
+      setupCompletedAt: null,
       currencyLocked: false,
       createdAt: now,
     });
@@ -171,7 +172,7 @@ export const updateCircleSettings = mutation({
     // separates workflow milestone from answer data — a completed Circle with empty
     // answers can still edit answers here. Color edits stay allowed either way.
     // (Server-side enforcement per ADR 0015 — the UI route gate is courtesy only.)
-    if (input.setupAnswers !== undefined && access.circle.setupCompletedAt === undefined) {
+    if (input.setupAnswers !== undefined && access.circle.setupCompletedAt === null) {
       throw new Error("Complete circle setup before editing setup answers");
     }
 
@@ -249,7 +250,7 @@ export const completeCircleSetup = mutation({
       throw new Error("Only the owner can complete circle setup");
     }
     access.assertWritable();
-    if (access.circle.setupCompletedAt !== undefined) {
+    if (access.circle.setupCompletedAt !== null) {
       throw new Error("Circle setup is already complete");
     }
 

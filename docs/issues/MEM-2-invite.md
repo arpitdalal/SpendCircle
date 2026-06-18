@@ -23,7 +23,7 @@ EML-2, accepting is MEM-3.
 
 - **Convex** new `packages/convex/convex/invitations.ts`:
   - `createInvitation` mutation: args `{ circleId, email }`. `requireCircleAccess` → Owner-only
-    → `assertWritable()` → reject if Circle Setup is incomplete (`setupCompletedAt` missing)
+    → `assertWritable()` → reject if Circle Setup is incomplete (`setupCompletedAt === null`)
     → reject if Circle is Personal (`kind === "personal"`) → normalize `emailLower` → reject
     if that email is already an **active Member** or has a **pending** Invitation (resend is
     MEM-4, not a second create) → generate a cryptographically random opaque token, store

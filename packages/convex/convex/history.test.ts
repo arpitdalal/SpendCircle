@@ -32,6 +32,7 @@ async function seedCircleWithOwner(
     mark: "P",
     ownerUserId: userId,
     status: "active",
+    setupCompletedAt: now,
     currencyLocked: false,
     createdAt: now,
   });

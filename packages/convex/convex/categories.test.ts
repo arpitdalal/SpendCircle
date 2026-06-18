@@ -70,6 +70,7 @@ async function seedCircle(
     mark: "T",
     ownerUserId: owner._id,
     status: opts.archived ? "archived" : "active",
+    setupCompletedAt: now,
     currencyLocked: false,
     createdAt: now,
   });
@@ -341,6 +342,7 @@ describe("createCategory — uniqueness (case-insensitive, includes archived)", 
         mark: "O",
         ownerUserId: owner._id,
         status: "active",
+        setupCompletedAt: Date.now(),
         currencyLocked: false,
         createdAt: Date.now(),
       });
@@ -1117,6 +1119,7 @@ describe("listCategoryHistory", () => {
         mark: "O",
         ownerUserId: creator._id,
         status: "active",
+        setupCompletedAt: Date.now(),
         currencyLocked: false,
         createdAt: Date.now(),
       });
