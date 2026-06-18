@@ -11,7 +11,7 @@ import type { EntityDouble } from "./contract.js";
 import { resolveWith } from "./contract.js";
 
 /** A zero Monthly Ledger summary — the default for tests that don't drive totals. */
-export const EMPTY_MONTHLY_SUMMARY: MonthlySummary = {
+const EMPTY_MONTHLY_SUMMARY: MonthlySummary = {
   totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
   currency: "USD",
 };

@@ -85,6 +85,7 @@ export default function CircleCategories() {
 
   // Canonicalize the address bar (replace) so a copied URL always carries
   // type+status — the transactions route's contract applied here.
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- URL must self-heal on load and when reactive filters diverge from the bar; no single user event owns that.
   useEffect(() => {
     const next = canonicalCategoriesParams(filters, searchParams);
     if (next.toString() !== searchParams.toString()) {
@@ -353,8 +354,20 @@ function CategoryRow({
  * submit is a server-side no-op that records no history.
  */
 function EditCategoryForm({ category, onClose }: { category: Category; onClose: () => void }) {
+  return <EditCategoryFormFields key={category.id} category={category} onClose={onClose} />;
+}
+
+function EditCategoryFormFields({
+  category,
+  onClose,
+}: {
+  category: Category;
+  onClose: () => void;
+}) {
   const updateCategory = useUpdateCategory();
+  // react-doctor-disable-next-line react-doctor/no-derived-useState -- parent key={category.id} remounts this editor per row/session.
   const [name, setName] = useState(category.name);
+  // react-doctor-disable-next-line react-doctor/no-derived-useState -- parent key={category.id} remounts this editor per row/session.
   const [color, setColor] = useState(category.color);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

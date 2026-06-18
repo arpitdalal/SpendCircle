@@ -10,7 +10,7 @@ import type { EntityDouble } from "./contract.js";
 import { resolveWith } from "./contract.js";
 
 /** A zero Dashboard — the default for tests that don't drive Dashboard state. */
-export const EMPTY_DASHBOARD: Dashboard = {
+const EMPTY_DASHBOARD: Dashboard = {
   totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 },
   recent: [],
   currency: "USD",
@@ -24,7 +24,7 @@ export const EMPTY_DASHBOARD: Dashboard = {
  * window the route actually requested. The window comes from the same domain helper
  * the backend uses (its math is covered by the domain + convex suites).
  */
-export function emptyMonthlyComparison(args: Record<string, unknown>): MonthlyComparison {
+function emptyMonthlyComparison(args: Record<string, unknown>): MonthlyComparison {
   const endMonth = typeof args.endMonth === "string" ? args.endMonth : "2026-06";
   const parsedRange = Number(args.rangeMonths);
   const rangeMonths = isComparisonRangeMonths(parsedRange)

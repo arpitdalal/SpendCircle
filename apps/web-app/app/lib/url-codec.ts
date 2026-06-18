@@ -6,7 +6,7 @@
  */
 
 /** Single source of truth for lifecycle clamping; type derives from this array. */
-export const LIFECYCLE_STATUSES = ["active", "archived", "all"] as const; // This use of `as` is fine because it's a const array
+const LIFECYCLE_STATUSES = ["active", "archived", "all"] as const; // This use of `as` is fine because it's a const array
 export type LifecycleFilterStatus = (typeof LIFECYCLE_STATUSES)[number];
 
 export function cleanText(value: string | null) {
@@ -37,7 +37,14 @@ export function readIds(value: string | null) {
 }
 
 export function writeIds(params: URLSearchParams, key: string, ids: string[]) {
-  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].sort();
+  const unique = [
+    ...new Set(
+      ids.flatMap((id) => {
+        const trimmed = id.trim();
+        return trimmed ? [trimmed] : [];
+      }),
+    ),
+  ].sort();
   if (unique.length > 0) {
     params.set(key, unique.join(","));
   } else {

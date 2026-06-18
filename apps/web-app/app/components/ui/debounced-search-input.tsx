@@ -28,6 +28,7 @@ export function DebouncedSearchInput({
   debounceMs?: number;
   className?: string;
 }) {
+  // react-doctor-disable-next-line react-doctor/no-derived-useState -- local draft state; external URL value resyncs below without clobbering in-flight typing.
   const [text, setText] = useState(value);
   const applied = useRef(value);
 
@@ -38,9 +39,6 @@ export function DebouncedSearchInput({
     }
   }, [value]);
 
-  // `normalize`/`onSearch` are read at their latest value via an Effect Event so the
-  // debounce timer only resets when the text or delay actually changes — never on an
-  // unrelated re-render (callers pass inline callbacks). See react.dev/reference/react/useEffectEvent
   const flush = useEffectEvent((raw: string) => {
     const clean = normalize(raw);
     if (clean !== applied.current) {

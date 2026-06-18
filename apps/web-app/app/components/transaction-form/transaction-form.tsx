@@ -10,7 +10,7 @@ import {
   toMutationArgs,
   transactionFieldSchemas,
 } from "@spend-circle/domain";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { FieldError, FieldGroup } from "~/components/ui/field.js";
 import {
   type Category,
@@ -92,34 +92,28 @@ export function TransactionForm({
   const members = useMembers(circle.id);
   const allCategories = useMemo(() => categories ?? [], [categories]);
   const [inlineCreatedCategories, setInlineCreatedCategories] = useState<Category[]>([]);
-
-  useEffect(() => {
-    setInlineCreatedCategories((prev) => {
-      if (prev.length === 0) {
-        return prev;
-      }
-      const next = prev.filter((category) => !allCategories.some((row) => row.id === category.id));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [allCategories]);
+  const pendingInlineCategories = useMemo(() => {
+    const knownIds = new Set(allCategories.map((category) => category.id));
+    return inlineCreatedCategories.filter((category) => !knownIds.has(category.id));
+  }, [allCategories, inlineCreatedCategories]);
 
   const activeCategories = useMemo(() => {
     const fromQuery = allCategories.filter((category) => category.status === "active");
     const known = new Set(fromQuery.map((category) => category.id));
-    const pending = inlineCreatedCategories.filter(
+    const pending = pendingInlineCategories.filter(
       (category) => category.status === "active" && !known.has(category.id),
     );
     return pending.length === 0 ? fromQuery : [...fromQuery, ...pending];
-  }, [allCategories, inlineCreatedCategories]);
+  }, [allCategories, pendingInlineCategories]);
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>(allCategories.map((category) => [category.id, category]));
-    for (const category of inlineCreatedCategories) {
+    for (const category of pendingInlineCategories) {
       if (!map.has(category.id)) {
         map.set(category.id, category);
       }
     }
     return map;
-  }, [allCategories, inlineCreatedCategories]);
+  }, [allCategories, pendingInlineCategories]);
 
   const alreadyAttached = new Set<string>(
     mode.kind === "edit" && !isTypeChanged
@@ -143,11 +137,6 @@ export function TransactionForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingType, setPendingType] = useState<TransactionType | null>(null);
   const confirmTypeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (pendingType) {
-      confirmTypeRef.current?.focus();
-    }
-  }, [pendingType]);
 
   const defaultValues: TransactionFormValues =
     mode.kind === "create"
@@ -235,6 +224,7 @@ export function TransactionForm({
       return;
     }
     setPendingType(next);
+    queueMicrotask(() => confirmTypeRef.current?.focus());
   };
   const confirmTypeChange = () => {
     if (!pendingType) {

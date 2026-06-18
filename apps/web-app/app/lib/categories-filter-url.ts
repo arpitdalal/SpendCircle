@@ -32,6 +32,7 @@ export const DEFAULT_CATEGORIES_TYPE: TypeFilter = "all";
 export const DEFAULT_CATEGORIES_STATUS: CategoryLifecycleFilter = "all";
 
 const FILTER_PARAMS = ["type", "status", "q"];
+const FILTER_PARAM_SET = new Set<string>(FILTER_PARAMS);
 
 /** The canonical `q` text: trimmed, internal whitespace collapsed (case kept —
  * the backend match is case-insensitive, but the URL shows what was typed). The
@@ -75,7 +76,7 @@ export function canonicalCategoriesParams(filters: CategoriesFilters, preserve?:
   const params = new URLSearchParams();
   writeCategoriesFilters(params, filters);
   for (const [key, value] of preserve ?? []) {
-    if (!FILTER_PARAMS.includes(key)) {
+    if (!FILTER_PARAM_SET.has(key)) {
       params.append(key, value);
     }
   }

@@ -65,15 +65,23 @@ export function usePendingRouteSkeleton(
   // pathname); fall back to the pathname if a router build omits it.
   const pendingKey = active ? (navigation.location?.key ?? to) : null;
 
-  const [shown, setShown] = useState(false);
+  // `armed` flips after the flicker delay. The returned value ANDs it with `pendingKey`
+  // so a timer that fires after the navigation settles cannot leave the skeleton stuck
+  // over the outlet (pathname can commit before `navigation.state` idles).
+  const [armed, setArmed] = useState(false);
+  const [prevPendingKey, setPrevPendingKey] = useState(pendingKey);
+  if (pendingKey !== prevPendingKey) {
+    setPrevPendingKey(pendingKey);
+    setArmed(false);
+  }
+
   useEffect(() => {
     if (pendingKey === null) {
-      setShown(false);
       return;
     }
-    const handle = setTimeout(() => setShown(true), delayMs);
+    const handle = setTimeout(() => setArmed(true), delayMs);
     return () => clearTimeout(handle);
   }, [pendingKey, delayMs]);
 
-  return shown;
+  return pendingKey !== null && armed;
 }

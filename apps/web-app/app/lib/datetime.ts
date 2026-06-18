@@ -9,20 +9,30 @@ import { viewerLocale } from "./locale.js";
  * Parsing goes through the domain's `plainMonthParts` (no tuple casts); a malformed
  * month surfaces as Intl's "Invalid Date" label rather than a wrong month.
  */
-function monthFormatter(options: Intl.DateTimeFormatOptions) {
-  return (month: PlainMonth) => {
-    const { year, month: monthIndex } = plainMonthParts(month);
-    return new Intl.DateTimeFormat(viewerLocale(), { timeZone: "UTC", ...options }).format(
-      new Date(Date.UTC(year, monthIndex - 1, 1)),
-    );
-  };
+const monthLabelFormatter = new Intl.DateTimeFormat(viewerLocale(), {
+  timeZone: "UTC",
+  month: "long",
+  year: "numeric",
+});
+const monthTickFormatter = new Intl.DateTimeFormat(viewerLocale(), {
+  timeZone: "UTC",
+  month: "short",
+});
+
+function formatUtcMonth(month: PlainMonth, formatter: Intl.DateTimeFormat) {
+  const { year, month: monthIndex } = plainMonthParts(month);
+  return formatter.format(new Date(Date.UTC(year, monthIndex - 1, 1)));
 }
 
 /** Full month label, e.g. "June 2026" — list headings, table rows, tooltips. */
-export const formatMonthLabel = monthFormatter({ month: "long", year: "numeric" });
+export function formatMonthLabel(month: PlainMonth) {
+  return formatUtcMonth(month, monthLabelFormatter);
+}
 
 /** Compact month label, e.g. "Jun" — chart axis ticks where space is tight. */
-export const formatMonthTick = monthFormatter({ month: "short" });
+export function formatMonthTick(month: PlainMonth) {
+  return formatUtcMonth(month, monthTickFormatter);
+}
 
 /**
  * Formats an Audit Metadata / Transaction History timestamp (TXN-4).
@@ -43,14 +53,16 @@ export const formatMonthTick = monthFormatter({ month: "short" });
  * name, digit grouping), never the zone — mirroring the explicit-locale rule money
  * formatting follows (ADR 0021); a non-browser context falls back to a fixed locale.
  */
+const auditTimestampFormatter = new Intl.DateTimeFormat(viewerLocale(), {
+  timeZone: "UTC",
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZoneName: "short",
+});
+
 export function formatAuditTimestamp(epochMillis: number): string {
-  return new Intl.DateTimeFormat(viewerLocale(), {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(new Date(epochMillis));
+  return auditTimestampFormatter.format(new Date(epochMillis));
 }
