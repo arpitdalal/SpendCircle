@@ -57,16 +57,20 @@ A workflow for permanently removing a **User** from Spend Circle. Account Deleti
 _Avoid_: User Erasure
 
 **Google Account Email**:
-The verified email address returned by Google sign-in for a **User**. Invitation acceptance requires the User's current Google Account Email to match the Invitation email; changing Google Account Email does not change existing Circle memberships.
+The verified email address returned by Google sign-in for a **User**. Unlike **Display Name** and **Profile Picture** (seeded once at account creation), Google Account Email stays synced with Google and is not user-editable. Invitation acceptance matches the User's current (live) Google Account Email against the Invitation email; changing Google Account Email does not change existing Circle memberships.
 _Avoid_: Verified Email
 
 **Display Name**:
-The editable name shown for a **User** in Circles, Transactions, Audit Metadata, and Member Lists. Display Name defaults from Google sign-in.
+The editable name shown for a **User** in Circles, Transactions, Audit Metadata, and Member Lists. Display Name is seeded from Google sign-in when the account is created, then owned by the User and editable in-app; later Google profile changes do not overwrite it. Editing it refreshes the materialized identity on the User's active memberships.
 _Avoid_: Full Name
 
 **Profile Picture**:
-The image shown for a **User** in Circles, Transactions, Audit Metadata, and Member Lists. Profile Picture defaults from Google sign-in and is not editable in v1; if Google does not provide one, Spend Circle uses a generated initials avatar.
+The image shown for a **User** in Circles, Transactions, Audit Metadata, and Member Lists. Profile Picture is seeded from Google sign-in when the account is created and is not synced afterward; it is not editable in v1 (uploads are a later feature). If Google does not provide one, Spend Circle uses a generated initials avatar.
 _Avoid_: Avatar Upload
+
+**Onboarding**:
+The one-time, gated step shown after a **User's** first sign-in where they confirm and optionally edit their **Display Name** — with their **Google Account Email** shown read-only for confirmation — before using the app. Completion is tracked by a per-User flag, and Spend Circle funnels the User back to it on return until it is done. Distinct from **Circle Setup**, which is per-**Circle**: Onboarding completes the User's profile, Circle Setup configures a Circle. Confirming a different name here also renames the User's freshly created **Personal Circle** to match, without recording **Circle History** because the Circle has had no prior activity. Future versions may add optional questions, such as referral source, that never block completion.
+_Avoid_: Circle Setup, Wizard, Profile Setup
 
 **Member**:
 A **User** participating in a specific **Circle**. Membership is the relationship that determines what the User can see or do inside that Circle.

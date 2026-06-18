@@ -127,6 +127,9 @@ graph TD
   TXN3 --> QA1
   MEM5 --> QA1
 
+  %% User & Profile
+  F0 --> USR1[USR-1 · Onboarding + own the profile]
+
   %% Platform
   TXN1 --> EXP1[EXP-1 · CSV Export]
   EML1 --> FBK1[FBK-1 · Feedback]
@@ -138,7 +141,7 @@ graph TD
 ### Build order (tiers — within a tier, slices are parallelizable)
 
 - **Tier 1 — make a Circle useful:** `CAT-1` → `TXN-1`. Then `CS-0`, `MEM-1`, `SET-1`,
-  `OBS-1`, `EML-1`, `NTF-1` (all only need `F0`).
+  `OBS-1`, `EML-1`, `NTF-1`, `USR-1` (all only need `F0`).
 - **Tier 2 — manage what exists:** `CAT-2`, `CAT-3`, `TXN-2`, `TXN-3`, `TXN-4`, `CS-1`,
   `CS-2`, `CS-3`, `CS-5`, `RPT-1`, `RPT-3`, `EXP-1`, `FBK-1`, `OBS-2`.
 - **Tier 3 — collaborate + report:** `MEM-2…9`, `RPT-2`, `RPT-4`, `RPT-5`, `RPT-6`,
@@ -333,6 +336,9 @@ Each slice file in this directory uses this structure:
 - [NTF-2 · Notification creation on events](NTF-2-notification-events.md)
 - [EML-1 · Resend integration + Welcome email](EML-1-welcome-email.md)
 - [EML-2 · Invitation email](EML-2-invitation-email.md)
+
+### User & Profile
+- [USR-1 · Onboarding confirmation + Spend Circle owns the profile](USR-1-onboarding-profile-ownership.md)
 
 ### Platform
 - [MNT-1 · React Router v8 future flag adoption](MNT-1-react-router-v8-flags.md)
