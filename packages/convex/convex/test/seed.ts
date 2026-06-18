@@ -72,6 +72,7 @@ export async function seedCircle(
     mark: "T",
     ownerUserId: owner._id,
     status: opts.archived ? "archived" : "active",
+    setupCompletedAt: null,
     currencyLocked: opts.currencyLocked ?? false,
     createdAt: now,
   });

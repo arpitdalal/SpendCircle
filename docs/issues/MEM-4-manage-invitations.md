@@ -24,7 +24,7 @@ per Circle+email**, and **≤100 invitation emails/User/day** overall (PRD rate-
     `null`/empty, never a leak) → pending invites for the Circle (email, createdAt, expiresAt,
     resendCount; **never the token/hash**).
   - `resendInvitation` mutation: Owner-only → `assertWritable()` → load pending invite →
-    reject if Circle Setup is incomplete (`setupCompletedAt` missing) → enforce caps (≤3/day
+    reject if Circle Setup is incomplete (`setupCompletedAt === null`) → enforce caps (≤3/day
     this Circle+email via `resendCount`/time window; ≤100/day this User) → generate a **new**
     token, overwrite `tokenHash` (older link now invalid since lookup is by current hash), bump
     `resendCount`, refresh `expiresAt` to now+7d → record event → return plaintext token for

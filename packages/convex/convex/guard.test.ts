@@ -46,6 +46,7 @@ async function seed(
     mark: "P",
     ownerUserId: userId,
     status: opts.archived ? "archived" : "active",
+    setupCompletedAt: now,
     currencyLocked: false,
     createdAt: now,
   });

@@ -29,7 +29,7 @@ The `/invite/:token` public route already exists in the routing skeleton.
     invalid" (don't distinguish) and count a throttled failed attempt → compare
     `emailLower` to the User's current Google Account Email; mismatch → generic invalid +
     throttle → load Circle and reject generically if Circle Setup is incomplete
-    (`setupCompletedAt` missing) → **upsert membership**: find the (Circle, User) row via
+    (`setupCompletedAt === null`) → **upsert membership**: find the (Circle, User) row via
     `by_circle_and_user`; if it exists and is `removed`, flip to `active`, refresh materialized
     `displayName`/`image` from the User, clear `removedAt`; else insert a fresh active member
     row → mark Invitation `accepted` → `recordEvent(circleEntity, action:"member joined",
