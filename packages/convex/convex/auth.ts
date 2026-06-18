@@ -5,7 +5,7 @@ import { components, internal } from "./_generated/api.js";
 import type { DataModel, Doc } from "./_generated/dataModel.js";
 import type { MutationCtx, QueryCtx } from "./_generated/server.js";
 import authConfig from "./auth.config.js";
-import { createUserWithPersonalCircle, propagateUserProfile } from "./model.js";
+import { createUserWithPersonalCircle, syncUserEmail } from "./model.js";
 
 /**
  * Better Auth + Convex wiring (ADR 0002). Auth runs as a Convex component; this
@@ -46,10 +46,7 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
         if (!userId) {
           return;
         }
-        await propagateUserProfile(ctx, userId, {
-          displayName: authUser.name,
-          image: authUser.image ?? undefined,
-        });
+        await syncUserEmail(ctx, userId, authUser.email);
       },
     },
   },
@@ -57,8 +54,8 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
 
 // Component trigger functions. `onCreate` runs in the OAuth callback and creates
 // the Spend Circle User + Personal Circle (PRD stories 1, 3), then stores the app
-// user id on the auth-user mapping. `onUpdate` is the single propagation path for
-// materialized member identity (ADR 0018).
+// user id on the auth-user mapping. `onUpdate` syncs Google Account Email only
+// (ADR 0024); Display Name propagation is in-app via `setUserDisplayName`.
 export const { onCreate, onUpdate, onDelete } = authComponent.triggersApi();
 
 export const { getAuthUser } = authComponent.clientApi();

@@ -43,7 +43,7 @@ export default function Home() {
                       aria-hidden and Circle Color must not be the sole identifier
                       (CONTEXT: Circle Color). */}
                   <span className="block truncate text-xs text-muted-foreground">
-                    {circle.kind === "personal" ? "Personal" : "Circle"} · {circle.currency} ·{" "}
+                    {circle.kind === "personal" ? "Your Circle" : "Circle"} · {circle.currency} ·{" "}
                     {colorLabel(circle.color)}
                   </span>
                 </span>

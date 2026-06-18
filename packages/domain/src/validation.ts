@@ -14,8 +14,12 @@ import { circleSetupAnswersSchema } from "./setup.js";
 export const TRANSACTION_TYPES = ["expense", "income"] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
+const NAME_MAX = 60;
+
 export const LIMITS = {
-  circleNameMax: 60,
+  circleNameMax: NAME_MAX,
+  /** User display name (USR-1); same bound as circle names today, distinct concept. */
+  displayNameMax: NAME_MAX,
   categoryNameMax: 40,
   transactionTitleMax: 120,
   transactionNoteMax: 1_000,
@@ -23,6 +27,28 @@ export const LIMITS = {
 } as const;
 
 const colorId = z.string().refine(isValidColorId, { message: "Unsupported color" });
+
+/** Server-facing profile edit input (USR-1). */
+export const profileUpdateSchema = z.object({
+  displayName: z.string().trim().min(1, "Name is required").max(LIMITS.displayNameMax),
+});
+export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
+
+export type ProfileUpdateParseResult =
+  | { ok: true; value: ProfileUpdateInput }
+  | { ok: false; error: string };
+
+/** Shared profile-edit parse contract for client forms and Convex mutations (USR-1). */
+export function parseProfileUpdate(input: { displayName: string }): ProfileUpdateParseResult {
+  const parsed = profileUpdateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid display name",
+    };
+  }
+  return { ok: true, value: parsed.data };
+}
 
 export const circleInputSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(LIMITS.circleNameMax),

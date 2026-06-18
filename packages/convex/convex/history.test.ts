@@ -22,6 +22,7 @@ async function seedCircleWithOwner(
     acceptedPrivacyVersion: "2026-05-01",
     acceptedAt: now,
     analyticsOptOut: false,
+    onboardingCompletedAt: now,
     createdAt: now,
   });
   const circleId = await ctx.db.insert("circles", {

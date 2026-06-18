@@ -9,7 +9,7 @@ import { useAppSession } from "~/lib/session.js";
 /**
  * Sign-in route guard: an already-authenticated visitor has no use for the form,
  * so bounce them to the app root and let ProtectedLayout route on the resolved
- * state (ready → shell, onboarding → /onboarding) — the inverse of the layout's
+ * state (ready → shell, bootstrap → /onboarding) — the inverse of the layout's
  * unauthenticated → /signin redirect. Splash while auth is still resolving so an
  * authenticated reload never flashes the form before redirecting.
  */

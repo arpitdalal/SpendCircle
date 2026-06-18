@@ -1,4 +1,6 @@
+import { api } from "@spend-circle/convex";
 import { authClient } from "./auth-client.js";
+import { convex } from "./convex.js";
 
 /**
  * E2E-only test-auth helper (ADR 0019). Exposes a tiny `window.__scE2E` so the
@@ -16,13 +18,29 @@ export function installE2EAuthHelper(): void {
       /**
        * Sign up (first run for a unique email) then sign in. Sign-up triggers the
        * backend `onCreateUser` → the User + their Personal Circle, so the
-       * authenticated app immediately has real data to render.
+       * authenticated app immediately has real data to render. Completes USR-1
+       * onboarding so the protected shell is reachable without driving the form.
        */
       async signIn(email: string, password: string, name = "E2E Tester") {
         await authClient.signUp.email({ email, password, name }).catch(() => {
           // Already exists (re-run with same email) — fall through to sign-in.
         });
-        return authClient.signIn.email({ email, password });
+        await authClient.signIn.email({ email, password });
+
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          try {
+            await convex.mutation(api.users.completeOnboarding, { displayName: name });
+            return;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.includes("Onboarding already completed")) {
+              return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+        }
+        throw new Error("E2E sign-in: onboarding completion timed out");
       },
     },
   });

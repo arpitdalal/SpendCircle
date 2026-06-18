@@ -5,11 +5,32 @@ import {
   categoryInputSchema,
   circleSettingsUpdateSchema,
   LIMITS,
+  parseProfileUpdate,
   toMutationArgs,
   transactionCreateSchema,
   transactionFormSchema,
   transactionUpdateSchema,
 } from "./validation.js";
+
+describe("parseProfileUpdate (USR-1 profile edit contract)", () => {
+  it("accepts and trims a display name", () => {
+    expect(parseProfileUpdate({ displayName: "  Ada  " })).toEqual({
+      ok: true,
+      value: { displayName: "Ada" },
+    });
+  });
+
+  it("rejects an empty name with a stable error message", () => {
+    expect(parseProfileUpdate({ displayName: "" })).toEqual({
+      ok: false,
+      error: "Name is required",
+    });
+  });
+
+  it("rejects a whitespace-only name", () => {
+    expect(parseProfileUpdate({ displayName: "   " }).ok).toBe(false);
+  });
+});
 
 /**
  * The shared category form contract (ADR 0010). These assertions are the

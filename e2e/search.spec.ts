@@ -16,7 +16,7 @@ test("transaction search finds circle transactions across months and opens detai
   const month = testInfo.project.name === "mobile-chromium" ? "2993-06" : "2993-05";
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   await clickCircleChromeTab(page, "Categories");
   await createCategoryViaForm(page, { name: categoryName });

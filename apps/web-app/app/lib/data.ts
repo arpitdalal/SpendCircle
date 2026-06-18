@@ -8,3 +8,4 @@ export * from "./data/history.js";
 export * from "./data/ledger.js";
 export * from "./data/members.js";
 export * from "./data/transactions.js";
+export * from "./data/users.js";

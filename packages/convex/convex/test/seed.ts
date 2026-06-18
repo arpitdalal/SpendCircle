@@ -37,6 +37,7 @@ export async function makeUser(
     acceptedPrivacyVersion: "2026-05-01",
     acceptedAt: now,
     analyticsOptOut: false,
+    onboardingCompletedAt: now,
     createdAt: now,
   });
   const user = await ctx.db.get(userId);

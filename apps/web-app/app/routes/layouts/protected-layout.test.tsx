@@ -1,8 +1,9 @@
-import { screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Link } from "react-router";
+import { createRoutesStub, Link } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SKELETON_DELAY_MS } from "~/lib/route-skeleton.js";
+import { SnackbarProvider } from "~/lib/snackbar.js";
 import { configureConvex, makeCurrentUserView } from "~/test/convex-react.js";
 import { installIntersectionObserverStub } from "~/test/intersection-observer-stub.js";
 import { deferred, renderRouteStub } from "~/test/router-stub.js";
@@ -16,6 +17,7 @@ import { deferred, renderRouteStub } from "~/test/router-stub.js";
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
+import OnboardingRoute from "../onboarding.js";
 import ProtectedLayout from "./protected-layout.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: thin route-tree stand-ins; the layout is the unit under test.
@@ -121,5 +123,106 @@ describe("ProtectedLayout shell skeleton", () => {
     slow.resolve();
     expect(await screen.findByText("Circle stub")).toBeInTheDocument();
     expect(screen.queryByTestId("circle-bottom-nav-skeleton")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProtectedLayout onboarding gate", () => {
+  it("redirects not-onboarded Users to onboarding, but not when already there", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ onboardingComplete: false }),
+      circles: [],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [
+            { index: true, Component: () => <h2>Home stub</h2> },
+            { path: "onboarding", Component: OnboardingRoute },
+          ],
+        },
+      ],
+      ["/"],
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Welcome" })).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Home stub")).not.toBeInTheDocument();
+  });
+
+  it("lets onboarded Users render child routes normally", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ onboardingComplete: true }),
+      circles: [],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [{ index: true, Component: () => <h2>Home stub</h2> }],
+        },
+      ],
+      ["/"],
+    );
+
+    expect(await screen.findByText("Home stub")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Welcome" })).not.toBeInTheDocument();
+  });
+
+  it("completes onboarding and lets the User reach the app shell", async () => {
+    let currentUser = makeCurrentUserView({
+      onboardingComplete: false,
+      displayName: "Ada Lovelace",
+    });
+    const completeOnboarding = vi.fn(async () => {
+      currentUser = makeCurrentUserView({
+        onboardingComplete: true,
+        displayName: "Ada King",
+      });
+    });
+    configureConvex({
+      currentUser: () => currentUser,
+      circles: [],
+      completeOnboarding,
+    });
+
+    const routes = [
+      {
+        path: "/",
+        Component: ProtectedLayout,
+        children: [
+          { index: true, Component: () => <h2>Home stub</h2> },
+          { path: "onboarding", Component: OnboardingRoute },
+        ],
+      },
+    ];
+    const Stub = createRoutesStub(routes);
+    const view = render(
+      <SnackbarProvider>
+        <Stub initialEntries={["/onboarding"]} />
+      </SnackbarProvider>,
+    );
+
+    const user = userEvent.setup();
+    const input = await screen.findByLabelText("Display name");
+    await user.clear(input);
+    await user.type(input, "  Ada King  ");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(completeOnboarding).toHaveBeenCalledWith({ displayName: "Ada King" });
+    });
+
+    view.rerender(
+      <SnackbarProvider>
+        <Stub key="session-updated" initialEntries={["/onboarding"]} />
+      </SnackbarProvider>,
+    );
+
+    expect(await screen.findByText("Home stub")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Welcome" })).not.toBeInTheDocument();
   });
 });

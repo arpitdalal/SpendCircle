@@ -3,16 +3,16 @@ import { useConvexAuth, useQuery } from "convex/react";
 import { MOCKS } from "./env.js";
 
 /**
- * The three-state auth model the protected layout gates on (ADR 0017):
+ * The four-state auth model the protected layout gates on (ADR 0017):
  *  - loading: auth is still resolving → show splash
  *  - unauthenticated: no Google session → redirect to /signin
- *  - onboarding: Google session exists but no Spend Circle User yet → bootstrap
- *  - ready: bootstrapped User → render the app shell
+ *  - bootstrap: Google session exists but no Spend Circle User yet → bootstrap splash
+ *  - ready: bootstrapped User → render the app shell (may still need product Onboarding)
  */
 export type AppSession =
   | { state: "loading" }
   | { state: "unauthenticated" }
-  | { state: "onboarding" }
+  | { state: "bootstrap" }
   | { state: "ready"; user: SessionUser };
 
 export interface SessionUser {
@@ -20,6 +20,7 @@ export interface SessionUser {
   email: string;
   displayName: string;
   image?: string;
+  onboardingComplete: boolean;
 }
 
 function useRealSession(): AppSession {
@@ -38,15 +39,16 @@ function useRealSession(): AppSession {
     return { state: "loading" };
   }
   if (user === null) {
-    return { state: "onboarding" };
+    return { state: "bootstrap" };
   }
   return {
     state: "ready",
     user: {
-      id: user._id,
+      id: user.id,
       email: user.email,
       displayName: user.displayName,
       image: user.image,
+      onboardingComplete: user.onboardingComplete,
     },
   };
 }
@@ -62,6 +64,7 @@ function useMockSession(): AppSession {
       id: "mock-user",
       email: "mock@spend-circle.test",
       displayName: "Mock Member",
+      onboardingComplete: true,
     },
   };
 }

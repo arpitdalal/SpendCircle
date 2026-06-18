@@ -47,7 +47,7 @@ test("a member records an expense and sees it in the live list", async ({ page }
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   // Seed an expense Category to attach.
   await clickCircleChromeTab(page, "Categories");
@@ -80,7 +80,7 @@ test("a member inline-creates a category while recording a transaction", async (
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   await clickCircleChromeTab(page, "Transactions");
   await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
@@ -106,7 +106,7 @@ test("the expense form blocks submit and explains a missing category", async ({
   const title = `E2E NoCat ${stamp}`;
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
   await clickCircleChromeTab(page, "Transactions");
   await page.getByRole("link", { name: "Add expense" }).click();
 
@@ -146,7 +146,7 @@ test("the monthly ledger totals a month and navigates between months", async ({
       : { month: "2999-10", label: "October 2999" };
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   await clickCircleChromeTab(page, "Categories");
   await createCategoryViaForm(page, { name: categoryName });
@@ -205,7 +205,7 @@ test("the month input registers a whole multi-digit year typed digit-by-digit", 
   const [year, mm] = target.value.split("-");
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
   await clickCircleChromeTab(page, "Transactions");
   await expect(page).toHaveURL(/\/transactions\?month=\d{4}-\d{2}/);
 
@@ -243,7 +243,7 @@ test("the recorder edits a transaction and changes its type", async ({ page }, t
   const month = testInfo.project.name === "mobile-chromium" ? "2995-06" : "2995-05";
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   // Seed one Category of each type to work with.
   await clickCircleChromeTab(page, "Categories");
@@ -310,7 +310,7 @@ test("a member archives and restores a transaction", async ({ page }, testInfo) 
   const month = testInfo.project.name === "mobile-chromium" ? "2996-06" : "2996-05";
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   await clickCircleChromeTab(page, "Categories");
   await createCategoryViaForm(page, { name: categoryName });
@@ -374,7 +374,7 @@ test("the transactions page restores month, add form, and edit link across reloa
   const month = testInfo.project.name === "mobile-chromium" ? "2998-04" : "2998-03";
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   await clickCircleChromeTab(page, "Categories");
   await createCategoryViaForm(page, { name: categoryName });
@@ -442,7 +442,7 @@ test("the transaction detail shows audit metadata and history reflecting an edit
   const month = testInfo.project.name === "mobile-chromium" ? "2994-06" : "2994-05";
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   await clickCircleChromeTab(page, "Categories");
   await createCategoryViaForm(page, { name: categoryName });
@@ -512,7 +512,7 @@ test("editing from the transaction detail returns to the detail on cancel and on
   const month = testInfo.project.name === "mobile-chromium" ? "2995-06" : "2995-05";
 
   await page.goto("/");
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   await clickCircleChromeTab(page, "Categories");
   await createCategoryViaForm(page, { name: categoryName });

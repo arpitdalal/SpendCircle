@@ -14,7 +14,7 @@ import { clickCircleChromeTab, expect, test } from "./fixtures.js";
 test("a member views the Member List with their own identity and Owner badge", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   await clickCircleChromeTab(page, "Members");
   await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
