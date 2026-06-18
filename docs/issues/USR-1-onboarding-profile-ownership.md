@@ -60,7 +60,7 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 ### Schema (`schema.ts`)
 
 - `users`: add required `onboardingCompletedAt: v.union(v.number(), v.null())`. `null` = not yet
-  onboarded; a number = done. Existing rows backfilled before this lands.
+  onboarded; a number = done.
 
 ### Backend model (`model.ts`)
 
@@ -115,12 +115,6 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 - **"Your Circle" label**: in `circle-switcher.tsx` and `home.tsx`, the Personal-Circle subtitle becomes
   `"Your Circle"`; regular Circles keep `"Circle"` (`circle.kind === "personal" ? "Your Circle" : "Circle"`).
 
-### Backfill (`maintenance.ts`)
-
-- Operator-key-guarded, paginated `backfillUserOnboardingCompleted`: grandfather every existing User as
-  onboarded (`onboardingCompletedAt = createdAt`) before making the field required, so current Users are
-  not trapped on `/onboarding`. Follow the existing backfill pattern (bounded page + cursor + operator key).
-
 ## Why this way
 
 - **Seed-once, app-owned (ADR 0024).** Mirroring Google forever clobbers user edits and forces identity
@@ -155,7 +149,6 @@ slice flips ownership: **seed once from Google, then the User owns their profile
   does not redirect to itself; after completion, routes render normally. Funnel only — directly calling a
   mutation pre-onboarding is not blocked by an onboarding guard (the Personal Circle exists; nothing breaks).
 - **Label:** the Personal-Circle row shows **"Your Circle"**; a regular Circle shows "Circle".
-- **Backfill:** existing Users become onboarded after the backfill reaches `isDone` and are not redirected.
 - **Mock parity:** the current-user fixture matches the derived view type (typecheck enforces); a
   render/route test asserts the gate redirects under `MOCKS`.
 
@@ -165,8 +158,7 @@ slice flips ownership: **seed once from Google, then the User owns their profile
   they Continue; Display Name is app-owned and editable in Settings; Google no longer overwrites name/photo
   while email stays synced; the Personal Circle is seeded `{firstName}'s Circle` with an `initials()` Mark
   and reconciled once at completion without a history event; the Personal Circle subtitle reads "Your
-  Circle"; existing Users are grandfathered; ADR 0024 + the glossary terms are in place; tests green; gates
-  pass.
+  Circle"; ADR 0024 + the glossary terms are in place; tests green; gates pass.
 
 ## Out of scope
 

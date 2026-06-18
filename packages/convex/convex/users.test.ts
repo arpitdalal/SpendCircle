@@ -364,31 +364,3 @@ describe("updateProfile", () => {
     });
   });
 });
-
-describe("backfillUserOnboardingCompleted", () => {
-  it("grandfathers existing Users as onboarded", async () => {
-    vi.stubEnv("USER_ONBOARDING_BACKFILL_KEY", "test-key");
-    const t = convexTest(schema, modules);
-    const userId = await t.run((ctx) =>
-      createUserWithPersonalCircle(ctx, {
-        email: "ada@example.com",
-        displayName: "Ada Lovelace",
-      }),
-    );
-
-    const result = await t.mutation(api.maintenance.backfillUserOnboardingCompleted, {
-      operatorKey: "test-key",
-      paginationOpts: { numItems: 10, cursor: null },
-    });
-
-    expect(result.isDone).toBe(true);
-    expect(result.patched).toBe(1);
-
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      expect(user?.onboardingCompletedAt).toBe(user?.createdAt);
-    });
-
-    vi.unstubAllEnvs();
-  });
-});
