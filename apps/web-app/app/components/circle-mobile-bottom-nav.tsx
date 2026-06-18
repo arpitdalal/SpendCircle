@@ -1,6 +1,6 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { MoreHorizontal, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { buttonVariants } from "~/components/ui/button-variants.js";
 import {
@@ -34,14 +34,14 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
   const moreItems = items.slice(PRIMARY_SLOT_COUNT);
 
   const moreActive = moreItems.some((item) => isCircleNavItemActive(location.pathname, item));
+  const routeLocation = location.pathname + location.search + location.hash;
 
-  // Close the More sheet on navigation. Comparing against the previous location during
-  // render (and resetting then, not in an effect) keeps the sheet from painting open on the
-  // new route for a frame. `prevLocation` is render-only bookkeeping that's never shown, so
-  // it lives in a ref, not state. See react.dev "You Might Not Need an Effect".
-  const prevLocation = useRef(location);
-  if (location !== prevLocation.current) {
-    prevLocation.current = location;
+  // Close the More sheet on navigation before commit so it doesn't paint open on a route
+  // it no longer belongs to. Track the semantic route, not the location object identity,
+  // so same-route rerenders don't close/remount the sheet while a link is being clicked.
+  const [prevRouteLocation, setPrevRouteLocation] = useState(routeLocation);
+  if (routeLocation !== prevRouteLocation) {
+    setPrevRouteLocation(routeLocation);
     setMoreOpen(false);
   }
 

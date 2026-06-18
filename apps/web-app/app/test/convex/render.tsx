@@ -1,6 +1,6 @@
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
-import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router";
+import { MemoryRouter, Outlet, Route, Routes, useLocation, useNavigate } from "react-router";
 import type { Circle } from "~/lib/data.js";
 import { SnackbarProvider } from "~/lib/snackbar.js";
 import type { CircleOutletContext } from "~/routes/layouts/circle-layout.js";
@@ -50,6 +50,16 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
+function NavigationProbe({
+  onNavigate,
+}: {
+  onNavigate: (navigate: ReturnType<typeof useNavigate>) => void;
+}) {
+  const navigate = useNavigate();
+  onNavigate(navigate);
+  return null;
+}
+
 /** Minimal Circle-layout `<h1>` chrome for heading-hierarchy assertions in route tests. */
 export function circleLayoutHeadingChrome(circle: Pick<Circle, "name">) {
   return <h1>{circle.name}</h1>;
@@ -68,10 +78,16 @@ export function circleLayoutHeadingChrome(circle: Pick<Circle, "name">) {
  * test plus a probe route the flow navigates to).
  */
 export function renderRoutes(routes: ReactNode, opts: { initialEntries?: string[] } = {}) {
+  let navigate: ReturnType<typeof useNavigate> | undefined;
   const result = render(
     <SnackbarProvider>
       <MemoryRouter initialEntries={opts.initialEntries ?? ["/"]}>
         <LocationProbe />
+        <NavigationProbe
+          onNavigate={(nextNavigate) => {
+            navigate = nextNavigate;
+          }}
+        />
         <Routes>{routes}</Routes>
       </MemoryRouter>
     </SnackbarProvider>,
@@ -80,6 +96,13 @@ export function renderRoutes(routes: ReactNode, opts: { initialEntries?: string[
     ...result,
     /** The current URL (pathname + search), e.g. `/circles/my-home-c1`. */
     location: () => result.getByTestId("location").textContent ?? "",
+    navigate: (to: string) => {
+      if (navigate == null) {
+        throw new Error("Router navigate function unavailable.");
+      }
+      const currentNavigate = navigate;
+      return act(() => currentNavigate(to));
+    },
   };
 }
 
