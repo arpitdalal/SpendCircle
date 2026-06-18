@@ -2,10 +2,11 @@
  * `prefix("circles", …)` in routes.ts — kept in sync by circle-path.test.ts. */
 export const CIRCLES_SEGMENT = "circles";
 
-/** First-segment values under `/circles/` that are STATIC routes, NOT Circle refs:
- * they live ABOVE the Circle guard (siblings of `:circleRef`). Mirrors the static
- * `route("new", …)` in routes.ts. ADR 0016: a canonical slug-id ref is never one of
- * these, so excluding them is safe. */
+/** First-segment values directly under `/circles/` that are STATIC routes, NOT Circle
+ * refs: they live ABOVE the Circle guard (siblings of `:circleRef`). Mirrors the static
+ * `route("new", …)` in routes.ts. This intentionally does not include nested create
+ * segments like `/circles/:circleRef/transactions/new`; those are inside an already
+ * resolved Circle and are protected by the route-order assertions in circle-path.test.ts. */
 export const RESERVED_CIRCLE_REFS = ["new"] as const;
 
 const RESERVED_CIRCLE_REF_SET = new Set<string>(RESERVED_CIRCLE_REFS);

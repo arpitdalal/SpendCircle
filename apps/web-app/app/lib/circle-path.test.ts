@@ -12,6 +12,8 @@ describe("circleRefOf", () => {
   it.each([
     ["/circles/trip-c1", "trip-c1"],
     ["/circles/trip-c1/transactions", "trip-c1"],
+    ["/circles/trip-c1/transactions/new", "trip-c1"],
+    ["/circles/trip-c1/categories/new", "trip-c1"],
     ["/circles/trip-c1/transactions?month=2026-05#x", "trip-c1"],
     ["/circles/new", null],
     ["/circles/%6e%65%77", null],
@@ -31,6 +33,8 @@ describe("isCircleScopedPath", () => {
   it.each([
     ["/circles/trip-c1", true],
     ["/circles/trip-c1/transactions?month=2026-05#x", true],
+    ["/circles/trip-c1/transactions/new", true],
+    ["/circles/trip-c1/categories/new", true],
     ["/circles/new", false],
     ["/circles/%6e%65%77", false],
     ["/circles/", false],
@@ -73,5 +77,26 @@ describe("route config consistency", () => {
     for (const reserved of RESERVED_CIRCLE_REFS) {
       expect(staticSegments).toContain(reserved);
     }
+  });
+
+  it("nested create routes stay inside the Circle guard and outrank dynamic object refs", () => {
+    const protectedLayout = routes.find(
+      (entry) => entry.file === "routes/layouts/protected-layout.tsx",
+    );
+    const circleGuard = (protectedLayout?.children ?? []).find(
+      (entry) => entry.path === `${CIRCLES_SEGMENT}/:circleRef`,
+    );
+    expect(circleGuard?.children).toBeDefined();
+
+    const circleChildren = circleGuard?.children ?? [];
+    const routeIndex = (path: string) => circleChildren.findIndex((entry) => entry.path === path);
+
+    const transactionCreateIndex = routeIndex("transactions/new");
+    const transactionObjectIndex = routeIndex("transactions/:transactionRef");
+
+    expect(transactionCreateIndex).toBeGreaterThanOrEqual(0);
+    expect(transactionObjectIndex).toBeGreaterThanOrEqual(0);
+    expect(transactionCreateIndex).toBeLessThan(transactionObjectIndex);
+    expect(routeIndex("categories/new")).toBeGreaterThanOrEqual(0);
   });
 });
