@@ -128,6 +128,27 @@ const e2eDir = dirname(fileURLToPath(import.meta.url));
 
 const E2E_PASSWORD = "e2e-Password-123";
 
+/** USR-1: fresh sign-ups gate on `/onboarding` until Display Name is confirmed. */
+async function ensureAppShellReady(page: Page) {
+  const homeHeading = page.getByRole("heading", { name: "Your circles" });
+  const continueButton = page.getByRole("button", { name: "Continue" });
+
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (await homeHeading.isVisible()) {
+      return;
+    }
+    if (await continueButton.isVisible()) {
+      await continueButton.click();
+      await homeHeading.waitFor({ timeout: 30_000 });
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+
+  await homeHeading.waitFor({ timeout: 0 });
+}
+
 /**
  * Drive the flag-gated email+password test-auth bypass (ADR 0019) on `page` until it
  * lands authenticated on the app shell. Signs up (first run for a unique email) then
@@ -188,7 +209,7 @@ export async function establishE2ESession(
   }
 
   await page.goto(opts.baseURL, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Your circles" }).waitFor({ timeout: 30_000 });
+  await ensureAppShellReady(page);
 }
 
 async function signUpUserAndSaveStorageState(opts: {

@@ -10,7 +10,7 @@ test("authenticated shell renders the real Personal Circle from the backend", as
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
   // Every freshly-bootstrapped User gets a Personal Circle (onCreateUser).
-  await expect(page.getByRole("link", { name: /Personal/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Your Circle/ })).toBeVisible();
 });
 
 test("unknown deep links fall back to the safe route (real backend)", async ({ page }) => {

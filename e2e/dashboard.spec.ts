@@ -28,7 +28,7 @@ test("the dashboard shows recent activity and a working Paid By filter", async (
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
 
   // Seed an expense Category to attach (CAT-1's flow).
   await clickCircleChromeTab(page, "Categories");
@@ -86,7 +86,7 @@ test("the month-over-month comparison defaults to 6 months and the range selecto
 }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
-  await page.getByRole("link", { name: /Personal/ }).click();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
   await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
 
   const section = page.getByRole("region", { name: /month-over-month/i });
