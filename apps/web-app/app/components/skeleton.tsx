@@ -36,10 +36,11 @@ export function SkeletonRegion({
   children: ReactNode;
 }) {
   return (
-    <output aria-busy="true" data-testid={testId} className={cn("block", className)}>
+    // react-doctor-disable-next-line react-doctor/prefer-tag-over-role -- status live region wraps block skeleton content (RowsSkeleton/StatCardsSkeleton render <div> trees); <output> is the only native tag with implicit role="status" but it's phrasing-content only, so it can't wrap this flow content
+    <div role="status" aria-busy="true" data-testid={testId} className={className}>
       <span className="sr-only">{label}</span>
       {children}
-    </output>
+    </div>
   );
 }
 
