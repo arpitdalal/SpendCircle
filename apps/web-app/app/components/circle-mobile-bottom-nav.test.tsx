@@ -1,5 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { Outlet, Route } from "react-router";
 import { describe, expect, it } from "vitest";
 import { CircleMobileBottomNav } from "~/components/circle-mobile-bottom-nav.js";
@@ -11,6 +12,21 @@ const circle = makeCircleView();
 function renderMobileNav(initialPath: string) {
   return renderRoutes(
     <Route element={<Outlet context={{ circle } satisfies CircleOutletContext} />}>
+      <Route path="*" element={<CircleMobileBottomNav circle={circle} />} />
+    </Route>,
+    { initialEntries: [initialPath] },
+  );
+}
+
+function renderStrictMobileNav(initialPath: string) {
+  return renderRoutes(
+    <Route
+      element={
+        <StrictMode>
+          <Outlet context={{ circle } satisfies CircleOutletContext} />
+        </StrictMode>
+      }
+    >
       <Route path="*" element={<CircleMobileBottomNav circle={circle} />} />
     </Route>,
     { initialEntries: [initialPath] },
@@ -93,6 +109,16 @@ describe("CircleMobileBottomNav", () => {
       within(screen.getByRole("dialog", { name: "More" })).getByRole("link", { name: "Members" }),
     );
     expect(view.location()).toBe(`/circles/${circle.ref}/members`);
+    expect(screen.queryByRole("dialog", { name: "More" })).not.toBeInTheDocument();
+  });
+
+  it("closes More on external route changes under StrictMode", async () => {
+    const user = userEvent.setup();
+    const view = renderStrictMobileNav(`/circles/${circle.ref}`);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("dialog", { name: "More" })).toBeInTheDocument();
+    await view.navigate(`/circles/${circle.ref}/transactions`);
+    expect(view.location()).toBe(`/circles/${circle.ref}/transactions`);
     expect(screen.queryByRole("dialog", { name: "More" })).not.toBeInTheDocument();
   });
 });
