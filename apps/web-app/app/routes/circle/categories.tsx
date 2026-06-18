@@ -1,5 +1,5 @@
 import { COLOR_PALETTE, categoryUpdateSchema, LIMITS } from "@spend-circle/domain";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ColorPicker } from "~/components/category-form.js";
 import { HistoryList } from "~/components/history-list.js";
@@ -189,24 +189,21 @@ function CategoryList({
   const [editingId, setEditingId] = useState<Category["id"] | null>(null);
   const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
   const { categories, status, loadMore } = page;
-  const categoryIds = useMemo(
-    () => new Set(categories.map((category) => category.id)),
-    [categories],
-  );
 
-  function canRowEdit(category: Category) {
-    return circle.status === "active" && category.canEditFields && category.status !== "archived";
-  }
-
-  if (editingId !== null) {
-    const editingCategory = categories.find((category) => category.id === editingId);
-    if (!editingCategory || !canRowEdit(editingCategory)) {
+  // The open-editor / open-history selection is only meaningful while its row is
+  // ON the current page. The Category Filter (search, status, type) and reactive
+  // changes can drop the row — unmounting closes the UI, but the id up here must
+  // not outlive it, or widening the filter would remount the row with a fresh
+  // editor/panel popping open unbidden (and an in-progress edit silently gone).
+  // The list-membership counterpart of CategoryRow's capability effect below.
+  useEffect(() => {
+    if (editingId !== null && !categories.some((category) => category.id === editingId)) {
       setEditingId(null);
     }
-  }
-  if (historyId !== null && !categoryIds.has(historyId)) {
-    setHistoryId(null);
-  }
+    if (historyId !== null && !categories.some((category) => category.id === historyId)) {
+      setHistoryId(null);
+    }
+  }, [categories, editingId, historyId]);
 
   if (status === "LoadingFirstPage") {
     return (
@@ -278,6 +275,13 @@ function CategoryRow({
   // (the Owner archives the Category reactively, or the Circle archives), the
   // editor closes rather than offering a form every save would reject.
   const canEdit = writable && category.canEditFields && !isArchived;
+  // Also clear the stale `editingId` upstream, so the row doesn't silently hold
+  // edit mode and resurrect the editor if the Category is later restored.
+  useEffect(() => {
+    if (editing && !canEdit) {
+      onEditToggle(false);
+    }
+  }, [editing, canEdit, onEditToggle]);
 
   return (
     <li className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">

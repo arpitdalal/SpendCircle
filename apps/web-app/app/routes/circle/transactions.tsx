@@ -360,6 +360,13 @@ function MonthNavigator({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input && input.value !== month) {
+      input.value = month;
+    }
+  }, [month]);
+
   const commit = () => {
     const input = inputRef.current;
     if (!input) {
@@ -389,7 +396,6 @@ function MonthNavigator({
         Month
       </label>
       <input
-        key={month}
         ref={inputRef}
         id="ledger-month"
         type="month"

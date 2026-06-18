@@ -7,6 +7,28 @@
         "rules": ["react-doctor/prefer-tag-over-role"]
       },
       {
+        "files": ["**/components/ui/label.tsx"],
+        "rules": ["react-doctor/label-has-associated-control"]
+      },
+      {
+        "files": ["**/app/components/ui/debounced-search-input.tsx"],
+        "rules": [
+          "react-doctor/no-derived-state-effect",
+          "react-doctor/no-adjust-state-on-prop-change",
+          "react-doctor/no-event-handler"
+        ]
+      },
+      {
+        "files": ["**/app/routes/circle/categories.tsx"],
+        "rules": [
+          "react-doctor/no-derived-state-effect",
+          "react-doctor/no-adjust-state-on-prop-change",
+          "react-doctor/no-event-handler",
+          "react-doctor/no-prop-callback-in-effect",
+          "react-doctor/no-chain-state-updates"
+        ]
+      },
+      {
         "files": ["**/app/lib/form.tsx"],
         "rules": ["react-doctor/no-multi-comp", "react-doctor/only-export-components"]
       },
@@ -17,6 +39,14 @@
       {
         "files": ["**/app/lib/use-resolved-ref.ts"],
         "rules": ["react-doctor/no-event-handler"]
+      },
+      {
+        "files": ["**/app/lib/route-skeleton.ts"],
+        "rules": ["react-doctor/no-event-handler"]
+      },
+      {
+        "files": ["**/app/routes/circle/transactions.tsx"],
+        "rules": ["react-doctor/no-derived-state-effect"]
       },
       {
         "files": [

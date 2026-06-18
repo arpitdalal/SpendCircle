@@ -32,10 +32,12 @@ export function DebouncedSearchInput({
   const [text, setText] = useState(value);
   const applied = useRef(value);
 
-  if (value !== applied.current) {
-    applied.current = value;
-    setText(value);
-  }
+  useEffect(() => {
+    if (value !== applied.current) {
+      applied.current = value;
+      setText(value);
+    }
+  }, [value]);
 
   const flush = useEffectEvent((raw: string) => {
     const clean = normalize(raw);

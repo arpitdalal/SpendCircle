@@ -33,6 +33,11 @@ export async function createRegularCircleAndFinishSetup(
   await finishCircleSetup(page);
 }
 
+/** Phase-1 route skeleton (issue #121) swaps the outlet; wait for it to clear before interacting. */
+async function waitForCircleRouteReady(page: Page) {
+  await expect(page.getByTestId("route-skeleton")).toHaveCount(0);
+}
+
 /**
  * Circle tab navigation: desktop horizontal tabs vs mobile bottom bar + More sheet
  * (issue #124). Use instead of bare `getByRole("link", { name: … })` for Circle chrome.
@@ -44,6 +49,7 @@ export async function clickCircleChromeTab(page: Page, tab: CircleChromeTab) {
       .getByRole("navigation", { name: "Circle tabs" })
       .getByRole("link", { name: tab, exact: true })
       .click();
+    await waitForCircleRouteReady(page);
     return;
   }
   if (tab === "Dashboard" || tab === "Transactions" || tab === "Search") {
@@ -51,6 +57,7 @@ export async function clickCircleChromeTab(page: Page, tab: CircleChromeTab) {
       .getByRole("navigation", { name: "Circle" })
       .getByRole("link", { name: tab, exact: true })
       .click();
+    await waitForCircleRouteReady(page);
     return;
   }
   await page
@@ -61,6 +68,7 @@ export async function clickCircleChromeTab(page: Page, tab: CircleChromeTab) {
     .getByRole("dialog", { name: "More" })
     .getByRole("link", { name: tab, exact: true })
     .click();
+  await waitForCircleRouteReady(page);
 }
 
 /**
