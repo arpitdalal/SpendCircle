@@ -32,11 +32,24 @@ export function DebouncedSearchInput({
   const [text, setText] = useState(value);
   const applied = useRef(value);
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const normalizeRef = useRef(normalize);
+  const onSearchRef = useRef(onSearch);
+
+  normalizeRef.current = normalize;
+  onSearchRef.current = onSearch;
 
   const clearPending = useCallback(() => {
     if (pending.current !== undefined) {
       clearTimeout(pending.current);
       pending.current = undefined;
+    }
+  }, []);
+
+  const commitRaw = useCallback((raw: string) => {
+    const clean = normalizeRef.current(raw);
+    if (clean !== applied.current) {
+      applied.current = clean;
+      onSearchRef.current(clean);
     }
   }, []);
 
@@ -48,11 +61,7 @@ export function DebouncedSearchInput({
   }, [value]);
 
   const flush = useEffectEvent((raw: string) => {
-    const clean = normalize(raw);
-    if (clean !== applied.current) {
-      applied.current = clean;
-      onSearch(clean);
-    }
+    commitRaw(raw);
   });
 
   useEffect(() => {
@@ -66,7 +75,7 @@ export function DebouncedSearchInput({
 
   function commit() {
     clearPending();
-    flush(text);
+    commitRaw(text);
   }
 
   return (
