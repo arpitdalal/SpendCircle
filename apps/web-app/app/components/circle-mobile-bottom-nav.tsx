@@ -1,6 +1,6 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { MoreHorizontal, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { buttonVariants } from "~/components/ui/button-variants.js";
 import {
@@ -35,10 +35,15 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
 
   const moreActive = moreItems.some((item) => isCircleNavItemActive(location.pathname, item));
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: collapse More whenever the router location changes; Biome treats `setMoreOpen` as the only "needed" dep, which would run once and never again.
-  useEffect(() => {
+  // Close the More sheet on navigation. Comparing against the previous location during
+  // render (and resetting then, not in an effect) keeps the sheet from painting open on the
+  // new route for a frame. `prevLocation` is render-only bookkeeping that's never shown, so
+  // it lives in a ref, not state. See react.dev "You Might Not Need an Effect".
+  const prevLocation = useRef(location);
+  if (location !== prevLocation.current) {
+    prevLocation.current = location;
     setMoreOpen(false);
-  }, [location]);
+  }
 
   return (
     <>

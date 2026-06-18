@@ -36,6 +36,7 @@ export function SkeletonRegion({
   children: ReactNode;
 }) {
   return (
+    // react-doctor-disable-next-line react-doctor/prefer-tag-over-role -- status live region wraps block skeleton content (RowsSkeleton/StatCardsSkeleton render <div> trees); <output> is the only native tag with implicit role="status" but it's phrasing-content only, so it can't wrap this flow content
     <div role="status" aria-busy="true" data-testid={testId} className={className}>
       <span className="sr-only">{label}</span>
       {children}
@@ -56,11 +57,7 @@ export function LoadingStatus({ loading, label }: { loading: boolean; label: str
   if (!loading) {
     return null;
   }
-  return (
-    <span role="status" className="sr-only">
-      {label}
-    </span>
-  );
+  return <output className="sr-only">{label}</output>;
 }
 
 /** Three stat-card placeholders shaped like the totals grid the Dashboard and the

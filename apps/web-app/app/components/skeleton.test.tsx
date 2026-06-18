@@ -22,7 +22,7 @@ describe("skeleton primitives", () => {
       </SkeletonRegion>,
     );
     const region = screen.getByTestId("widgets-skeleton");
-    expect(region).toHaveAttribute("role", "status");
+    expect(region).toHaveRole("status");
     expect(region).toHaveAttribute("aria-busy", "true");
     expect(within(region).getByText("Loading widgets…")).toBeInTheDocument();
   });
@@ -45,7 +45,7 @@ describe("skeleton primitives", () => {
   it("PageSkeleton is the generic Phase-1 content region", () => {
     render(<PageSkeleton />);
     const region = screen.getByTestId("route-skeleton");
-    expect(region).toHaveAttribute("role", "status");
+    expect(region).toHaveRole("status");
     expect(region).toHaveAttribute("aria-busy", "true");
   });
 });

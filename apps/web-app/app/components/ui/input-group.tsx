@@ -7,6 +7,10 @@ import { cn } from "~/lib/utils.js";
 
 export function InputGroup({ className, ...props }: ComponentProps<"div">) {
   return (
+    // role="group" is intentional; react-doctor/prefer-tag-over-role is ignored for this file in
+    // doctor.config.json — no native tag with implicit role="group" fits (a <fieldset>/<address>
+    // would force unwanted form/contact semantics; react-doctor's inline disable can't sit adjacent
+    // to the role attr without displacing the required adjacent biome-ignore below).
     // biome-ignore lint/a11y/useSemanticElements: shadcn input-group; not a form field grouping.
     <div
       data-slot="input-group"
@@ -56,6 +60,10 @@ export function InputGroupAddon({
   ...props
 }: ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) {
   return (
+    // role="group" is intentional; react-doctor/prefer-tag-over-role is ignored for this file in
+    // doctor.config.json — no native tag with implicit role="group" fits (a <fieldset>/<address>
+    // would force unwanted form/contact semantics; react-doctor's inline disable can't sit adjacent
+    // to the role attr without displacing the required adjacent biome-ignore below).
     // biome-ignore lint/a11y/useSemanticElements: addon row inside input-group; not a fieldset.
     <div
       role="group"

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "ignore": {
+    "overrides": [
+      {
+        "files": ["**/components/ui/input-group.tsx"],
+        "rules": ["react-doctor/prefer-tag-over-role"]
+      }
+    ]
+  }
+}
