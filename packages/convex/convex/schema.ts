@@ -62,6 +62,7 @@ export default defineSchema({
     archivedAt: v.optional(v.number()),
   })
     .index("by_owner", ["ownerUserId"])
+    .index("by_owner_and_kind", ["ownerUserId", "kind"])
     .index("by_owner_and_status", ["ownerUserId", "status"]),
 
   // Membership join. Exactly one row per (circleId, userId): leaving flips

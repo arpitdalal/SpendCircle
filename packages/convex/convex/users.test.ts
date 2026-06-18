@@ -236,6 +236,50 @@ describe("completeOnboarding", () => {
     });
   });
 
+  it("reconciles the Personal Circle even when the user owns other Circles", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await t.run((ctx) =>
+      createUserWithPersonalCircle(ctx, {
+        email: "ada@example.com",
+        displayName: "Ada Lovelace",
+      }),
+    );
+
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("circles", {
+        name: "Trip",
+        kind: "regular",
+        currency: "USD",
+        color: "blue",
+        mark: "T",
+        ownerUserId: userId,
+        status: "active",
+        setupCompletedAt: now,
+        currencyLocked: false,
+        createdAt: now,
+      });
+    });
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      if (!user) {
+        throw new Error("missing user");
+      }
+      mockCurrentUser.mockResolvedValue(user);
+    });
+
+    await t.mutation(api.users.completeOnboarding, { displayName: "Ada King" });
+
+    await t.run(async (ctx) => {
+      const personal = await ctx.db
+        .query("circles")
+        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", userId).eq("kind", "personal"))
+        .first();
+      expect(personal?.name).toBe("Ada's Circle");
+    });
+  });
+
   it("skips the Personal Circle rename when the confirmed name matches", async () => {
     const t = convexTest(schema, modules);
     const userId = await t.run((ctx) =>

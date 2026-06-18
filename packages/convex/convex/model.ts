@@ -5,8 +5,8 @@ import {
   isSupportedCurrency,
   personalCircleName,
 } from "@spend-circle/domain";
-import type { Id } from "./_generated/dataModel.js";
-import type { MutationCtx } from "./_generated/server.js";
+import type { Doc, Id } from "./_generated/dataModel.js";
+import type { MutationCtx, QueryCtx } from "./_generated/server.js";
 
 /**
  * Bootstrap helpers for new User creation. These hold no dependency on the
@@ -76,6 +76,17 @@ export async function createUserWithPersonalCircle(
   });
 
   return userId;
+}
+
+/** The User's Personal Circle, if present — at most one per owner (PRD story 1). */
+export async function getPersonalCircleForOwner(
+  ctx: QueryCtx | MutationCtx,
+  ownerUserId: Id<"users">,
+): Promise<Doc<"circles"> | null> {
+  return await ctx.db
+    .query("circles")
+    .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", ownerUserId).eq("kind", "personal"))
+    .first();
 }
 
 /**

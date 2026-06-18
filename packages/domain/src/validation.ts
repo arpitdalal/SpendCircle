@@ -30,6 +30,22 @@ export const profileUpdateSchema = z.object({
 });
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 
+export type ProfileUpdateParseResult =
+  | { ok: true; value: ProfileUpdateInput }
+  | { ok: false; error: string };
+
+/** Shared profile-edit parse contract for client forms and Convex mutations (USR-1). */
+export function parseProfileUpdate(input: { displayName: string }): ProfileUpdateParseResult {
+  const parsed = profileUpdateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid display name",
+    };
+  }
+  return { ok: true, value: parsed.data };
+}
+
 export const circleInputSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(LIMITS.circleNameMax),
   currency: z.string().refine(isSupportedCurrency, { message: "Unsupported currency" }),

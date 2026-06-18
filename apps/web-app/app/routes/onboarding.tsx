@@ -1,4 +1,4 @@
-import { LIMITS, profileUpdateSchema } from "@spend-circle/domain";
+import { LIMITS, parseProfileUpdate } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
 import { Navigate } from "react-router";
 import { Splash } from "~/components/splash.js";
@@ -43,15 +43,15 @@ function OnboardingForm({ user }: { user: { email: string; displayName: string }
     event.preventDefault();
     setError(null);
 
-    const parsed = profileUpdateSchema.safeParse({ displayName });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Invalid display name");
+    const parsed = parseProfileUpdate({ displayName });
+    if (!parsed.ok) {
+      setError(parsed.error);
       return;
     }
 
     setSubmitting(true);
     try {
-      await completeOnboarding({ displayName: parsed.data.displayName });
+      await completeOnboarding({ displayName: parsed.value.displayName });
     } catch (caught) {
       console.error("completeOnboarding failed", caught);
       setError("Couldn't finish setup. Please try again.");

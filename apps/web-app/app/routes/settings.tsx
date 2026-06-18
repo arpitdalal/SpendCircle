@@ -1,4 +1,4 @@
-import { LIMITS, profileUpdateSchema } from "@spend-circle/domain";
+import { LIMITS, parseProfileUpdate } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
 import { Button } from "~/components/ui/button.js";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field.js";
@@ -55,15 +55,15 @@ function ProfileSettingsForm({ user }: { user: SessionUser }) {
     event.preventDefault();
     setError(null);
 
-    const parsed = profileUpdateSchema.safeParse({ displayName });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Invalid display name");
+    const parsed = parseProfileUpdate({ displayName });
+    if (!parsed.ok) {
+      setError(parsed.error);
       return;
     }
 
     setSubmitting(true);
     try {
-      await updateProfile({ displayName: parsed.data.displayName });
+      await updateProfile({ displayName: parsed.value.displayName });
       show("Profile updated.");
     } catch (caught) {
       console.error("updateProfile failed", caught);

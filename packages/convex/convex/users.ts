@@ -1,9 +1,9 @@
-import { initials, personalCircleName, profileUpdateSchema } from "@spend-circle/domain";
+import { initials, parseProfileUpdate, personalCircleName } from "@spend-circle/domain";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel.js";
 import { mutation, query } from "./_generated/server.js";
 import { getCurrentUserOrNull, requireCurrentUser } from "./auth.js";
-import { setUserDisplayName } from "./model.js";
+import { getPersonalCircleForOwner, setUserDisplayName } from "./model.js";
 
 /**
  * The current-user view the protected layout and settings read (ADR 0003). Derived
@@ -42,21 +42,17 @@ export const completeOnboarding = mutation({
       throw new Error("Onboarding already completed");
     }
 
-    const parsed = profileUpdateSchema.safeParse({ displayName: args.displayName });
-    if (!parsed.success) {
-      throw new Error(parsed.error.issues[0]?.message ?? "Invalid display name");
+    const parsed = parseProfileUpdate({ displayName: args.displayName });
+    if (!parsed.ok) {
+      throw new Error(parsed.error);
     }
-    const confirmedName = parsed.data.displayName;
+    const confirmedName = parsed.value.displayName;
 
     if (confirmedName !== user.displayName) {
       await setUserDisplayName(ctx, user._id, confirmedName);
     }
 
-    const personalCircles = await ctx.db
-      .query("circles")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", user._id))
-      .collect();
-    const personalCircle = personalCircles.find((circle) => circle.kind === "personal");
+    const personalCircle = await getPersonalCircleForOwner(ctx, user._id);
     if (personalCircle) {
       const reconciledName = personalCircleName(confirmedName);
       if (personalCircle.name !== reconciledName) {
@@ -72,16 +68,20 @@ export const completeOnboarding = mutation({
   },
 });
 
-/** Post-onboarding Display Name edit (Settings). Does not rename the Personal Circle. */
+/**
+ * Post-onboarding Display Name edit (Settings). Updates member materialized identity
+ * only — the Personal Circle name/mark were reconciled once in `completeOnboarding`
+ * and are intentionally not renamed here (USR-1 one-shot reconcile).
+ */
 export const updateProfile = mutation({
   args: { displayName: v.string() },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
-    const parsed = profileUpdateSchema.safeParse({ displayName: args.displayName });
-    if (!parsed.success) {
-      throw new Error(parsed.error.issues[0]?.message ?? "Invalid display name");
+    const parsed = parseProfileUpdate({ displayName: args.displayName });
+    if (!parsed.ok) {
+      throw new Error(parsed.error);
     }
-    await setUserDisplayName(ctx, user._id, parsed.data.displayName);
+    await setUserDisplayName(ctx, user._id, parsed.value.displayName);
   },
 });
 
