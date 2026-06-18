@@ -63,7 +63,7 @@ export function LoadingStatus({ loading, label }: { loading: boolean; label: str
 /** Three stat-card placeholders shaped like the totals grid the Dashboard and the
  * ledger's Monthly totals render. Presentational — wrap in a {@link SkeletonRegion}
  * (or let the live amounts announce) at the call site. */
-export function StatCardsSkeleton() {
+function StatCardsSkeleton() {
   return (
     <div className="grid grid-cols-3 gap-3">
       {[0, 1, 2].map((index) => (

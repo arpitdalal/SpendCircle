@@ -45,6 +45,7 @@ export interface SearchFilters extends BaseTransactionFilters {
 export const DEFAULT_TYPE: TypeFilter = "all";
 export const DEFAULT_STATUS: LifecycleFilter = "all";
 export const LEDGER_FILTER_PARAMS = ["q", "type", "status", "categories", "recordedBy", "paidBy"];
+const LEDGER_FILTER_PARAM_SET = new Set<string>(LEDGER_FILTER_PARAMS);
 export const SEARCH_FILTER_PARAMS = [
   "q",
   "type",
@@ -140,7 +141,7 @@ export function canonicalLedgerParams(filters: LedgerFilters, preserve?: URLSear
   const params = new URLSearchParams();
   writeLedgerFilters(params, filters);
   for (const [key, value] of preserve ?? []) {
-    if (key !== "month" && !LEDGER_FILTER_PARAMS.includes(key)) {
+    if (key !== "month" && !LEDGER_FILTER_PARAM_SET.has(key)) {
       params.append(key, value);
     }
   }

@@ -46,6 +46,7 @@ export function TransactionFormTypeEditSection({
       </div>
       {pendingType ? (
         <div
+          // react-doctor-disable-next-line react-doctor/prefer-html-dialog -- inline confirmation banner, not a modal; no focus trap or backdrop needed.
           role="alertdialog"
           aria-labelledby="txn-type-confirm-title"
           aria-describedby="txn-type-confirm-desc"

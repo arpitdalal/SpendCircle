@@ -66,9 +66,14 @@ export function usePendingRouteSkeleton(
   const pendingKey = active ? (navigation.location?.key ?? to) : null;
 
   const [shown, setShown] = useState(false);
+  const [prevPendingKey, setPrevPendingKey] = useState(pendingKey);
+  if (pendingKey !== prevPendingKey) {
+    setPrevPendingKey(pendingKey);
+    setShown(false);
+  }
+
   useEffect(() => {
     if (pendingKey === null) {
-      setShown(false);
       return;
     }
     const handle = setTimeout(() => setShown(true), delayMs);

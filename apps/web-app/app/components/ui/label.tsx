@@ -7,6 +7,7 @@ import { cn } from "~/lib/utils.js";
  */
 export function Label({ className, ...props }: ComponentProps<"label">) {
   return (
+    // react-doctor-disable-next-line react-doctor/label-has-associated-control -- reusable Label primitive; association is always supplied by the caller via htmlFor or nesting.
     // biome-ignore lint/a11y/noLabelWithoutControl: shadcn-style wrapper; callers pass htmlFor or nest the control.
     <label
       data-slot="label"

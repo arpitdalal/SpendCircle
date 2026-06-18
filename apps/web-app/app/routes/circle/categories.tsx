@@ -1,5 +1,5 @@
 import { COLOR_PALETTE, categoryUpdateSchema, LIMITS } from "@spend-circle/domain";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ColorPicker } from "~/components/category-form.js";
 import { HistoryList } from "~/components/history-list.js";
@@ -85,6 +85,7 @@ export default function CircleCategories() {
 
   // Canonicalize the address bar (replace) so a copied URL always carries
   // type+status — the transactions route's contract applied here.
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- URL must self-heal on load and when reactive filters diverge from the bar; no single user event owns that.
   useEffect(() => {
     const next = canonicalCategoriesParams(filters, searchParams);
     if (next.toString() !== searchParams.toString()) {
@@ -188,21 +189,24 @@ function CategoryList({
   const [editingId, setEditingId] = useState<Category["id"] | null>(null);
   const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
   const { categories, status, loadMore } = page;
+  const categoryIds = useMemo(
+    () => new Set(categories.map((category) => category.id)),
+    [categories],
+  );
 
-  // The open-editor / open-history selection is only meaningful while its row is
-  // ON the current page. The Category Filter (search, status, type) and reactive
-  // changes can drop the row — unmounting closes the UI, but the id up here must
-  // not outlive it, or widening the filter would remount the row with a fresh
-  // editor/panel popping open unbidden (and an in-progress edit silently gone).
-  // The list-membership counterpart of CategoryRow's capability effect below.
-  useEffect(() => {
-    if (editingId !== null && !categories.some((category) => category.id === editingId)) {
+  function canRowEdit(category: Category) {
+    return circle.status === "active" && category.canEditFields && category.status !== "archived";
+  }
+
+  if (editingId !== null) {
+    const editingCategory = categories.find((category) => category.id === editingId);
+    if (!editingCategory || !canRowEdit(editingCategory)) {
       setEditingId(null);
     }
-    if (historyId !== null && !categories.some((category) => category.id === historyId)) {
-      setHistoryId(null);
-    }
-  }, [categories, editingId, historyId]);
+  }
+  if (historyId !== null && !categoryIds.has(historyId)) {
+    setHistoryId(null);
+  }
 
   if (status === "LoadingFirstPage") {
     return (
@@ -274,13 +278,6 @@ function CategoryRow({
   // (the Owner archives the Category reactively, or the Circle archives), the
   // editor closes rather than offering a form every save would reject.
   const canEdit = writable && category.canEditFields && !isArchived;
-  // Also clear the stale `editingId` upstream, so the row doesn't silently hold
-  // edit mode and resurrect the editor if the Category is later restored.
-  useEffect(() => {
-    if (editing && !canEdit) {
-      onEditToggle(false);
-    }
-  }, [editing, canEdit, onEditToggle]);
 
   return (
     <li className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
@@ -353,8 +350,20 @@ function CategoryRow({
  * submit is a server-side no-op that records no history.
  */
 function EditCategoryForm({ category, onClose }: { category: Category; onClose: () => void }) {
+  return <EditCategoryFormFields key={category.id} category={category} onClose={onClose} />;
+}
+
+function EditCategoryFormFields({
+  category,
+  onClose,
+}: {
+  category: Category;
+  onClose: () => void;
+}) {
   const updateCategory = useUpdateCategory();
+  // react-doctor-disable-next-line react-doctor/no-derived-useState -- parent key={category.id} remounts this editor per row/session.
   const [name, setName] = useState(category.name);
+  // react-doctor-disable-next-line react-doctor/no-derived-useState -- parent key={category.id} remounts this editor per row/session.
   const [color, setColor] = useState(category.color);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

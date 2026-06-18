@@ -7,7 +7,7 @@ import {
   LIMITS,
   RESIDENCE_TYPES,
 } from "@spend-circle/domain";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import { href, Navigate } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Button } from "~/components/ui/button.js";
@@ -60,12 +60,14 @@ export default function CircleSettings() {
 
   const dashboardPath = href("/circles/:circleRef", { circleRef: circle.ref });
 
-  useEffect(() => {
+  const syncedCircle = useRef(circle);
+  if (circle !== syncedCircle.current) {
+    syncedCircle.current = circle;
     setName(circle.name);
     setColor(circle.color);
     setPurpose(circle.setupAnswers?.purpose ?? "");
     setResidenceType(circle.setupAnswers?.residenceType ?? "");
-  }, [circle.name, circle.color, circle.setupAnswers]);
+  }
 
   if (members === undefined) {
     return <p className="text-sm text-muted-foreground">Loading settings…</p>;

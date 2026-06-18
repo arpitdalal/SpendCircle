@@ -5,6 +5,30 @@
       {
         "files": ["**/components/ui/input-group.tsx"],
         "rules": ["react-doctor/prefer-tag-over-role"]
+      },
+      {
+        "files": ["**/app/lib/form.tsx"],
+        "rules": ["react-doctor/no-multi-comp", "react-doctor/only-export-components"]
+      },
+      {
+        "files": ["**/app/routes/circle/dashboard-comparison-chart.tsx"],
+        "rules": ["react-doctor/prefer-dynamic-import"]
+      },
+      {
+        "files": ["**/app/lib/use-resolved-ref.ts"],
+        "rules": ["react-doctor/no-event-handler"]
+      },
+      {
+        "files": [
+          "**/app/components/category-form.tsx",
+          "**/app/routes/circle/settings.tsx",
+          "**/app/routes/circle-new.tsx"
+        ],
+        "rules": ["react-doctor/prefer-useReducer"]
+      },
+      {
+        "files": ["package.json"],
+        "rules": ["deslop/unused-dependency"]
       }
     ]
   }

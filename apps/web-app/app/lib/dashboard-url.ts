@@ -26,6 +26,7 @@ export interface DashboardSelection {
 
 /** The params this module owns; everything else is preserved untouched. */
 export const DASHBOARD_PARAMS = ["paidBy", "range"];
+const DASHBOARD_PARAM_SET = new Set<string>(DASHBOARD_PARAMS);
 
 export function readDashboardSelection(searchParams: URLSearchParams): DashboardSelection {
   const rawRange = Number(searchParams.get("range"));
@@ -47,7 +48,7 @@ export function canonicalDashboardParams(
     params.set("range", String(selection.range));
   }
   for (const [key, value] of preserve ?? []) {
-    if (!DASHBOARD_PARAMS.includes(key)) {
+    if (!DASHBOARD_PARAM_SET.has(key)) {
       params.append(key, value);
     }
   }

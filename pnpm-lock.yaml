@@ -79,7 +79,7 @@ importers:
         specifier: 0.1.119
         version: 0.1.119(@standard-schema/spec@1.1.0)(convex@1.41.0(react@19.2.7))(react@19.2.7)(typescript@5.9.3)(zod@4.4.3)
       isbot:
-        specifier: ^5.1.40
+        specifier: ^5
         version: 5.1.42
       lucide-react:
         specifier: ^1.17.0
