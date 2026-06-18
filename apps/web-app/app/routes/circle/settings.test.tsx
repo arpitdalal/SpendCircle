@@ -5,6 +5,10 @@ import { Route } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import type { Member } from "~/lib/data.js";
 import {
+  makePaletteOnlyUpdateCircleSettingsHandler,
+  makeUpdateCircleSettingsHandler,
+} from "~/test/convex/circle-settings.js";
+import {
   configureConvex,
   makeCircleView,
   makeMemberView,
@@ -82,15 +86,15 @@ describe("Circle settings", () => {
     expect(screen.getByText("dashboard")).toBeInTheDocument();
   });
 
-  it("shows iris on Personal Circle settings and can restore it after another pick", async () => {
+  it("saves iris on Personal Circle settings with kind-aware server validation", async () => {
     const user = userEvent.setup();
-    const updateCircleSettings = vi.fn().mockResolvedValue(undefined);
     const circle = makeCircleView({
       ref: "personal-c0",
       kind: "personal",
       color: "green",
       setupComplete: true,
     });
+    const updateCircleSettings = makeUpdateCircleSettingsHandler(circle);
     configureConvex({ members: [ownerMember], updateCircleSettings });
     renderCircleRoutes(
       circle,
@@ -101,11 +105,39 @@ describe("Circle settings", () => {
       { initialEntries: [`/circles/${circle.ref}/settings`] },
     );
 
-    expect(screen.getByRole("button", { name: "Iris" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Iris" }));
+
+    expect(updateCircleSettings).toHaveBeenCalledWith({ circleId: circle.id, color: "iris" });
+    expect(await screen.findByText(/Circle color updated/)).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't save the color/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("mark-tint")).toHaveAttribute("data-color-hex", colorHex("iris"));
+  });
+
+  it("surfaces a save failure when iris is rejected by palette-only validation", async () => {
+    const user = userEvent.setup();
+    const circle = makeCircleView({
+      ref: "personal-c0",
+      kind: "personal",
+      color: "green",
+      setupComplete: true,
+    });
+    configureConvex({
+      members: [ownerMember],
+      updateCircleSettings: makePaletteOnlyUpdateCircleSettingsHandler(),
+    });
+    renderCircleRoutes(
+      circle,
+      <>
+        <Route path="/circles/:circleRef" element={<div>dashboard</div>} />
+        <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />
+      </>,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
 
     await user.click(screen.getByRole("button", { name: "Iris" }));
-    expect(updateCircleSettings).toHaveBeenCalledWith({ circleId: circle.id, color: "iris" });
-    expect(screen.getByTestId("mark-tint")).toHaveAttribute("data-color-hex", colorHex("iris"));
+
+    expect(await screen.findByText(/Couldn't save the color/)).toBeInTheDocument();
+    expect(screen.getByTestId("mark-tint")).toHaveAttribute("data-color-hex", colorHex("green"));
   });
 
   it("does not offer iris on regular circle settings", () => {
