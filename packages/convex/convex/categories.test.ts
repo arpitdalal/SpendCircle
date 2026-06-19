@@ -1458,6 +1458,36 @@ describe("filterCategories — all types (issue #138)", () => {
     expect(third.page.map((c) => c.name)).toEqual(["Cat 0"]);
     expect(third.isDone).toBe(true);
   });
+
+  it("paginates same-createdAt rows across types without skipping or repeating either", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    // Circle Setup can create both types in one millisecond. The later income
+    // insert has the larger _creationTime and must be the first page.
+    await seedCategories(t, circleId, owner._id, [
+      { name: "Expense", type: "expense", createdAt: 100 },
+      { name: "Income", type: "income", createdAt: 100 },
+    ]);
+
+    const first = await filterPage(t, owner, { circleId, type: "all", numItems: 1 });
+    const second = await filterPage(t, owner, {
+      circleId,
+      type: "all",
+      numItems: 1,
+      cursor: first.continueCursor,
+    });
+    const third = await filterPage(t, owner, {
+      circleId,
+      type: "all",
+      numItems: 1,
+      cursor: second.continueCursor,
+    });
+
+    expect(first.page.map((category) => category.name)).toEqual(["Income"]);
+    expect(second.page.map((category) => category.name)).toEqual(["Expense"]);
+    expect(third.page).toEqual([]);
+    expect(third.isDone).toBe(true);
+  });
 });
 
 describe("filterCategories — pagination at the source (CAT-4)", () => {

@@ -193,8 +193,9 @@ export const listCategories = query({
  * carries the sort key, so pages stay in `createdAt` desc order (with Convex's
  * implicit `_creationTime` desc tiebreak) across page boundaries. Both indexes
  * fix every field before `createdAt` via `.eq(...)`, so each stream is already
- * ordered by `createdAt` alone — the precondition `mergedStream` needs to merge
- * two of them on `["createdAt"]` (see {@link streamCategoriesByStatus}). */
+ * ordered by `createdAt` then Convex's implicit `_creationTime` — the precondition
+ * `mergedStream` needs to merge the two type streams on that same composite key
+ * (see {@link streamCategoriesByStatus}). */
 function streamCategoriesOfType(
   ctx: QueryCtx,
   args: {
@@ -222,7 +223,7 @@ function streamCategoriesOfType(
 
 /** The Category Filter's source stream. For a concrete type it is the single
  * lifecycle-scoped stream above. For `type: "all"` it MERGES the expense and
- * income streams on `["createdAt"]` (desc), preserving newest-first across both
+ * income streams on `["createdAt", "_creationTime"]` (desc), preserving newest-first across both
  * types — neither type index alone can range over both, but each is already
  * `createdAt`-ordered (it fixes `type` with `.eq`), so the merge reuses the
  * existing indexes with no schema change. The merge is type-agnostic about
@@ -243,7 +244,7 @@ function streamCategoriesByStatus(
       streamCategoriesOfType(ctx, { ...args, type: "expense" }),
       streamCategoriesOfType(ctx, { ...args, type: "income" }),
     ],
-    ["createdAt"],
+    ["createdAt", "_creationTime"],
   );
 }
 
