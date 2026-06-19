@@ -49,8 +49,14 @@ function escapeHtml(text: string) {
 
 /** Resend vendor wiring — single seam for EML-2 / FBK-1. Uses fetch (not SDK).
  *  Returns true on a confirmed 2xx; false when env is unset (no-op). THROWS on
- *  fetch rejection or non-2xx so the Workpool retries the handoff. */
-export async function sendEmail(args: { to: string; subject: string; html: string }) {
+ *  fetch rejection or non-2xx so the Workpool retries the handoff.
+ *  Pass `idempotencyKey` so a retried send dedupes at Resend instead of re-delivering. */
+export async function sendEmail(args: {
+  to: string;
+  subject: string;
+  html: string;
+  idempotencyKey?: string;
+}) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
   if (!key || !from) {
@@ -60,7 +66,12 @@ export async function sendEmail(args: { to: string; subject: string; html: strin
   // fetch can REJECT (DNS/TLS/timeout) before any response — let it propagate so the pool retries.
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      // Resend dedupes same-key sends for 24h → safe to retry the whole action.
+      ...(args.idempotencyKey ? { "Idempotency-Key": args.idempotencyKey } : {}),
+    },
     body: JSON.stringify({ from, to: args.to, subject: args.subject, html: args.html }),
   });
   if (!res.ok) {
@@ -106,6 +117,7 @@ export const sendWelcomeEmail = internalAction({
       to: p.email,
       subject: WELCOME_SUBJECT,
       html: welcomeHtml(p.displayName),
+      idempotencyKey: `welcome:${userId}`,
     });
     if (sent) {
       await ctx.runMutation(internal.email.markWelcomed, { userId });

@@ -172,6 +172,7 @@ describe("sendWelcomeEmail", () => {
       to: "ada@example.com",
       subject: WELCOME_SUBJECT,
     });
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`welcome:${userId}`);
     const html = resendBodyHtml(resend[0]?.body);
     expect(html).toContain("Ada Lovelace");
     expect(html).not.toMatch(FINANCIAL_PATTERN);
@@ -238,6 +239,22 @@ describe("sendEmail env safety and vendor errors", () => {
     await expect(
       sendEmail({ to: "a@b.com", subject: WELCOME_SUBJECT, html: welcomeHtml("Ada") }),
     ).rejects.toThrow(/Resend send failed: 500/);
+  });
+
+  it("forwards Idempotency-Key when idempotencyKey is set", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    await sendEmail({
+      to: "a@b.com",
+      subject: WELCOME_SUBJECT,
+      html: welcomeHtml("Ada"),
+      idempotencyKey: "welcome:user-123",
+    });
+
+    const resend = capturedRequests.filter((r) => r.vendor === "resend");
+    expect(resend).toHaveLength(1);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe("welcome:user-123");
   });
 });
 

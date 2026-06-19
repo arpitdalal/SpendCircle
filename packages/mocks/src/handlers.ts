@@ -14,6 +14,7 @@ export interface CapturedRequest {
   vendor: "resend" | "posthog" | "sentry";
   url: string;
   body: unknown;
+  headers?: Record<string, string>;
 }
 
 /** In-memory log of intercepted vendor calls, for assertions in tests. */
@@ -31,6 +32,14 @@ async function safeJson(request: Request): Promise<unknown> {
   }
 }
 
+function headersToRecord(headers: Headers) {
+  const out: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    out[key] = value;
+  });
+  return out;
+}
+
 export const handlers = [
   // Resend — transactional email (ADR 0008): Welcome + Invitation + Feedback.
   http.post("https://api.resend.com/emails", async ({ request }) => {
@@ -38,6 +47,7 @@ export const handlers = [
       vendor: "resend",
       url: request.url,
       body: await safeJson(request),
+      headers: headersToRecord(request.headers),
     });
     return HttpResponse.json({ id: "mock-email-id" }, { status: 200 });
   }),
