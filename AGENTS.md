@@ -4,7 +4,7 @@ Don't cut corners. Be thorough in your work.
 
 Fix issues from the root, don't settle for a bandaid.
 
-No typescript `as` casts, use type inference, zod, or other type-safe tools. Type casting should be the last resort, if needed, confirm with the user by presenting why it is absolutely needed.
+No typescript `as` casts, use type inference, zod, or other type-safe tools. Type casting should be the last resort, if needed, confirm with the user by presenting why it is absolutely needed. `as` const is an exception to this rule where it's necessary to enforce a specific type like enum or tuple values.
 
 No explicit return types for functions, use type inference, zod, or other type-safe tools. Only use explicit return types if absolutely necessary. Library type code needs more explicit return types than application code.
 
