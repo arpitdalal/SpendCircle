@@ -28,17 +28,19 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 - **Google Account Email** is the **lone synced field** — kept current from Google, never
   user-editable.
 - The **Personal Circle**'s name is seeded from the Google first name (`{firstName}'s Circle`) and
-  **reconciled once to the confirmed name at Onboarding completion** — a safe, history-free rename
-  because the gate means no activity has happened yet. Its **Mark** is derived from the name
-  (`initials()`), replacing the hardcoded `"P"`.
+  **auto-tracks the confirmed or edited Display Name** until the owner manually renames it
+  (`personalNameCustomizedAt` on the Circle row; absent ⇒ auto-tracking). After a manual rename,
+  Onboarding and App Settings Display Name edits no longer change the Circle name. Identity-driven
+  reconciles are a direct patch with no Circle History event. Its **Mark** always derives from the
+  Circle's current name via `initials()` at every write that can change the name (bootstrap, identity
+  reconcile, manual rename) — replacing the hardcoded `"P"`.
 - The Personal Circle's switcher/home subtitle changes from `"Personal"` to **"Your Circle"** (regular
   Circles keep `"Circle"`).
 
-> **Why the gate makes the reconcile safe.** The Personal Circle is created at the `onCreate` auth
-> trigger, *before* any form. A blocking Onboarding gate means the window between creation and
-> name-confirmation is one where the User cannot have renamed anything. So applying the confirmed name
-> to the Circle once, at completion, is a one-shot provisioning step — **not** the ongoing Google→app
-> sync we deliberately removed, and it cannot clobber a deliberate rename (none is possible yet).
+> **Why history-free reconcile.** Identity-driven Personal Circle name updates (Onboarding confirmation and
+> Settings Display Name edits, while auto-tracking is active) patch the Circle name/mark directly — they
+> are not user-initiated Circle renames via `renameCircle`, so they do not record **Circle History**
+> events. Manual renames set `personalNameCustomizedAt` and do record history.
 
 > **Why a funnel, not a server boundary.** Onboarding completion is a UX funnel, not an authorization
 > rule — the only thing behind it is the User's *own* solo data. So the gate is a client redirect (ADR
@@ -51,8 +53,8 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 ### Domain (`packages/domain/src`)
 
 - `personalCircleName(displayName)`: pure helper → `` `${firstToken}'s Circle` `` where `firstToken`
-  is the first whitespace-delimited token; falls back to `"Personal"` when the name yields no token
-  (empty / whitespace / emoji-only). Pure, shared, unit-tested with zero mocks.
+  is the first whitespace-delimited token; falls back to `"Personal Circle"` when the name yields no
+  token (empty / whitespace / emoji-only). Pure, shared, unit-tested with zero mocks.
 - Reuse the existing `initials()` ([initials.ts](../../packages/domain/src/initials.ts)) for the Mark —
   do **not** reimplement.
 - `profileUpdateSchema` (Zod): `{ displayName: <trimmed, min 1, max same bound as other name inputs> }`.
@@ -61,6 +63,8 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 
 - `users`: add required `onboardingCompletedAt: v.union(v.number(), v.null())`. `null` = not yet
   onboarded; a number = done.
+- `circles`: add optional `personalNameCustomizedAt: v.number()` — set on manual Personal Circle rename;
+  absent ⇒ the name auto-tracks the owner's Display Name. Personal Circles only; no backfill needed.
 
 ### Backend model (`model.ts`)
 
@@ -82,14 +86,13 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 
 - `completeOnboarding` mutation `{ displayName: v.string() }`: `requireCurrentUser` → reject if already
   onboarded (`onboardingCompletedAt !== null`) → parse with `profileUpdateSchema` → if the name differs
-  from current, `setUserDisplayName(...)` → **reconcile the Personal Circle**: find the caller's
-  `kind: "personal"` Circle and, if `personalCircleName(confirmedName) !== circle.name`, `db.patch` its
-  `name` + `mark = initials(name)` **directly — no `recordEvent`** (provisioning, not an audited rename)
-  → set `onboardingCompletedAt: now`.
+  from current, `setUserDisplayName(...)` → **reconcile the Personal Circle** via
+  `reconcilePersonalCircleFromDisplayName` (name only while `personalNameCustomizedAt` is absent; mark
+  always from current name — no `recordEvent`) → set `onboardingCompletedAt: now`.
 - `updateProfile` mutation `{ displayName: v.string() }`: post-onboarding edit. `requireCurrentUser` →
-  parse → `setUserDisplayName(...)`. Does **not** touch `onboardingCompletedAt` and does **not** rename
-  the Personal Circle (that reconcile is the one-shot above; the Circle is an ordinary renameable Circle
-  thereafter via F0 `renameCircle`).
+  parse → `setUserDisplayName(...)` → **reconcile the Personal Circle** the same way. Does **not** touch
+  `onboardingCompletedAt`. After a manual rename (`renameCircle` sets `personalNameCustomizedAt`), later
+  Display Name edits no longer change the Personal Circle name.
 - Expose `onboardingComplete: user.onboardingCompletedAt !== null`, `displayName`, and `email` on the
   current-user view the protected layout already reads.
 
@@ -123,9 +126,8 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 - **Amends ADR 0018's trigger, not its contract.** Materialized member identity still refreshes active
   memberships and freezes Removed Members — it is now driven by `updateProfile`/`completeOnboarding`, not
   the auth `onUpdate`.
-- **History-free reconcile.** The Personal Circle records no `created` event today; a provisioning rename
-  before any user activity should not invent a `renamed` event either — keep its history genuinely empty
-  until a real action.
+- **History-free reconcile.** Identity-driven Personal Circle renames patch directly — they are not
+  user-initiated `renameCircle` actions, so they do not invent `renamed` history events.
 - **Funnel over boundary** — see the Intent callout. No `requireOnboarded` on every mutation.
 - **Security, forward.** Invitation acceptance must match the **live** Google session email
   (`authUser.email`), never a stored snapshot — MEM-3 honors this; this slice only stops syncing the other
@@ -135,14 +137,17 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 
 - **Bootstrap:** a new User has `onboardingCompletedAt === null`; the Personal Circle is named
   `{firstName}'s Circle` with `mark === initials(name)`. Fallbacks: mononym → `Madonna's Circle`;
-  empty/emoji-only Display Name → `"Personal"` (mark `"P"`). Domain unit tests cover `personalCircleName`
-  + the `initials` reuse with zero mocks.
+  empty/emoji-only Display Name → `"Personal Circle"` (mark `"PC"`). Domain unit tests cover
+  `personalCircleName` + the `initials` reuse with zero mocks.
 - **completeOnboarding:** sets `onboardingCompletedAt`; renames the Personal Circle to the confirmed name
   with a re-derived Mark and records **no** Circle History event (assert the Circle's history is empty);
   confirming the *same* name performs no rename write; a second call is rejected.
-- **updateProfile (Settings):** changes `displayName` and propagates to **ACTIVE** memberships only
-  (Removed Member's materialized name stays frozen — ADR 0018); leaves `onboardingCompletedAt` and the
-  Personal Circle name untouched.
+- **updateProfile (Settings):** changes `displayName`, propagates to **ACTIVE** memberships only
+  (Removed Member's materialized name stays frozen — ADR 0018), and reconciles the Personal Circle
+  name/mark while auto-tracking is active (`personalNameCustomizedAt` absent) with **no** Circle History
+  event. After a manual rename, the Circle name/mark stay put but membership displayName still updates.
+- **renameCircle (Personal):** sets `personalNameCustomizedAt`, regenerates mark from the new name,
+  records a `renamed` history event (name only). Regular Circles: name only; mark and flag untouched.
 - **Sync policy:** simulating a `user.onUpdate` patches `users.email` only — `displayName` and `image` are
   unchanged (a user edit survives a Google refresh).
 - **Gate:** a not-onboarded User is redirected to `/onboarding` from every protected route; `/onboarding`
@@ -157,8 +162,9 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 - New Users land on the Onboarding form (confirm/edit name, read-only email) and cannot reach the app until
   they Continue; Display Name is app-owned and editable in Settings; Google no longer overwrites name/photo
   while email stays synced; the Personal Circle is seeded `{firstName}'s Circle` with an `initials()` Mark
-  and reconciled once at completion without a history event; the Personal Circle subtitle reads "Your
-  Circle"; ADR 0024 + the glossary terms are in place; tests green; gates pass.
+  and auto-tracks Display Name edits until manually renamed; mark always derives from the current name;
+  the Personal Circle subtitle reads "Your Circle"; ADR 0024 + the glossary terms are in place; tests
+  green; gates pass.
 
 ## Out of scope
 

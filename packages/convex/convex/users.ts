@@ -1,9 +1,9 @@
-import { initials, parseProfileUpdate, personalCircleName } from "@spend-circle/domain";
+import { parseProfileUpdate } from "@spend-circle/domain";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel.js";
 import { mutation, query } from "./_generated/server.js";
 import { getCurrentUserOrNull, requireCurrentUser } from "./auth.js";
-import { getPersonalCircleForOwner, setUserDisplayName } from "./model.js";
+import { reconcilePersonalCircleFromDisplayName, setUserDisplayName } from "./model.js";
 
 /**
  * The current-user view the protected layout and settings read (ADR 0003). Derived
@@ -52,16 +52,7 @@ export const completeOnboarding = mutation({
       await setUserDisplayName(ctx, user._id, confirmedName);
     }
 
-    const personalCircle = await getPersonalCircleForOwner(ctx, user._id);
-    if (personalCircle) {
-      const reconciledName = personalCircleName(confirmedName);
-      if (personalCircle.name !== reconciledName) {
-        await ctx.db.patch(personalCircle._id, {
-          name: reconciledName,
-          mark: initials(reconciledName),
-        });
-      }
-    }
+    await reconcilePersonalCircleFromDisplayName(ctx, user._id, confirmedName);
 
     const now = Date.now();
     await ctx.db.patch(user._id, { onboardingCompletedAt: now });
@@ -70,8 +61,7 @@ export const completeOnboarding = mutation({
 
 /**
  * Post-onboarding Display Name edit (Settings). Updates member materialized identity
- * only — the Personal Circle name/mark were reconciled once in `completeOnboarding`
- * and are intentionally not renamed here (USR-1 one-shot reconcile).
+ * and keeps the Personal Circle name/mark aligned with the new Display Name (USR-1).
  */
 export const updateProfile = mutation({
   args: { displayName: v.string() },
@@ -81,7 +71,9 @@ export const updateProfile = mutation({
     if (!parsed.ok) {
       throw new Error(parsed.error);
     }
-    await setUserDisplayName(ctx, user._id, parsed.value.displayName);
+    const displayName = parsed.value.displayName;
+    await setUserDisplayName(ctx, user._id, displayName);
+    await reconcilePersonalCircleFromDisplayName(ctx, user._id, displayName);
   },
 });
 

@@ -4,6 +4,7 @@ import {
   circleSetupAnswersSchema,
   colorLabel,
   DEFAULT_COLOR_ID,
+  initials,
   parseCircleSettingsUpdate,
   starterCategories,
 } from "@spend-circle/domain";
@@ -231,7 +232,13 @@ export const renameCircle = mutation({
       return; // no-op: nothing changed, so nothing to record
     }
 
-    await ctx.db.patch(access.circle._id, { name });
+    const patch: Partial<Doc<"circles">> = { name };
+    if (access.circle.kind === "personal") {
+      patch.mark = initials(name);
+      patch.personalNameCustomizedAt = Date.now();
+    }
+
+    await ctx.db.patch(access.circle._id, patch);
     await recordEvent(ctx, {
       entity: circleEntity(access.circle._id),
       actor: access.membership,

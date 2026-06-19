@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel.js";
 import type { MutationCtx } from "../_generated/server.js";
+import { createUserWithPersonalCircle, type NewUserProfile } from "../model.js";
 import { syncTransactionSearchDocument } from "../transactionSearchDocuments.js";
 
 /**
@@ -48,6 +49,40 @@ export interface Seed {
   owner: Doc<"users">;
   ownerMemberId: Id<"members">;
   circleId: Id<"circles">;
+}
+
+export interface PersonalCircleOwnerSeed {
+  owner: Doc<"users">;
+  userId: Id<"users">;
+  personalCircleId: Id<"circles">;
+}
+
+/** Bootstraps a User + Personal Circle via {@link createUserWithPersonalCircle}. */
+export async function seedPersonalCircleOwner(
+  ctx: MutationCtx,
+  opts: NewUserProfile & { onboarded?: boolean },
+): Promise<PersonalCircleOwnerSeed> {
+  const userId = await createUserWithPersonalCircle(ctx, {
+    email: opts.email,
+    displayName: opts.displayName,
+    image: opts.image,
+    currency: opts.currency,
+  });
+  const owner = await ctx.db.get(userId);
+  if (!owner) {
+    throw new Error("seed failed");
+  }
+  if (opts.onboarded) {
+    await ctx.db.patch(userId, { onboardingCompletedAt: owner.createdAt });
+  }
+  const personal = await ctx.db
+    .query("circles")
+    .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", userId).eq("kind", "personal"))
+    .unique();
+  if (!personal) {
+    throw new Error("personal circle missing");
+  }
+  return { owner, userId, personalCircleId: personal._id };
 }
 
 /** Seeds an active regular Circle with an owner Member. */

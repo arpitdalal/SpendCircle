@@ -60,6 +60,9 @@ export default defineSchema({
     currencyLocked: v.boolean(),
     createdAt: v.number(),
     archivedAt: v.optional(v.number()),
+    // Set when the owner manually renames their Personal Circle; absent ⇒ the name
+    // auto-tracks the owner's Display Name (USR-1). Personal Circles only.
+    personalNameCustomizedAt: v.optional(v.number()),
   })
     .index("by_owner", ["ownerUserId"])
     .index("by_owner_and_kind", ["ownerUserId", "kind"])
