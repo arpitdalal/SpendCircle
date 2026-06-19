@@ -42,6 +42,7 @@ export const MOCK_CIRCLES: Circle[] = [
     setupAnswers: undefined,
     setupComplete: true,
     currencyLocked: false,
+    nameCustomized: false,
   },
 ];
 
@@ -308,6 +309,7 @@ export function mockCircle(id: string): Circle {
     // They are always past setup — there is no Convex `completeCircleSetup` in MOCKS.
     setupComplete: true,
     currencyLocked: false,
+    nameCustomized: false,
   };
 }
 

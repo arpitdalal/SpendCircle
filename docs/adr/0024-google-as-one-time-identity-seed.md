@@ -29,3 +29,7 @@ our app rather than in Google, removing that round-trip friction.
   `initials` helper at every write that can change the name (bootstrap, identity reconcile, manual rename).
   Identity-driven reconciles patch directly (no Circle History event). Fallback when no usable first token:
   **Personal Circle** (mark `"PC"`). The field is optional — existing rows need no backfill.
+- Circle Settings exposes a **Match my display name** toggle (USR-2): when on, the Personal Circle
+  name and Mark auto-track Display Name edits again; turning it on immediately re-derives from the
+  current Display Name; turning it off (or manually renaming) sets `personalNameCustomizedAt` and
+  stops auto-sync. No Circle History event for toggle-driven reconciles.

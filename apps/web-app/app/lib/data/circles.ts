@@ -45,6 +45,11 @@ export function useRenameCircle() {
   return useMutation(api.circles.renameCircle);
 }
 
+/** Enables or disables Personal Circle name auto-sync with Display Name (USR-2). */
+export function useSetPersonalCircleNameAutoSync() {
+  return useMutation(api.circles.setPersonalCircleNameAutoSync);
+}
+
 /** Updates Circle Settings: Color and Setup answers (CS-2). */
 export function useUpdateCircleSettings() {
   return useMutation(api.circles.updateCircleSettings);

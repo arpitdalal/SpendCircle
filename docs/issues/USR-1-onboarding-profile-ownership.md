@@ -168,6 +168,7 @@ slice flips ownership: **seed once from Google, then the User owns their profile
 
 ## Out of scope
 
-Editable Profile Picture / file uploads (later feature — PRD non-goal). Optional Onboarding questions
-(referral source, etc. — never-blocking, future). Invitation email matching against the live Google session
-email (the *rule* lives here; its *enforcement* is MEM-3). Account Deletion (out of scope for v1).
+- Resync / opt-back-in toggle after a manual rename — see [USR-2](USR-2-resync-personal-circle-name.md).
+- Editable Profile Picture / file uploads (later feature — PRD non-goal). Optional Onboarding questions
+  (referral source, etc. — never-blocking, future). Invitation email matching against the live Google session
+  email (the *rule* lives here; its *enforcement* is MEM-3). Account Deletion (out of scope for v1).
