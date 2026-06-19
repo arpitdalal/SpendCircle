@@ -16,6 +16,8 @@ import type * as guard from "../guard.js";
 import type * as history from "../history.js";
 import type * as historyView from "../historyView.js";
 import type * as http from "../http.js";
+import type * as invitationToken from "../invitationToken.js";
+import type * as invitations from "../invitations.js";
 import type * as ledger from "../ledger.js";
 import type * as members from "../members.js";
 import type * as model from "../model.js";
@@ -41,6 +43,8 @@ declare const fullApi: ApiFromModules<{
   history: typeof history;
   historyView: typeof historyView;
   http: typeof http;
+  invitationToken: typeof invitationToken;
+  invitations: typeof invitations;
   ledger: typeof ledger;
   members: typeof members;
   model: typeof model;

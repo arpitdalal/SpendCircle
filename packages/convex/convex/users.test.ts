@@ -108,6 +108,22 @@ describe("createUserWithPersonalCircle", () => {
       expect(circle?.mark).toBe("PC");
     });
   });
+
+  it("stores email in canonical form", async () => {
+    const t = convexTest(schema, modules);
+
+    const userId = await t.run((ctx) =>
+      createUserWithPersonalCircle(ctx, {
+        email: "  Ada@Example.COM ",
+        displayName: "Ada Lovelace",
+      }),
+    );
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      expect(user?.email).toBe("ada@example.com");
+    });
+  });
 });
 
 describe("setUserDisplayName", () => {
@@ -215,7 +231,7 @@ describe("syncUserEmail", () => {
       }),
     );
 
-    await t.run((ctx) => syncUserEmail(ctx, userId, "ada.king@example.com"));
+    await t.run((ctx) => syncUserEmail(ctx, userId, "Ada.King@Example.com"));
 
     await t.run(async (ctx) => {
       const user = await ctx.db.get(userId);

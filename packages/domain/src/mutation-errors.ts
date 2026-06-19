@@ -40,6 +40,26 @@ const mutationErrors = defineMutationErrorCatalog({
     "category.nameDuplicate",
     "A category with this name already exists for this type",
   ),
+  inviteForbidden: defineMutationError(
+    "invite.forbidden",
+    "Only the Circle owner can invite members",
+  ),
+  inviteSetupIncomplete: defineMutationError(
+    "invite.setupIncomplete",
+    "Finish setting up this Circle before inviting members",
+  ),
+  invitePersonalCircle: defineMutationError(
+    "invite.personalCircle",
+    "Personal Circles can't have other members",
+  ),
+  inviteAlreadyMember: defineMutationError(
+    "invite.alreadyMember",
+    "That person is already a member of this Circle",
+  ),
+  inviteAlreadyPending: defineMutationError(
+    "invite.alreadyPending",
+    "There's already a pending invitation for that email",
+  ),
 });
 
 export const MUTATION_ERRORS = mutationErrors.errors;

@@ -34,6 +34,17 @@ export const profileUpdateSchema = z.object({
 });
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 
+/** Canonical email for storage and comparison: trim + lowercase. */
+export function canonicalEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/** Server-and-client-shared invite email input (MEM-2). Parsed `email` is canonical `emailLower`. */
+export const inviteEmailSchema = z.object({
+  email: z.preprocess(canonicalEmail, z.string().email("Enter a valid email address")),
+});
+export type InviteEmailInput = z.infer<typeof inviteEmailSchema>;
+
 export type ProfileUpdateParseResult =
   | { ok: true; value: ProfileUpdateInput }
   | { ok: false; error: string };
