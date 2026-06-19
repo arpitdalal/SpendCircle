@@ -73,25 +73,77 @@ describe("welcomeHtml", () => {
   });
 });
 
-describe("claimWelcome", () => {
-  it("claims once and returns user payload; second call is a no-op", async () => {
+describe("welcomePayload", () => {
+  it("returns payload for a fresh user", async () => {
     const t = convexTest(schema, modules);
     const { userId } = await seedOwner(t);
 
-    const first = await t.mutation(internal.email.claimWelcome, { userId });
-    expect(first).toEqual({ email: "ada@example.com", displayName: "Ada Lovelace" });
+    const payload = await t.query(internal.email.welcomePayload, { userId });
+    expect(payload).toEqual({
+      alreadySent: false,
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
+    });
+  });
 
+  it("returns alreadySent after markWelcomed", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t);
+
+    await t.mutation(internal.email.markWelcomed, { userId });
+
+    const payload = await t.query(internal.email.welcomePayload, { userId });
+    expect(payload).toEqual({
+      alreadySent: true,
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
+    });
+  });
+
+  it("returns null for a deleted user", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.delete(userId);
+    });
+
+    const payload = await t.query(internal.email.welcomePayload, { userId });
+    expect(payload).toBeNull();
+  });
+});
+
+describe("markWelcomed", () => {
+  it("sets welcomeSentAt once and is idempotent", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t);
+
+    await t.mutation(internal.email.markWelcomed, { userId });
     const sentAt = await getWelcomeSentAt(t, userId);
     expect(sentAt).toBeTypeOf("number");
 
-    const second = await t.mutation(internal.email.claimWelcome, { userId });
-    expect(second).toBeNull();
+    await t.mutation(internal.email.markWelcomed, { userId });
     expect(await getWelcomeSentAt(t, userId)).toBe(sentAt);
   });
 });
 
-describe("sendWelcomeEmail idempotency", () => {
-  it("sets welcomeSentAt once even when Resend env is unset (no network)", async () => {
+describe("sendWelcomeEmail", () => {
+  it("skips Resend and leaves welcomeSentAt unset when already sent", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t);
+    await t.mutation(internal.email.markWelcomed, { userId });
+    const sentAt = await getWelcomeSentAt(t, userId);
+
+    await t.action(internal.email.sendWelcomeEmail, { userId });
+
+    expect(await getWelcomeSentAt(t, userId)).toBe(sentAt);
+    expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
+  });
+
+  it("does not mark when Resend env is unset (no network)", async () => {
     vi.stubEnv("RESEND_API_KEY", "");
     vi.stubEnv("RESEND_FROM_EMAIL", "");
 
@@ -99,18 +151,12 @@ describe("sendWelcomeEmail idempotency", () => {
     const { userId } = await seedOwner(t);
 
     await t.action(internal.email.sendWelcomeEmail, { userId });
-    const sentAt = await getWelcomeSentAt(t, userId);
-    expect(sentAt).toBeTypeOf("number");
-    expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
 
-    await t.action(internal.email.sendWelcomeEmail, { userId });
-    expect(await getWelcomeSentAt(t, userId)).toBe(sentAt);
+    expect(await getWelcomeSentAt(t, userId)).toBeFalsy();
     expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
   });
-});
 
-describe("sendWelcomeEmail Resend payload (MSW)", () => {
-  it("posts the expected payload to Resend when env is configured", async () => {
+  it("posts the expected payload to Resend and marks on 2xx", async () => {
     vi.stubEnv("RESEND_API_KEY", "test-key");
     vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
 
@@ -126,27 +172,61 @@ describe("sendWelcomeEmail Resend payload (MSW)", () => {
       to: "ada@example.com",
       subject: WELCOME_SUBJECT,
     });
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`welcome:${userId}`);
     const html = resendBodyHtml(resend[0]?.body);
     expect(html).toContain("Ada Lovelace");
     expect(html).not.toMatch(FINANCIAL_PATTERN);
+    expect(await getWelcomeSentAt(t, userId)).toBeTypeOf("number");
+  });
+
+  it("rejects on non-2xx and does not mark", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    server.use(
+      http.post("https://api.resend.com/emails", () =>
+        HttpResponse.json({ message: "fail" }, { status: 500 }),
+      ),
+    );
+
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t);
+
+    await expect(t.action(internal.email.sendWelcomeEmail, { userId })).rejects.toThrow(
+      /Resend send failed: 500/,
+    );
+    expect(await getWelcomeSentAt(t, userId)).toBeFalsy();
+  });
+
+  it("rejects on fetch failure and does not mark", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    server.use(http.post("https://api.resend.com/emails", () => HttpResponse.error()));
+
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t);
+
+    await expect(t.action(internal.email.sendWelcomeEmail, { userId })).rejects.toThrow();
+    expect(await getWelcomeSentAt(t, userId)).toBeFalsy();
   });
 });
 
 describe("sendEmail env safety and vendor errors", () => {
-  it("logs and returns without fetch when env is missing", async () => {
+  it("logs and returns false without fetch when env is missing", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.stubEnv("RESEND_API_KEY", "");
     vi.stubEnv("RESEND_FROM_EMAIL", "");
 
-    await sendEmail({ to: "a@b.com", subject: "Hi", html: "<p>Hi</p>" });
+    const sent = await sendEmail({ to: "a@b.com", subject: "Hi", html: "<p>Hi</p>" });
 
+    expect(sent).toBe(false);
     expect(errSpy).toHaveBeenCalledWith("Resend env not configured; skipping email send");
     expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
     errSpy.mockRestore();
   });
 
-  it("logs vendor errors without throwing", async () => {
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("rejects on non-2xx", async () => {
     vi.stubEnv("RESEND_API_KEY", "test-key");
     vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
 
@@ -158,10 +238,54 @@ describe("sendEmail env safety and vendor errors", () => {
 
     await expect(
       sendEmail({ to: "a@b.com", subject: WELCOME_SUBJECT, html: welcomeHtml("Ada") }),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow(/Resend send failed: 500/);
+  });
 
-    expect(errSpy).toHaveBeenCalled();
-    expect(String(errSpy.mock.calls[0]?.[0])).toContain("Resend send failed");
+  it("forwards Idempotency-Key when idempotencyKey is set", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    await sendEmail({
+      to: "a@b.com",
+      subject: WELCOME_SUBJECT,
+      html: welcomeHtml("Ada"),
+      idempotencyKey: "welcome:user-123",
+    });
+
+    const resend = capturedRequests.filter((r) => r.vendor === "resend");
+    expect(resend).toHaveLength(1);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe("welcome:user-123");
+  });
+});
+
+describe("onWelcomeRunComplete", () => {
+  it("logs on terminal failure only", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t);
+
+    await t.mutation(internal.email.onWelcomeRunComplete, {
+      workId: "work-1",
+      context: { userId },
+      result: { kind: "failed", error: "Resend send failed: 503" },
+    });
+
+    expect(errSpy).toHaveBeenCalledWith(
+      "Welcome email exhausted all retries",
+      userId,
+      "Resend send failed: 503",
+    );
+
+    errSpy.mockClear();
+
+    await t.mutation(internal.email.onWelcomeRunComplete, {
+      workId: "work-2",
+      context: { userId },
+      result: { kind: "success", returnValue: null },
+    });
+
+    expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
   });
 });
