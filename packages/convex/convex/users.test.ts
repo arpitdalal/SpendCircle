@@ -1,8 +1,10 @@
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
+import type { Id } from "./_generated/dataModel.js";
 import { createUserWithPersonalCircle, setUserDisplayName, syncUserEmail } from "./model.js";
 import schema from "./schema.js";
+import { seedPersonalCircleOwner } from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({
@@ -19,6 +21,26 @@ vi.mock("./auth.js", () => ({
 // Tests the bootstrap invariant directly through the db helper, independent of
 // the Better Auth component wiring (which `onCreateUser` calls in production).
 const modules = import.meta.glob("./**/*.ts");
+
+type TestCtx = ReturnType<typeof convexTest>;
+
+/** Seeds an owner + Personal Circle and signs them in for authed mutations. */
+async function seedOwner(t: TestCtx, opts: Parameters<typeof seedPersonalCircleOwner>[1]) {
+  const seed = await t.run((ctx) => seedPersonalCircleOwner(ctx, opts));
+  mockCurrentUser.mockResolvedValue(seed.owner);
+  return seed;
+}
+
+/** Re-mocks auth after a mutation that may have changed the User row. */
+async function signInOwner(t: TestCtx, userId: Id<"users">) {
+  await t.run(async (ctx) => {
+    const user = await ctx.db.get(userId);
+    if (!user) {
+      throw new Error("missing user");
+    }
+    mockCurrentUser.mockResolvedValue(user);
+  });
+}
 
 beforeEach(() => {
   mockCurrentUser.mockReset();
@@ -207,19 +229,9 @@ describe("syncUserEmail", () => {
 describe("completeOnboarding", () => {
   it("marks onboarding complete, reconciles the Personal Circle, and records no history", async () => {
     const t = convexTest(schema, modules);
-    const userId = await t.run((ctx) =>
-      createUserWithPersonalCircle(ctx, {
-        email: "ada@example.com",
-        displayName: "Ada Lovelace",
-      }),
-    );
-
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
+    const { userId } = await seedOwner(t, {
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
     });
 
     await t.mutation(api.users.completeOnboarding, { displayName: "Ada King" });
@@ -246,12 +258,10 @@ describe("completeOnboarding", () => {
 
   it("reconciles the Personal Circle even when the user owns other Circles", async () => {
     const t = convexTest(schema, modules);
-    const userId = await t.run((ctx) =>
-      createUserWithPersonalCircle(ctx, {
-        email: "ada@example.com",
-        displayName: "Ada Lovelace",
-      }),
-    );
+    const { userId } = await seedOwner(t, {
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
+    });
 
     await t.run(async (ctx) => {
       const now = Date.now();
@@ -269,14 +279,6 @@ describe("completeOnboarding", () => {
       });
     });
 
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
-    });
-
     await t.mutation(api.users.completeOnboarding, { displayName: "Ada King" });
 
     await t.run(async (ctx) => {
@@ -290,19 +292,9 @@ describe("completeOnboarding", () => {
 
   it("skips the Personal Circle rename when the confirmed name matches", async () => {
     const t = convexTest(schema, modules);
-    const userId = await t.run((ctx) =>
-      createUserWithPersonalCircle(ctx, {
-        email: "madonna@example.com",
-        displayName: "Madonna",
-      }),
-    );
-
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
+    await seedOwner(t, {
+      email: "madonna@example.com",
+      displayName: "Madonna",
     });
 
     await t.mutation(api.users.completeOnboarding, { displayName: "Madonna" });
@@ -315,30 +307,14 @@ describe("completeOnboarding", () => {
 
   it("rejects a second completion", async () => {
     const t = convexTest(schema, modules);
-    const userId = await t.run((ctx) =>
-      createUserWithPersonalCircle(ctx, {
-        email: "ada@example.com",
-        displayName: "Ada Lovelace",
-      }),
-    );
-
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
+    const { userId } = await seedOwner(t, {
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
     });
 
     await t.mutation(api.users.completeOnboarding, { displayName: "Ada Lovelace" });
 
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
-    });
+    await signInOwner(t, userId);
 
     await expect(
       t.mutation(api.users.completeOnboarding, { displayName: "Ada Lovelace" }),
@@ -349,17 +325,10 @@ describe("completeOnboarding", () => {
 describe("updateProfile", () => {
   it("updates the display name on active memberships and reconciles the Personal Circle", async () => {
     const t = convexTest(schema, modules);
-    const userId = await t.run(async (ctx) => {
-      const id = await createUserWithPersonalCircle(ctx, {
-        email: "ada@example.com",
-        displayName: "Ada Lovelace",
-      });
-      const user = await ctx.db.get(id);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      await ctx.db.patch(id, { onboardingCompletedAt: user.createdAt });
-      return id;
+    const { userId } = await seedOwner(t, {
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
+      onboarded: true,
     });
 
     const removedMemberId = await t.run(async (ctx) => {
@@ -385,14 +354,6 @@ describe("updateProfile", () => {
         joinedAt: now,
         removedAt: now,
       });
-    });
-
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
     });
 
     await t.mutation(api.users.updateProfile, { displayName: "Bob Builder" });
@@ -422,32 +383,10 @@ describe("updateProfile", () => {
 
   it("leaves a customized Personal Circle name and mark unchanged", async () => {
     const t = convexTest(schema, modules);
-    const { userId, personalCircleId } = await t.run(async (ctx) => {
-      const id = await createUserWithPersonalCircle(ctx, {
-        email: "ada@example.com",
-        displayName: "Ada Lovelace",
-      });
-      const user = await ctx.db.get(id);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      await ctx.db.patch(id, { onboardingCompletedAt: user.createdAt });
-      const personal = await ctx.db
-        .query("circles")
-        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", id).eq("kind", "personal"))
-        .unique();
-      if (!personal) {
-        throw new Error("missing personal circle");
-      }
-      return { userId: id, personalCircleId: personal._id };
-    });
-
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
+    const { userId, personalCircleId } = await seedOwner(t, {
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
+      onboarded: true,
     });
 
     await t.mutation(api.circles.renameCircle, {
@@ -477,32 +416,10 @@ describe("updateProfile", () => {
 
   it("does not stomp a customized name when the derived name matches", async () => {
     const t = convexTest(schema, modules);
-    const { userId, personalCircleId } = await t.run(async (ctx) => {
-      const id = await createUserWithPersonalCircle(ctx, {
-        email: "bob@example.com",
-        displayName: "Robert Builder",
-      });
-      const user = await ctx.db.get(id);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      await ctx.db.patch(id, { onboardingCompletedAt: user.createdAt });
-      const personal = await ctx.db
-        .query("circles")
-        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", id).eq("kind", "personal"))
-        .unique();
-      if (!personal) {
-        throw new Error("missing personal circle");
-      }
-      return { userId: id, personalCircleId: personal._id };
-    });
-
-    await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
+    const { personalCircleId } = await seedOwner(t, {
+      email: "bob@example.com",
+      displayName: "Robert Builder",
+      onboarded: true,
     });
 
     await t.mutation(api.circles.renameCircle, {
@@ -521,33 +438,14 @@ describe("updateProfile", () => {
 
   it("self-heals a stale mark when the derived name matches the current name", async () => {
     const t = convexTest(schema, modules);
-    const { userId, personalCircleId } = await t.run(async (ctx) => {
-      const id = await createUserWithPersonalCircle(ctx, {
-        email: "bob@example.com",
-        displayName: "Bob Builder",
-      });
-      const user = await ctx.db.get(id);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      await ctx.db.patch(id, { onboardingCompletedAt: user.createdAt });
-      const personal = await ctx.db
-        .query("circles")
-        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", id).eq("kind", "personal"))
-        .unique();
-      if (!personal) {
-        throw new Error("missing personal circle");
-      }
-      await ctx.db.patch(personal._id, { mark: "XX" });
-      return { userId: id, personalCircleId: personal._id };
+    const { personalCircleId } = await seedOwner(t, {
+      email: "bob@example.com",
+      displayName: "Bob Builder",
+      onboarded: true,
     });
 
     await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("missing user");
-      }
-      mockCurrentUser.mockResolvedValue(user);
+      await ctx.db.patch(personalCircleId, { mark: "XX" });
     });
 
     await t.mutation(api.users.updateProfile, { displayName: "Bob Builder" });

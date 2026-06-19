@@ -1,9 +1,15 @@
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
-import { createUserWithPersonalCircle } from "./model.js";
 import schema from "./schema.js";
-import { addMember, makeCategory, seedCircle, seedFixture, seedTransaction } from "./test/seed.js";
+import {
+  addMember,
+  makeCategory,
+  seedCircle,
+  seedFixture,
+  seedPersonalCircleOwner,
+  seedTransaction,
+} from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({
@@ -384,27 +390,12 @@ describe("updateCircleSettings", () => {
   it("lets a bootstrapped Personal Circle owner restore iris after another palette color", async () => {
     const t = convexTest(schema, modules);
 
-    const userId = await t.run((ctx) =>
-      createUserWithPersonalCircle(ctx, {
+    const { owner, personalCircleId: circleId } = await t.run((ctx) =>
+      seedPersonalCircleOwner(ctx, {
         email: "ada@example.com",
         displayName: "Ada Lovelace",
       }),
     );
-
-    const { owner, circleId } = await t.run(async (ctx) => {
-      const owner = await ctx.db.get(userId);
-      if (!owner) {
-        throw new Error("seed failed");
-      }
-      const circle = await ctx.db
-        .query("circles")
-        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", userId).eq("kind", "personal"))
-        .unique();
-      if (!circle) {
-        throw new Error("personal circle missing");
-      }
-      return { owner, circleId: circle._id };
-    });
 
     mockCurrentUser.mockResolvedValue(owner);
 
@@ -531,24 +522,12 @@ describe("renameCircle", () => {
   it("updates name, mark, and personalNameCustomizedAt on a Personal Circle", async () => {
     const t = convexTest(schema, modules);
 
-    const { owner, circleId } = await t.run(async (ctx) => {
-      const userId = await createUserWithPersonalCircle(ctx, {
+    const { owner, personalCircleId: circleId } = await t.run((ctx) =>
+      seedPersonalCircleOwner(ctx, {
         email: "ada@example.com",
         displayName: "Ada Lovelace",
-      });
-      const owner = await ctx.db.get(userId);
-      if (!owner) {
-        throw new Error("seed failed");
-      }
-      const circle = await ctx.db
-        .query("circles")
-        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", userId).eq("kind", "personal"))
-        .unique();
-      if (!circle) {
-        throw new Error("personal circle missing");
-      }
-      return { owner, circleId: circle._id };
-    });
+      }),
+    );
 
     mockCurrentUser.mockResolvedValue(owner);
 
