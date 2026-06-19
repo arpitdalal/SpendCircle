@@ -5,6 +5,7 @@ import { components, internal } from "./_generated/api.js";
 import type { DataModel, Doc } from "./_generated/dataModel.js";
 import type { MutationCtx, QueryCtx } from "./_generated/server.js";
 import authConfig from "./auth.config.js";
+import { emailRetrier } from "./email.js";
 import { createUserWithPersonalCircle, syncUserEmail } from "./model.js";
 
 /**
@@ -38,7 +39,14 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
           image: authUser.image ?? undefined,
         });
         await authComponent.setUserId(ctx, authUser._id, userId);
-        await ctx.scheduler.runAfter(0, internal.email.sendWelcomeEmail, { userId });
+        await emailRetrier.run(
+          ctx,
+          internal.email.sendWelcomeEmail,
+          { userId },
+          {
+            onComplete: internal.email.onWelcomeRunComplete,
+          },
+        );
       },
       onUpdate: async (ctx, authUser) => {
         if (!authUser.userId) {

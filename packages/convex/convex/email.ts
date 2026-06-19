@@ -1,14 +1,27 @@
+import { ActionRetrier, onCompleteValidator } from "@convex-dev/action-retrier";
 import { v } from "convex/values";
-import { internal } from "./_generated/api.js";
-import { internalAction, internalMutation } from "./_generated/server.js";
+import { components, internal } from "./_generated/api.js";
+import { internalAction, internalMutation, internalQuery } from "./_generated/server.js";
 
 /**
  * Transactional email via Resend (ADR 0008). v1 sends only Welcome + Invitation
  * emails — not activity notifications (PRD 86).
  *
+ * Durable handoff uses `emailRetrier` (@convex-dev/action-retrier) — the shared
+ * seam EML-2 / FBK-1 reuse. `welcomeSentAt` means *confirmed sent to Resend*
+ * (2xx), not merely attempted.
+ *
  * Required deployment env vars (Convex deployment env, like auth.ts):
  * RESEND_API_KEY, RESEND_FROM_EMAIL
  */
+
+// Durable handoff to Resend. Welcome email isn't urgent — back off generously.
+// initial 30s, ×2 each attempt, up to 5 attempts (~8 min of transient-outage cover) + jitter.
+export const emailRetrier = new ActionRetrier(components.actionRetrier, {
+  initialBackoffMs: 30_000,
+  base: 2,
+  maxFailures: 5,
+});
 
 export const WELCOME_SUBJECT = "Welcome to Spend Circle";
 
@@ -41,42 +54,70 @@ export async function sendEmail(args: { to: string; subject: string; html: strin
   const from = process.env.RESEND_FROM_EMAIL;
   if (!key || !from) {
     console.error("Resend env not configured; skipping email send");
-    return;
+    return false;
   }
+  // fetch can REJECT (DNS/TLS/timeout) before any response — let it propagate so the retrier retries.
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from, to: args.to, subject: args.subject, html: args.html }),
   });
   if (!res.ok) {
-    console.error("Resend send failed", res.status, await res.text().catch(() => ""));
+    const body = await res.text().catch(() => "");
+    throw new Error(`Resend send failed: ${res.status} ${body}`);
   }
+  return true;
 }
 
-/** Idempotent claim: returns the user payload to send to ONCE, else null. */
-export const claimWelcome = internalMutation({
+export const welcomePayload = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     const user = await ctx.db.get(userId);
-    if (!user || user.welcomeSentAt !== undefined) {
+    if (!user) {
       return null;
     }
-    await ctx.db.patch(userId, { welcomeSentAt: Date.now() });
-    return { email: user.email, displayName: user.displayName };
+    return {
+      alreadySent: user.welcomeSentAt !== undefined,
+      email: user.email,
+      displayName: user.displayName,
+    };
+  },
+});
+
+export const markWelcomed = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const user = await ctx.db.get(userId);
+    if (user && user.welcomeSentAt === undefined) {
+      await ctx.db.patch(userId, { welcomeSentAt: Date.now() });
+    }
   },
 });
 
 export const sendWelcomeEmail = internalAction({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
-    const claimed = await ctx.runMutation(internal.email.claimWelcome, { userId });
-    if (!claimed) {
+    const p = await ctx.runQuery(internal.email.welcomePayload, { userId });
+    if (!p || p.alreadySent) {
       return;
     }
-    await sendEmail({
-      to: claimed.email,
+    const sent = await sendEmail({
+      to: p.email,
       subject: WELCOME_SUBJECT,
-      html: welcomeHtml(claimed.displayName),
+      html: welcomeHtml(p.displayName),
     });
+    if (sent) {
+      await ctx.runMutation(internal.email.markWelcomed, { userId });
+    }
+  },
+});
+
+export const onWelcomeRunComplete = internalMutation({
+  args: onCompleteValidator,
+  handler: async (_ctx, { result }) => {
+    if (result.type === "failed") {
+      console.error("Welcome email exhausted all retries", result.error);
+      // TODO(OBS-1): Sentry.captureMessage here.
+    }
   },
 });

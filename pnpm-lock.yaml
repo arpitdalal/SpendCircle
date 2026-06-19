@@ -148,6 +148,9 @@ importers:
 
   packages/convex:
     dependencies:
+      '@convex-dev/action-retrier':
+        specifier: ^0.3.0
+        version: 0.3.0(convex@1.41.0(react@19.2.7))
       '@convex-dev/better-auth':
         specifier: ^0.12.2
         version: 0.12.3(@standard-schema/spec@1.1.0)(better-auth@1.6.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.8(@edge-runtime/vm@5.0.0)(@types/node@25.9.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.2)(typescript@5.9.3))(vite@8.0.16(@types/node@25.9.2)(esbuild@0.27.7)(jiti@2.7.0))))(convex@1.41.0(react@19.2.7))(react@19.2.7)(typescript@5.9.3)
@@ -522,6 +525,11 @@ packages:
   '@bramus/specificity@2.4.2':
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
+
+  '@convex-dev/action-retrier@0.3.0':
+    resolution: {integrity: sha512-opBNsgOPSuVY3qSARNub98XqPzSpSS7Jga0oGeWFhO+DcWBMt2gD3ssUeEA1Gi7wTNiZBX+T6OBfBnqMfv6Tuw==}
+    peerDependencies:
+      convex: ^1.24.8
 
   '@convex-dev/better-auth@0.12.3':
     resolution: {integrity: sha512-OIgky1NDJRnojgxGXT78eCcDYNR3Z8a6dEXCpsvw0I/7DApp7Qn/QpnBU3/O4yoQ4+r3y+aotEEJYHda0HoZ8Q==}
@@ -3085,6 +3093,10 @@ snapshots:
   '@bramus/specificity@2.4.2':
     dependencies:
       css-tree: 3.2.1
+
+  '@convex-dev/action-retrier@0.3.0(convex@1.41.0(react@19.2.7))':
+    dependencies:
+      convex: 1.41.0(react@19.2.7)
 
   '@convex-dev/better-auth@0.12.3(@standard-schema/spec@1.1.0)(better-auth@1.6.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.8(@edge-runtime/vm@5.0.0)(@types/node@25.9.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.2)(typescript@5.9.3))(vite@8.0.16(@types/node@25.9.2)(esbuild@0.27.7)(jiti@2.7.0))))(convex@1.41.0(react@19.2.7))(react@19.2.7)(typescript@5.9.3)':
     dependencies:

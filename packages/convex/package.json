@@ -20,6 +20,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@convex-dev/action-retrier": "^0.3.0",
     "@convex-dev/better-auth": "^0.12.2",
     "@spend-circle/domain": "workspace:*",
     "better-auth": "1.6.16",
