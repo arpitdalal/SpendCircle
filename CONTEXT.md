@@ -21,7 +21,7 @@ The generated visual mark for a **Circle**, based on its initials and **Circle C
 _Avoid_: Circle Avatar Upload
 
 **Personal Circle**:
-The always-solo **Circle** automatically created for a Google-authenticated **User**. It has exactly one **Member**, can be renamed, and cannot invite Members, be archived, deleted, left by its owning User, or transferred to another Owner.
+The always-solo **Circle** automatically created for a Google-authenticated **User**. It has exactly one **Member**, can be renamed manually, and cannot invite Members, be archived, deleted, left by its owning User, or transferred to another Owner. Its default name is derived from the User's **Display Name** (`{firstName}'s Circle`, or **Personal Circle** when no usable first token exists) and is kept aligned whenever the User confirms or edits their Display Name in Onboarding or App Settings — without recording **Circle History** for those identity-driven updates.
 _Avoid_: Personal Household, Private Circle, Default Group
 
 **Archived Circle**:
@@ -69,7 +69,7 @@ The image shown for a **User** in Circles, Transactions, Audit Metadata, and Mem
 _Avoid_: Avatar Upload
 
 **Onboarding**:
-The one-time, gated step shown after a **User's** first sign-in where they confirm and optionally edit their **Display Name** — with their **Google Account Email** shown read-only for confirmation — before using the app. Completion is tracked by a per-User flag, and Spend Circle funnels the User back to it on return until it is done. Distinct from **Circle Setup**, which is per-**Circle**: Onboarding completes the User's profile, Circle Setup configures a Circle. Confirming a different name here also renames the User's freshly created **Personal Circle** to match, without recording **Circle History** because the Circle has had no prior activity. Future versions may add optional questions, such as referral source, that never block completion.
+The one-time, gated step shown after a **User's** first sign-in where they confirm and optionally edit their **Display Name** — with their **Google Account Email** shown read-only for confirmation — before using the app. Completion is tracked by a per-User flag, and Spend Circle funnels the User back to it on return until it is done. Distinct from **Circle Setup**, which is per-**Circle**: Onboarding completes the User's profile, Circle Setup configures a Circle. Confirming or later editing the Display Name (Onboarding or App Settings) also renames the User's **Personal Circle** to match, without recording **Circle History** because those updates are identity-driven, not deliberate Circle renames. Future versions may add optional questions, such as referral source, that never block completion.
 _Avoid_: Circle Setup, Wizard, Profile Setup
 
 **Member**:

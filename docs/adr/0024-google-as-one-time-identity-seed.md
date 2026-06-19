@@ -22,8 +22,8 @@ our app rather than in Google, removing that round-trip friction.
 - Security: invitation acceptance matches the **live** Google session email
   (`authUser.email`), not a stored snapshot, so a changed Google email cannot be
   exploited through a stale copy.
-- The Personal Circle name is seeded from the Google first name at creation and
-  reconciled once to the confirmed name at Onboarding completion via a direct
-  patch (no Circle History event); thereafter it is an ordinary, renameable Circle
-  name. Its Mark is derived from the name via the shared `initials` helper, like a
-  regular Circle, instead of the former hardcoded `"P"`.
+- The Personal Circle name is seeded from the Google first name at creation and reconciled to the
+  User's Display Name whenever they confirm or edit it in Onboarding or App Settings via a direct
+  patch (no Circle History event — identity-driven, not a deliberate Circle rename). Its Mark is derived
+  from the name via the shared `initials` helper, like a regular Circle, instead of the former hardcoded
+  `"P"`. Fallback when no usable first token: **Personal Circle** (mark `"PC"`).

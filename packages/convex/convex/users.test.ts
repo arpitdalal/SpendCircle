@@ -71,7 +71,7 @@ describe("createUserWithPersonalCircle", () => {
     });
   });
 
-  it('names the Personal Circle "Personal" with mark "P" when the display name has no token', async () => {
+  it('names the Personal Circle "Personal Circle" with mark "PC" when the display name has no token', async () => {
     const t = convexTest(schema, modules);
     await t.run((ctx) =>
       createUserWithPersonalCircle(ctx, {
@@ -81,8 +81,8 @@ describe("createUserWithPersonalCircle", () => {
     );
     await t.run(async (ctx) => {
       const circle = await ctx.db.query("circles").first();
-      expect(circle?.name).toBe("Personal");
-      expect(circle?.mark).toBe("P");
+      expect(circle?.name).toBe("Personal Circle");
+      expect(circle?.mark).toBe("PC");
     });
   });
 });
@@ -346,7 +346,7 @@ describe("completeOnboarding", () => {
 });
 
 describe("updateProfile", () => {
-  it("updates the display name on active memberships only and leaves the Personal Circle name alone", async () => {
+  it("updates the display name on active memberships and reconciles the Personal Circle", async () => {
     const t = convexTest(schema, modules);
     const userId = await t.run(async (ctx) => {
       const id = await createUserWithPersonalCircle(ctx, {
@@ -394,24 +394,28 @@ describe("updateProfile", () => {
       mockCurrentUser.mockResolvedValue(user);
     });
 
-    await t.mutation(api.users.updateProfile, { displayName: "Ada King" });
+    await t.mutation(api.users.updateProfile, { displayName: "Bob Builder" });
 
     await t.run(async (ctx) => {
       const user = await ctx.db.get(userId);
-      expect(user?.displayName).toBe("Ada King");
+      expect(user?.displayName).toBe("Bob Builder");
 
       const circle = await ctx.db.query("circles").first();
-      expect(circle?.name).toBe("Ada's Circle");
+      expect(circle?.name).toBe("Bob's Circle");
+      expect(circle?.mark).toBe("BC");
 
       const ownerMembership = await ctx.db
         .query("members")
         .withIndex("by_user", (q) => q.eq("userId", userId))
         .filter((q) => q.eq(q.field("status"), "active"))
         .first();
-      expect(ownerMembership?.displayName).toBe("Ada King");
+      expect(ownerMembership?.displayName).toBe("Bob Builder");
 
       const removed = await ctx.db.get(removedMemberId);
       expect(removed?.displayName).toBe("Ada Lovelace");
+
+      const history = await ctx.db.query("histories").collect();
+      expect(history).toHaveLength(0);
     });
   });
 });

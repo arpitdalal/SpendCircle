@@ -90,6 +90,28 @@ export async function getPersonalCircleForOwner(
 }
 
 /**
+ * Keeps the Personal Circle name/mark aligned with the User's Display Name (USR-1).
+ * Patches directly — no Circle History event (identity-driven, not a user rename).
+ */
+export async function reconcilePersonalCircleFromDisplayName(
+  ctx: MutationCtx,
+  ownerUserId: Id<"users">,
+  displayName: string,
+): Promise<void> {
+  const personalCircle = await getPersonalCircleForOwner(ctx, ownerUserId);
+  if (!personalCircle) {
+    return;
+  }
+  const reconciledName = personalCircleName(displayName);
+  if (personalCircle.name !== reconciledName) {
+    await ctx.db.patch(personalCircle._id, {
+      name: reconciledName,
+      mark: initials(reconciledName),
+    });
+  }
+}
+
+/**
  * Mirrors a User's owned Display Name onto their Spend Circle User row and every
  * ACTIVE membership's materialized identity (ADR 0018, USR-1). Removed memberships
  * are left untouched so they stay frozen at the name they showed when the Member
