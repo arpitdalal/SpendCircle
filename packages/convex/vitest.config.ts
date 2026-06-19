@@ -6,6 +6,7 @@ export default defineProject({
   test: {
     name: "convex",
     environment: "edge-runtime",
+    setupFiles: ["./vitest.setup.ts"],
     include: ["convex/**/*.test.ts"],
     server: {
       deps: {

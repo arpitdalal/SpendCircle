@@ -14,8 +14,9 @@ import { createUserWithPersonalCircle, syncUserEmail } from "./model.js";
  * `crossDomain` plugin trusts the app's SITE_URL.
  *
  * Required deployment env vars: SITE_URL (the app origin), GOOGLE_CLIENT_ID,
- * GOOGLE_CLIENT_SECRET, BETTER_AUTH_SECRET. CONVEX_SITE_URL is provided by
- * Convex automatically and is where the auth routes live.
+ * GOOGLE_CLIENT_SECRET, BETTER_AUTH_SECRET, RESEND_API_KEY, RESEND_FROM_EMAIL.
+ * CONVEX_SITE_URL is provided by Convex automatically and is where the auth
+ * routes live.
  *
  * E2E-only: when `E2E_TEST_AUTH=1` (set ONLY on ephemeral CI/self-hosted
  * deployments, NEVER in production — ADR 0019), email+password sign-in is also
@@ -37,6 +38,7 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
           image: authUser.image ?? undefined,
         });
         await authComponent.setUserId(ctx, authUser._id, userId);
+        await ctx.scheduler.runAfter(0, internal.email.sendWelcomeEmail, { userId });
       },
       onUpdate: async (ctx, authUser) => {
         if (!authUser.userId) {
