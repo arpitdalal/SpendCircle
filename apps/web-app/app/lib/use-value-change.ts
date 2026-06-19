@@ -21,7 +21,7 @@ import { useState } from "react";
  * never depends on its identity — it is invoked synchronously in the same render
  * and never stored — and the compiler owns referential stability for callers.
  */
-export function useValueChange<T>(value: T, onChange: (current: T, previous: T) => void): void {
+export function useValueChange<T>(value: T, onChange: (current: T, previous: T) => void) {
   // Wrap both writes in `() => value` so a function-valued `T` is stored as data,
   // not invoked: a bare `useState(value)` runs it as a lazy initializer and
   // `setPrevious(value)` runs it as an updater. React Compiler does not change this
