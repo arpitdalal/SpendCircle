@@ -1,8 +1,6 @@
 import { transactionSearchText } from "@spend-circle/domain";
 import type { Doc, Id } from "./_generated/dataModel.js";
-import type { MutationCtx, QueryCtx } from "./_generated/server.js";
-
-export const transactionSearchBackfillKey = "transactionSearchDocuments";
+import type { MutationCtx } from "./_generated/server.js";
 
 function categorySlotInsert(categoryIds: Id<"categories">[]) {
   return {
@@ -120,12 +118,4 @@ export async function syncTransactionSearchDocument(
     date: next.date,
     amountMinorUnits: next.amountMinorUnits,
   });
-}
-
-export async function transactionSearchBackfillComplete(ctx: QueryCtx) {
-  const state = await ctx.db
-    .query("transactionSearchBackfills")
-    .withIndex("by_key", (q) => q.eq("key", transactionSearchBackfillKey))
-    .unique();
-  return state?.status === "complete";
 }

@@ -23,7 +23,6 @@ import { resolveCircleAccess } from "./guard.js";
 import { toMemberView } from "./members.js";
 import { monthDateRange } from "./monthActivity.js";
 import schema from "./schema.js";
-import { transactionSearchBackfillComplete } from "./transactionSearchDocuments.js";
 import { newViewCaches, toTransactionView } from "./transactions.js";
 
 const filterType = v.union(v.literal("all"), v.literal("expense"), v.literal("income"));
@@ -283,7 +282,7 @@ async function collectTransactionViews(
   const viewCaches = newViewCaches();
   const searchCaches = newSearchCaches();
 
-  if (args.filters.queryText && (await transactionSearchBackfillComplete(ctx))) {
+  if (args.filters.queryText) {
     return await collectSearchTransactionViews(ctx, args, viewCaches);
   }
 
@@ -439,7 +438,7 @@ async function searchTransactionsOffsetPage(
   const { page, pageSize } = args;
   const takeLimit = searchOffsetTakeLimit(pageSize);
 
-  if (args.filters.queryText && (await transactionSearchBackfillComplete(ctx))) {
+  if (args.filters.queryText) {
     const source = buildIndexedSearchSource(ctx, args);
     const indexedTakeLimit = indexedSearchOffsetTakeLimit(pageSize);
     const result = await source.paginate({ numItems: indexedTakeLimit, cursor: null });

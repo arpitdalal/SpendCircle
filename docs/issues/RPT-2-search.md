@@ -31,8 +31,7 @@ easy to tell apart. Users can narrow to active-only or archived-only via the sta
     type: "all"|"expense"|"income", categoryIds?, recordedByMemberIds?, paidByMemberIds?,
     dateFrom?, dateTo?, amountMin?, amountMax?, status: "active"|"archived"|"all" }`. Empty date
     range means all-time. Query the best source index for non-text filters. For non-empty text,
-    use the Transaction search projection once its backfill is complete; before completion, scan
-    the canonical Transaction rows so the pre-deploy corpus is not omitted.
+    use the Transaction search projection (synced transactionally on create/edit/archive/restore).
   - Text predicates match Title and Note only, case-insensitively with whitespace runs normalized.
     Category matching happens only through category IDs.
   - Multi-select filters use OR within a field and AND across fields. Category multi-select is OR;
@@ -74,9 +73,8 @@ easy to tell apart. Users can narrow to active-only or archived-only via the sta
   desc, but once `q` is non-empty Convex's search index owns pagination order; do not promise
   date-desc ordering for text results.
 - The Transaction search projection is an operational index: public create/edit/archive/restore
-  mutations sync it transactionally, and `maintenance:backfillTransactionSearchText` marks it
-  complete only after a full scan. If projection integrity is suspect, rerun that mutation with
-  `reset: true` until `isDone: true`.
+  mutations sync it transactionally. Spend Circle is pre-production, so no one-time backfill is
+  required for rows created before the projection existed.
 
 ## Carry Forward from PR #79
 

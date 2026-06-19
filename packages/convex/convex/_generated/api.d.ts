@@ -17,7 +17,6 @@ import type * as history from "../history.js";
 import type * as historyView from "../historyView.js";
 import type * as http from "../http.js";
 import type * as ledger from "../ledger.js";
-import type * as maintenance from "../maintenance.js";
 import type * as members from "../members.js";
 import type * as model from "../model.js";
 import type * as monthActivity from "../monthActivity.js";
@@ -43,7 +42,6 @@ declare const fullApi: ApiFromModules<{
   historyView: typeof historyView;
   http: typeof http;
   ledger: typeof ledger;
-  maintenance: typeof maintenance;
   members: typeof members;
   model: typeof model;
   monthActivity: typeof monthActivity;
