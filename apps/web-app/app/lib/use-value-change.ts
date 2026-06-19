@@ -22,10 +22,14 @@ import { useState } from "react";
  * and never stored — and the compiler owns referential stability for callers.
  */
 export function useValueChange<T>(value: T, onChange: (current: T, previous: T) => void): void {
+  // Wrap both writes in `() => value` so a function-valued `T` is stored as data,
+  // not invoked: a bare `useState(value)` runs it as a lazy initializer and
+  // `setPrevious(value)` runs it as an updater. React Compiler does not change this
+  // `useState` overload behavior, so the box is required regardless.
   // react-doctor-disable-next-line react-doctor/rerender-state-only-in-handlers -- `previous` IS read during render (the comparison) to drive React's blessed "adjust state during render" reset; centralized here so call sites need no per-file suppression. The rule only checks JSX-reachability, so it misfires.
-  const [previous, setPrevious] = useState(value);
+  const [previous, setPrevious] = useState(() => value);
   if (!Object.is(value, previous)) {
-    setPrevious(value);
+    setPrevious(() => value);
     onChange(value, previous);
   }
 }

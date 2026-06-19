@@ -66,6 +66,25 @@ describe("useValueChange", () => {
     ]);
   });
 
+  it("stores function-valued props as data instead of invoking them", () => {
+    const onChange = vi.fn();
+    const first = () => "first";
+    const second = () => "second";
+    const { rerender } = renderHook(({ value }) => useValueChange(value, onChange), {
+      initialProps: { value: first },
+    });
+
+    // Initial commit: `first` must be stored, not called as a lazy initializer.
+    expect(onChange).not.toHaveBeenCalled();
+
+    rerender({ value: second });
+
+    // The changed value fires once with the function identities themselves, proving
+    // neither `useState` nor `setPrevious` invoked them as initializer/updater.
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(second, first);
+  });
+
   it("resets sibling state during render when the value changes (the More-sheet shape)", () => {
     const committed: boolean[] = [];
     const { rerender } = renderHook(
