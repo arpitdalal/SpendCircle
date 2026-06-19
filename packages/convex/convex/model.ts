@@ -90,8 +90,10 @@ export async function getPersonalCircleForOwner(
 }
 
 /**
- * Keeps the Personal Circle name/mark aligned with the User's Display Name (USR-1).
- * Patches directly — no Circle History event (identity-driven, not a user rename).
+ * Keeps the Personal Circle aligned with the User's Display Name (USR-1).
+ * Name auto-tracks only while `personalNameCustomizedAt` is absent; after a manual
+ * rename the name is left alone. Mark always derives from the circle's current name
+ * via `initials()`. Patches directly — no Circle History event.
  */
 export async function reconcilePersonalCircleFromDisplayName(
   ctx: MutationCtx,
@@ -102,12 +104,23 @@ export async function reconcilePersonalCircleFromDisplayName(
   if (!personalCircle) {
     return;
   }
-  const reconciledName = personalCircleName(displayName);
-  if (personalCircle.name !== reconciledName) {
-    await ctx.db.patch(personalCircle._id, {
-      name: reconciledName,
-      mark: initials(reconciledName),
-    });
+
+  const patch: Partial<Doc<"circles">> = {};
+
+  if (personalCircle.personalNameCustomizedAt === undefined) {
+    const reconciledName = personalCircleName(displayName);
+    if (personalCircle.name !== reconciledName) {
+      patch.name = reconciledName;
+    }
+  }
+
+  const nextMark = initials(patch.name ?? personalCircle.name);
+  if (personalCircle.mark !== nextMark) {
+    patch.mark = nextMark;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await ctx.db.patch(personalCircle._id, patch);
   }
 }
 

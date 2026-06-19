@@ -526,3 +526,70 @@ describe("updateCircleSettings", () => {
     });
   });
 });
+
+describe("renameCircle", () => {
+  it("updates name, mark, and personalNameCustomizedAt on a Personal Circle", async () => {
+    const t = convexTest(schema, modules);
+
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const userId = await createUserWithPersonalCircle(ctx, {
+        email: "ada@example.com",
+        displayName: "Ada Lovelace",
+      });
+      const owner = await ctx.db.get(userId);
+      if (!owner) {
+        throw new Error("seed failed");
+      }
+      const circle = await ctx.db
+        .query("circles")
+        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", userId).eq("kind", "personal"))
+        .unique();
+      if (!circle) {
+        throw new Error("personal circle missing");
+      }
+      return { owner, circleId: circle._id };
+    });
+
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.renameCircle, {
+      circleId,
+      name: "Vacation Fund",
+    });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.name).toBe("Vacation Fund");
+      expect(circle?.mark).toBe("VF");
+      expect(circle?.personalNameCustomizedAt).toBeTypeOf("number");
+
+      const events = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+        .collect();
+      expect(events).toHaveLength(1);
+      expect(events[0]?.action).toBe("renamed");
+      expect(events[0]?.changes).toEqual([
+        { field: "name", from: "Ada's Circle", to: "Vacation Fund" },
+      ]);
+    });
+  });
+
+  it("updates the name but leaves mark and personalNameCustomizedAt unchanged on a regular Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.renameCircle, {
+      circleId,
+      name: "Summer Trip",
+    });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.name).toBe("Summer Trip");
+      expect(circle?.mark).toBe("T");
+      expect(circle?.personalNameCustomizedAt).toBeUndefined();
+    });
+  });
+});

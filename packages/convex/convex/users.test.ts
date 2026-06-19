@@ -48,6 +48,7 @@ describe("createUserWithPersonalCircle", () => {
       expect(circles[0]?.color).toBe("iris");
       expect(circles[0]?.ownerUserId).toBe(userId);
       expect(circles[0]?.setupCompletedAt).toBeTypeOf("number");
+      expect(circles[0]?.personalNameCustomizedAt).toBeUndefined();
 
       const members = await ctx.db.query("members").collect();
       expect(members).toHaveLength(1);
@@ -416,6 +417,145 @@ describe("updateProfile", () => {
 
       const history = await ctx.db.query("histories").collect();
       expect(history).toHaveLength(0);
+    });
+  });
+
+  it("leaves a customized Personal Circle name and mark unchanged", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, personalCircleId } = await t.run(async (ctx) => {
+      const id = await createUserWithPersonalCircle(ctx, {
+        email: "ada@example.com",
+        displayName: "Ada Lovelace",
+      });
+      const user = await ctx.db.get(id);
+      if (!user) {
+        throw new Error("missing user");
+      }
+      await ctx.db.patch(id, { onboardingCompletedAt: user.createdAt });
+      const personal = await ctx.db
+        .query("circles")
+        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", id).eq("kind", "personal"))
+        .unique();
+      if (!personal) {
+        throw new Error("missing personal circle");
+      }
+      return { userId: id, personalCircleId: personal._id };
+    });
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      if (!user) {
+        throw new Error("missing user");
+      }
+      mockCurrentUser.mockResolvedValue(user);
+    });
+
+    await t.mutation(api.circles.renameCircle, {
+      circleId: personalCircleId,
+      name: "Vacation Fund",
+    });
+
+    await t.mutation(api.users.updateProfile, { displayName: "Bob Builder" });
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      expect(user?.displayName).toBe("Bob Builder");
+
+      const circle = await ctx.db.get(personalCircleId);
+      expect(circle?.name).toBe("Vacation Fund");
+      expect(circle?.mark).toBe("VF");
+      expect(circle?.personalNameCustomizedAt).toBeTypeOf("number");
+
+      const ownerMembership = await ctx.db
+        .query("members")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .filter((q) => q.eq(q.field("status"), "active"))
+        .first();
+      expect(ownerMembership?.displayName).toBe("Bob Builder");
+    });
+  });
+
+  it("does not stomp a customized name when the derived name matches", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, personalCircleId } = await t.run(async (ctx) => {
+      const id = await createUserWithPersonalCircle(ctx, {
+        email: "bob@example.com",
+        displayName: "Robert Builder",
+      });
+      const user = await ctx.db.get(id);
+      if (!user) {
+        throw new Error("missing user");
+      }
+      await ctx.db.patch(id, { onboardingCompletedAt: user.createdAt });
+      const personal = await ctx.db
+        .query("circles")
+        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", id).eq("kind", "personal"))
+        .unique();
+      if (!personal) {
+        throw new Error("missing personal circle");
+      }
+      return { userId: id, personalCircleId: personal._id };
+    });
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      if (!user) {
+        throw new Error("missing user");
+      }
+      mockCurrentUser.mockResolvedValue(user);
+    });
+
+    await t.mutation(api.circles.renameCircle, {
+      circleId: personalCircleId,
+      name: "Bob's Circle",
+    });
+
+    await t.mutation(api.users.updateProfile, { displayName: "Bob Builder" });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(personalCircleId);
+      expect(circle?.name).toBe("Bob's Circle");
+      expect(circle?.mark).toBe("BC");
+    });
+  });
+
+  it("self-heals a stale mark when the derived name matches the current name", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, personalCircleId } = await t.run(async (ctx) => {
+      const id = await createUserWithPersonalCircle(ctx, {
+        email: "bob@example.com",
+        displayName: "Bob Builder",
+      });
+      const user = await ctx.db.get(id);
+      if (!user) {
+        throw new Error("missing user");
+      }
+      await ctx.db.patch(id, { onboardingCompletedAt: user.createdAt });
+      const personal = await ctx.db
+        .query("circles")
+        .withIndex("by_owner_and_kind", (q) => q.eq("ownerUserId", id).eq("kind", "personal"))
+        .unique();
+      if (!personal) {
+        throw new Error("missing personal circle");
+      }
+      await ctx.db.patch(personal._id, { mark: "XX" });
+      return { userId: id, personalCircleId: personal._id };
+    });
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      if (!user) {
+        throw new Error("missing user");
+      }
+      mockCurrentUser.mockResolvedValue(user);
+    });
+
+    await t.mutation(api.users.updateProfile, { displayName: "Bob Builder" });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(personalCircleId);
+      expect(circle?.name).toBe("Bob's Circle");
+      expect(circle?.mark).toBe("BC");
     });
   });
 });
