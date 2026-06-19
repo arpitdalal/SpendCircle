@@ -20,10 +20,12 @@ function defineMutationErrorCatalog<
     code: z.enum([firstCode, ...restCodes]),
   });
 
+  type Code = T[keyof T]["code"];
+
   return {
     errors,
-    dataSchema,
-    errorData(error: { code: string }) {
+    dataSchema: dataSchema satisfies z.ZodType<{ code: Code }>,
+    errorData(error: { code: Code }) {
       return { code: error.code };
     },
     messageForCode(code: string) {
@@ -45,4 +47,12 @@ export const mutationErrorDataSchema = mutationErrors.dataSchema;
 export const mutationErrorData = mutationErrors.errorData;
 export const mutationErrorMessageForCode = mutationErrors.messageForCode;
 
-export type MutationErrorCode = z.infer<typeof mutationErrorDataSchema>["code"];
+export type MutationErrorCode = (typeof MUTATION_ERRORS)[keyof typeof MUTATION_ERRORS]["code"];
+
+type MutationErrorCodeIsLiteralUnion = MutationErrorCode extends string
+  ? string extends MutationErrorCode
+    ? never
+    : true
+  : never;
+
+const _mutationErrorCodeIsLiteralUnion: MutationErrorCodeIsLiteralUnion = true;
