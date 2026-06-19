@@ -26,6 +26,17 @@ type TestCtx = ReturnType<typeof convexTest>;
 
 const FINANCIAL_PATTERN = /\$|\bUSD\b|\bEUR\b|\bGBP\b|\bamount\b|\bbalance\b|\d+\.\d{2}/i;
 
+function resendBodyHtml(body: unknown) {
+  if (typeof body !== "object" || body === null || !("html" in body)) {
+    throw new Error("expected Resend JSON body with html");
+  }
+  const { html } = body;
+  if (typeof html !== "string") {
+    throw new Error("expected Resend html field to be a string");
+  }
+  return html;
+}
+
 async function seedOwner(t: TestCtx) {
   const seed = await t.run((ctx) =>
     seedPersonalCircleOwner(ctx, {
@@ -115,7 +126,7 @@ describe("sendWelcomeEmail Resend payload (MSW)", () => {
       to: "ada@example.com",
       subject: WELCOME_SUBJECT,
     });
-    const html = (resend[0]?.body as { html?: string })?.html ?? "";
+    const html = resendBodyHtml(resend[0]?.body);
     expect(html).toContain("Ada Lovelace");
     expect(html).not.toMatch(FINANCIAL_PATTERN);
   });

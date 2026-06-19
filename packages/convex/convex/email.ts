@@ -13,7 +13,7 @@ import { internalAction, internalMutation } from "./_generated/server.js";
 export const WELCOME_SUBJECT = "Welcome to Spend Circle";
 
 /** Pure HTML builder — no financial content (PRD 84). */
-export function welcomeHtml(displayName: string): string {
+export function welcomeHtml(displayName: string) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>${WELCOME_SUBJECT}</title></head>
@@ -26,7 +26,7 @@ export function welcomeHtml(displayName: string): string {
 </html>`;
 }
 
-function escapeHtml(text: string): string {
+function escapeHtml(text: string) {
   return text
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -36,11 +36,7 @@ function escapeHtml(text: string): string {
 }
 
 /** Resend vendor wiring — single seam for EML-2 / FBK-1. Uses fetch (not SDK). */
-export async function sendEmail(args: {
-  to: string;
-  subject: string;
-  html: string;
-}): Promise<void> {
+export async function sendEmail(args: { to: string; subject: string; html: string }) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
   if (!key || !from) {
