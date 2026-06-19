@@ -6,6 +6,7 @@ import { type CirclesState, circlesDouble } from "./circles.js";
 import type { PaginatedPage } from "./contract.js";
 import { type DashboardState, dashboardDouble } from "./dashboard.js";
 import { type HistoryState, historyDouble } from "./history.js";
+import { type InvitationsState, invitationsDouble } from "./invitations.js";
 import { type LedgerState, ledgerDouble } from "./ledger.js";
 import { type MembersState, membersDouble } from "./members.js";
 import { type TransactionsState, transactionsDouble } from "./transactions.js";
@@ -14,6 +15,7 @@ import { type UsersState, usersDouble } from "./users.js";
 export type ConvexState = CirclesState &
   CategoriesState &
   MembersState &
+  InvitationsState &
   TransactionsState &
   LedgerState &
   DashboardState &
@@ -24,6 +26,7 @@ const ENTITY_DOUBLES = [
   circlesDouble,
   categoriesDouble,
   membersDouble,
+  invitationsDouble,
   transactionsDouble,
   ledgerDouble,
   dashboardDouble,

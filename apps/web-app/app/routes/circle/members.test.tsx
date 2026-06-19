@@ -1,5 +1,8 @@
+import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { ConvexError } from "convex/values";
+import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { Member } from "~/lib/data.js";
 import {
   configureConvex,
@@ -20,8 +23,8 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 
 import CircleMembers from "./members.js";
 
-function setup(opts: { members?: Member[] | null } = {}) {
-  configureConvex({ members: opts.members });
+function setup(opts: { members?: Member[] | null; createInvitation?: Mock } = {}) {
+  configureConvex({ members: opts.members, createInvitation: opts.createInvitation });
   return renderInCircle(makeCircleView(), <CircleMembers />);
 }
 
@@ -93,5 +96,88 @@ describe("CircleMembers", () => {
   it("shows an unavailable state when the query returns null (inaccessible)", () => {
     setup({ members: null });
     expect(screen.getByText(/members are unavailable/i)).toBeInTheDocument();
+  });
+});
+
+describe("CircleMembers — invite form", () => {
+  it("shows the invite form for the Owner", () => {
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+    });
+    expect(screen.getByRole("form", { name: "Invite member" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Email address")).toBeInTheDocument();
+  });
+
+  it("hides the invite form for a non-owner Member", () => {
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+    });
+    expect(screen.queryByRole("form", { name: "Invite member" })).not.toBeInTheDocument();
+  });
+
+  it("shows a field error for an invalid email without calling the mutation", async () => {
+    const createInvitation = vi.fn();
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+      createInvitation,
+    });
+
+    await user.type(screen.getByLabelText("Email address"), "not-an-email");
+    await user.click(screen.getByRole("button", { name: "Invite member" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a valid email address");
+    expect(createInvitation).not.toHaveBeenCalled();
+  });
+
+  it("renders a copyable invitation link on success and disables submit while in-flight", async () => {
+    const createInvitation = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ token: "abc123token" }), 50);
+        }),
+    );
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+      createInvitation,
+    });
+
+    await user.type(screen.getByLabelText("Email address"), "ada@example.com");
+    const submit = screen.getByRole("button", { name: "Invite member" });
+    await user.click(submit);
+
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveTextContent("Inviting…");
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/invitation created/i);
+    expect(screen.getByLabelText("Invitation link")).toHaveValue(
+      `${window.location.origin}/invite/abc123token`,
+    );
+    expect(createInvitation).toHaveBeenCalledWith({
+      circleId: makeCircleView().id,
+      email: "ada@example.com",
+    });
+  });
+
+  it("maps a coded mutation error to shared user copy", async () => {
+    const createInvitation = vi
+      .fn()
+      .mockRejectedValue(new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteAlreadyPending)));
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+      createInvitation,
+    });
+
+    await user.type(screen.getByLabelText("Email address"), "ada@example.com");
+    await user.click(screen.getByRole("button", { name: "Invite member" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.inviteAlreadyPending.message,
+    );
   });
 });

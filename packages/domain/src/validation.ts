@@ -34,6 +34,12 @@ export const profileUpdateSchema = z.object({
 });
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 
+/** Server-and-client-shared invite email input (MEM-2). Parsed `email` is canonical `emailLower`. */
+export const inviteEmailSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+});
+export type InviteEmailInput = z.infer<typeof inviteEmailSchema>;
+
 export type ProfileUpdateParseResult =
   | { ok: true; value: ProfileUpdateInput }
   | { ok: false; error: string };
