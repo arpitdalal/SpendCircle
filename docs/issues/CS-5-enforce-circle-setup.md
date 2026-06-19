@@ -38,8 +38,8 @@ This slice makes setup **mandatory** for regular Circles and tracks completion *
 ### Backend (`packages/convex/convex`)
 
 - **Schema** (`schema.ts`): add required `setupCompletedAt: v.union(v.number(), v.null())` to
-  `circles`. `null` means incomplete; a number means complete. Existing rows must be backfilled
-  before this lands.
+  `circles`. `null` means incomplete; a number means complete. Pre-production — no backfill; every
+  insert path sets the field (`createCircle` → `null`, Personal bootstrap → `now`).
 - **Bootstrap** (`model.ts`): the Personal Circle insert sets `setupCompletedAt: now` — Personal
   Circles are complete by definition and never visit `/setup`.
 - **`createCircle`** (`circles.ts`): a regular Circle sets `setupCompletedAt: null` — the
@@ -56,12 +56,6 @@ This slice makes setup **mandatory** for regular Circles and tracks completion *
   only correct for the pre-flag model). `color` edits remain allowed regardless.
 - **`toCircleView`** (`circles.ts`): expose a derived `setupComplete: circle.setupCompletedAt !== null`
   on the client view (keep `setupAnswers` for the settings form). The route gate reads this.
-- **Backfill** (`maintenance.ts`): an operator-key-guarded, paginated mutation
-  (`backfillCircleSetupCompleted`) that sets `setupCompletedAt` on every existing Circle before
-  making the field required — **grandfather all existing Circles as complete** so the new gate
-  applies only to Circles created from here on. Without this, any already-skipped Circle (and its
-  Members) is trapped on `/setup`. Follow the `backfillTransactionSearchText` pattern (bounded
-  page + cursor + operator key).
 
 ### Web (`apps/web-app/app`)
 
@@ -89,8 +83,6 @@ This slice makes setup **mandatory** for regular Circles and tracks completion *
 - **No empty Circles.** Removing Skip and always seeding defaults means every regular Circle has a
   usable Category set the moment setup finishes — recording an expense needs no manual Category
   first.
-- **Grandfather, don't trap.** Existing Circles predate the gate; backfilling them complete keeps
-  current Members unaffected.
 
 ## How to test
 
@@ -105,15 +97,13 @@ This slice makes setup **mandatory** for regular Circles and tracks completion *
 - **Mutation invariant (direct call):** calling `updateCircleSettings` with `setupAnswers` on an
   incomplete Circle is rejected server-side; on a complete Circle it succeeds (answers editable in
   CS-2 settings). `color` edits succeed in both states.
-- **Backfill:** existing Circles become complete after the
-  backfill runs to `isDone`; their Members are not redirected to `/setup`.
 
 ## Done when
 
 - Regular Circles must complete setup before any Circle-scoped route is usable; the Personal Circle
   is exempt; Skip is gone and every finished Circle has starter Categories; completion is tracked by
   `setupCompletedAt`; `updateCircleSettings`/`completeCircleSetup` enforce the one-shot at the
-  mutation boundary; existing Circles are grandfathered; tests green; gates pass.
+  mutation boundary; tests green; gates pass.
 
 ## Out of scope
 

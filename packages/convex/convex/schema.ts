@@ -184,16 +184,6 @@ export default defineSchema({
       searchField: "searchText",
       filterFields: ["circleId", "status", "type", "paidByMemberId", "recordedByMemberId"],
     }),
-
-  transactionSearchBackfills: defineTable({
-    key: v.literal("transactionSearchDocuments"),
-    status: v.union(v.literal("pending"), v.literal("complete")),
-    scanned: v.number(),
-    synced: v.number(),
-    updatedAt: v.number(),
-    completedAt: v.optional(v.number()),
-  }).index("by_key", ["key"]),
-
   // Many-to-many between Transactions and Categories (PRD story 50).
   transactionCategories: defineTable({
     circleId: v.id("circles"),
