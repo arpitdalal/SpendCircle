@@ -572,3 +572,109 @@ describe("renameCircle", () => {
     });
   });
 });
+
+describe("setPersonalCircleNameAutoSync", () => {
+  it("re-enables auto-sync and re-derives name + mark from the current Display Name", async () => {
+    const t = convexTest(schema, modules);
+
+    const { owner, personalCircleId } = await t.run((ctx) =>
+      seedPersonalCircleOwner(ctx, {
+        email: "ada@example.com",
+        displayName: "Ada Lovelace",
+      }),
+    );
+
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.renameCircle, {
+      circleId: personalCircleId,
+      name: "Vacation Fund",
+    });
+
+    await t.mutation(api.users.updateProfile, { displayName: "Ada Marie" });
+    mockCurrentUser.mockResolvedValue({ ...owner, displayName: "Ada Marie" });
+
+    await t.mutation(api.circles.setPersonalCircleNameAutoSync, { enabled: true });
+
+    const view = await t.query(api.circles.getCircle, { circleId: personalCircleId });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(personalCircleId);
+      expect(circle?.personalNameCustomizedAt).toBeUndefined();
+      expect(circle?.name).toBe("Ada's Circle");
+      expect(circle?.mark).toBe("AC");
+    });
+
+    expect(view?.nameCustomized).toBe(false);
+  });
+
+  it("freezes the current name when auto-sync is turned off", async () => {
+    const t = convexTest(schema, modules);
+
+    const { owner, personalCircleId } = await t.run((ctx) =>
+      seedPersonalCircleOwner(ctx, {
+        email: "bob@example.com",
+        displayName: "Bob Builder",
+      }),
+    );
+
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.setPersonalCircleNameAutoSync, { enabled: false });
+
+    await t.mutation(api.users.updateProfile, { displayName: "Robert Builder" });
+    mockCurrentUser.mockResolvedValue({ ...owner, displayName: "Robert Builder" });
+
+    const view = await t.query(api.circles.getCircle, { circleId: personalCircleId });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(personalCircleId);
+      expect(circle?.personalNameCustomizedAt).toBeTypeOf("number");
+      expect(circle?.name).toBe("Bob's Circle");
+      expect(circle?.mark).toBe("BC");
+    });
+
+    expect(view?.nameCustomized).toBe(true);
+  });
+
+  it("no-ops when the caller has no Personal Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.setPersonalCircleNameAutoSync, { enabled: true });
+  });
+
+  it("derives nameCustomized false for auto-tracking personal circles and true after rename", async () => {
+    const t = convexTest(schema, modules);
+
+    const { owner, personalCircleId } = await t.run((ctx) =>
+      seedPersonalCircleOwner(ctx, {
+        email: "carol@example.com",
+        displayName: "Carol Danvers",
+      }),
+    );
+
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const autoView = await t.query(api.circles.getCircle, { circleId: personalCircleId });
+    expect(autoView?.nameCustomized).toBe(false);
+
+    await t.mutation(api.circles.renameCircle, {
+      circleId: personalCircleId,
+      name: "Hero Fund",
+    });
+
+    const customizedView = await t.query(api.circles.getCircle, { circleId: personalCircleId });
+    expect(customizedView?.nameCustomized).toBe(true);
+  });
+
+  it("derives nameCustomized false for regular circles", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const view = await t.query(api.circles.getCircle, { circleId });
+    expect(view?.nameCustomized).toBe(false);
+  });
+});

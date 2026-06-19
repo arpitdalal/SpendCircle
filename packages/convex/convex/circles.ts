@@ -16,6 +16,7 @@ import { createCategoryForMember } from "./categories.js";
 import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import type { HistoryChange } from "./history.js";
 import { circleEntity, recordEvent } from "./history.js";
+import { getPersonalCircleForOwner, reconcilePersonalCircleFromDisplayName } from "./model.js";
 
 const circleSetupAnswers = v.object({
   purpose: v.optional(
@@ -46,6 +47,7 @@ function toCircleView(circle: Doc<"circles">) {
     setupAnswers: circle.setupAnswers,
     setupComplete: circle.setupCompletedAt !== null,
     currencyLocked: circle.currencyLocked,
+    nameCustomized: circle.personalNameCustomizedAt !== undefined,
   };
 }
 
@@ -211,6 +213,31 @@ export const updateCircleSettings = mutation({
       action: "settings_changed",
       changes,
     });
+  },
+});
+
+/**
+ * Turns Personal Circle name auto-sync with the owner's Display Name on or off (USR-2).
+ * No Circle History event — identity-driven, like `reconcilePersonalCircleFromDisplayName`.
+ */
+export const setPersonalCircleNameAutoSync = mutation({
+  args: { enabled: v.boolean() },
+  handler: async (ctx, args) => {
+    const user = await requireCurrentUser(ctx);
+    const personalCircle = await getPersonalCircleForOwner(ctx, user._id);
+    if (!personalCircle) {
+      return;
+    }
+
+    if (args.enabled) {
+      await ctx.db.patch(personalCircle._id, { personalNameCustomizedAt: undefined });
+      await reconcilePersonalCircleFromDisplayName(ctx, user._id, user.displayName);
+      return;
+    }
+
+    if (personalCircle.personalNameCustomizedAt === undefined) {
+      await ctx.db.patch(personalCircle._id, { personalNameCustomizedAt: Date.now() });
+    }
   },
 });
 

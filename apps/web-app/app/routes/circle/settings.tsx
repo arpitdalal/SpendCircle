@@ -11,7 +11,13 @@ import { type FormEvent, useRef, useState } from "react";
 import { href, Navigate } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Button } from "~/components/ui/button.js";
-import { type Member, useMembers, useRenameCircle, useUpdateCircleSettings } from "~/lib/data.js";
+import {
+  type Member,
+  useMembers,
+  useRenameCircle,
+  useSetPersonalCircleNameAutoSync,
+  useUpdateCircleSettings,
+} from "~/lib/data.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -43,6 +49,7 @@ export default function CircleSettings() {
   const circle = useCircle();
   const members = useMembers(circle.id);
   const renameCircle = useRenameCircle();
+  const setPersonalCircleNameAutoSync = useSetPersonalCircleNameAutoSync();
   const updateSettings = useUpdateCircleSettings();
   const { show } = useSnackbar();
 
@@ -55,6 +62,7 @@ export default function CircleSettings() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
+  const [syncingName, setSyncingName] = useState(false);
   const [savingColor, setSavingColor] = useState(false);
   const [savingSetup, setSavingSetup] = useState(false);
 
@@ -79,6 +87,18 @@ export default function CircleSettings() {
 
   const nameDirty = name.trim() !== circle.name;
   const setupDirty = setupAnswersChanged(circle.setupAnswers, setupAnswers(purpose, residenceType));
+
+  async function onToggleNameAutoSync() {
+    setSyncingName(true);
+    try {
+      await setPersonalCircleNameAutoSync({ enabled: circle.nameCustomized });
+    } catch (caught) {
+      console.error("setPersonalCircleNameAutoSync failed", caught);
+      show("Couldn't update name sync. Please try again.");
+    } finally {
+      setSyncingName(false);
+    }
+  }
 
   async function onSaveName(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -204,6 +224,31 @@ export default function CircleSettings() {
           <p id="circle-settings-name-error" role="alert" className="text-sm text-destructive">
             {nameError}
           </p>
+        ) : null}
+        {circle.kind === "personal" ? (
+          <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/30 p-3">
+            <div className="flex items-start gap-3">
+              <input
+                id="circle-settings-name-auto-sync"
+                type="checkbox"
+                role="switch"
+                aria-checked={!circle.nameCustomized}
+                checked={!circle.nameCustomized}
+                disabled={syncingName}
+                onChange={() => void onToggleNameAutoSync()}
+                className="mt-0.5 size-4 shrink-0 rounded border border-input accent-primary"
+              />
+              <div className="space-y-1">
+                <label htmlFor="circle-settings-name-auto-sync" className="text-sm font-medium">
+                  Match my display name
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  When on, your Personal Circle&apos;s name and icon update automatically whenever
+                  you change your display name. Renaming it yourself turns this off.
+                </p>
+              </div>
+            </div>
+          </div>
         ) : null}
         <Button type="submit" disabled={!nameDirty || savingName}>
           {savingName ? "Saving…" : "Save name"}

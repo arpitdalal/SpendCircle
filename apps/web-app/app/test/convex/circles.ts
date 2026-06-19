@@ -19,11 +19,19 @@ export interface CirclesState {
   completeCircleSetup?: Mock;
   renameCircle?: Mock;
   updateCircleSettings?: Mock;
+  setPersonalCircleNameAutoSync?: Mock;
 }
 
 export function circlesDouble(state: CirclesState): EntityDouble {
-  const { circles, circle, createCircle, completeCircleSetup, renameCircle, updateCircleSettings } =
-    state;
+  const {
+    circles,
+    circle,
+    createCircle,
+    completeCircleSetup,
+    renameCircle,
+    updateCircleSettings,
+    setPersonalCircleNameAutoSync,
+  } = state;
   return {
     queries: {
       [getFunctionName(api.circles.listMyCircles)]: () => circles,
@@ -34,6 +42,7 @@ export function circlesDouble(state: CirclesState): EntityDouble {
       [getFunctionName(api.circles.completeCircleSetup)]: completeCircleSetup,
       [getFunctionName(api.circles.renameCircle)]: renameCircle,
       [getFunctionName(api.circles.updateCircleSettings)]: updateCircleSettings,
+      [getFunctionName(api.circles.setPersonalCircleNameAutoSync)]: setPersonalCircleNameAutoSync,
     },
   };
 }
@@ -52,6 +61,7 @@ export function makeCircleView(over: Partial<Circle> = {}): Circle {
     setupAnswers: undefined,
     setupComplete: true,
     currencyLocked: false,
+    nameCustomized: false,
     ...over,
   };
 }

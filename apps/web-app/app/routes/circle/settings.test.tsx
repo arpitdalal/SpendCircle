@@ -164,3 +164,64 @@ describe("Circle settings", () => {
     expect(updateCircleSettings).not.toHaveBeenCalled();
   });
 });
+
+describe("Personal Circle name auto-sync toggle", () => {
+  it("renders ON for an auto-tracking Personal Circle and OFF when customized", () => {
+    const autoCircle = makeCircleView({
+      ref: "personal-c0",
+      kind: "personal",
+      nameCustomized: false,
+    });
+    const { rerender } = renderSettings(autoCircle);
+    expect(screen.getByRole("switch", { name: "Match my display name" })).toBeChecked();
+
+    rerender(
+      makeCircleView({
+        ref: "personal-c0",
+        kind: "personal",
+        nameCustomized: true,
+      }),
+    );
+
+    expect(screen.getByRole("switch", { name: "Match my display name" })).not.toBeChecked();
+  });
+
+  it("calls setPersonalCircleNameAutoSync with enabled true when turned on", async () => {
+    const user = userEvent.setup();
+    const setPersonalCircleNameAutoSync = vi.fn().mockResolvedValue(undefined);
+    const circle = makeCircleView({
+      ref: "personal-c0",
+      kind: "personal",
+      nameCustomized: true,
+    });
+    configureConvex({ members: [ownerMember], setPersonalCircleNameAutoSync });
+    renderCircleRoutes(
+      circle,
+      <>
+        <Route path="/circles/:circleRef" element={<div>dashboard</div>} />
+        <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />
+      </>,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    await user.click(screen.getByRole("switch", { name: "Match my display name" }));
+
+    expect(setPersonalCircleNameAutoSync).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it("shows OFF after a rename when the circle view becomes customized", () => {
+    const customizedCircle = makeCircleView({
+      ref: "personal-c0",
+      kind: "personal",
+      name: "Vacation Fund",
+      nameCustomized: true,
+    });
+    renderSettings(customizedCircle);
+    expect(screen.getByRole("switch", { name: "Match my display name" })).not.toBeChecked();
+  });
+
+  it("is hidden for regular circles", () => {
+    renderSettings(makeCircleView({ ref: "trip-c1", kind: "regular" }));
+    expect(screen.queryByRole("switch", { name: "Match my display name" })).not.toBeInTheDocument();
+  });
+});
