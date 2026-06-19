@@ -1,6 +1,7 @@
+import { vOnCompleteValidator, Workpool } from "@convex-dev/workpool";
 import { v } from "convex/values";
-import { internal } from "./_generated/api.js";
-import { internalAction, internalMutation } from "./_generated/server.js";
+import { components, internal } from "./_generated/api.js";
+import { internalAction, internalMutation, internalQuery } from "./_generated/server.js";
 
 /**
  * Transactional email via Resend (ADR 0008). v1 sends only Welcome + Invitation
@@ -11,6 +12,17 @@ import { internalAction, internalMutation } from "./_generated/server.js";
  */
 
 export const WELCOME_SUBJECT = "Welcome to Spend Circle";
+
+// Durable, throttled handoff to Resend — the shared seam EML-2 / FBK-1 reuse.
+// maxParallelism caps concurrent sends so a vendor outage can't stampede Resend.
+// (Free-plan ceiling is 20 across ALL pools/workflows — keep the sum under that.)
+// Welcome email isn't urgent: back off generously. maxAttempts is TOTAL attempts
+// (5 = 1 initial + 4 retries): 30s, 60s, 120s, 240s of backoff (+jitter) ≈ 7.5 min cover.
+export const emailPool = new Workpool(components.emailWorkpool, {
+  maxParallelism: 5,
+  retryActionsByDefault: true,
+  defaultRetryBehavior: { maxAttempts: 5, initialBackoffMs: 30_000, base: 2 },
+});
 
 /** Pure HTML builder — no financial content (PRD 84). */
 export function welcomeHtml(displayName: string) {
@@ -35,48 +47,79 @@ function escapeHtml(text: string) {
     .replaceAll("'", "&#39;");
 }
 
-/** Resend vendor wiring — single seam for EML-2 / FBK-1. Uses fetch (not SDK). */
+/** Resend vendor wiring — single seam for EML-2 / FBK-1. Uses fetch (not SDK).
+ *  Returns true on a confirmed 2xx; false when env is unset (no-op). THROWS on
+ *  fetch rejection or non-2xx so the Workpool retries the handoff. */
 export async function sendEmail(args: { to: string; subject: string; html: string }) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
   if (!key || !from) {
     console.error("Resend env not configured; skipping email send");
-    return;
+    return false;
   }
+  // fetch can REJECT (DNS/TLS/timeout) before any response — let it propagate so the pool retries.
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from, to: args.to, subject: args.subject, html: args.html }),
   });
   if (!res.ok) {
-    console.error("Resend send failed", res.status, await res.text().catch(() => ""));
+    const body = await res.text().catch(() => "");
+    throw new Error(`Resend send failed: ${res.status} ${body}`);
   }
+  return true;
 }
 
-/** Idempotent claim: returns the user payload to send to ONCE, else null. */
-export const claimWelcome = internalMutation({
+export const welcomePayload = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     const user = await ctx.db.get(userId);
-    if (!user || user.welcomeSentAt !== undefined) {
+    if (!user) {
       return null;
     }
-    await ctx.db.patch(userId, { welcomeSentAt: Date.now() });
-    return { email: user.email, displayName: user.displayName };
+    return {
+      alreadySent: user.welcomeSentAt !== undefined,
+      email: user.email,
+      displayName: user.displayName,
+    };
+  },
+});
+
+export const markWelcomed = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const user = await ctx.db.get(userId);
+    if (user && user.welcomeSentAt === undefined) {
+      await ctx.db.patch(userId, { welcomeSentAt: Date.now() });
+    }
   },
 });
 
 export const sendWelcomeEmail = internalAction({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
-    const claimed = await ctx.runMutation(internal.email.claimWelcome, { userId });
-    if (!claimed) {
+    const p = await ctx.runQuery(internal.email.welcomePayload, { userId });
+    if (!p || p.alreadySent) {
       return;
     }
-    await sendEmail({
-      to: claimed.email,
+    const sent = await sendEmail({
+      to: p.email,
       subject: WELCOME_SUBJECT,
-      html: welcomeHtml(claimed.displayName),
+      html: welcomeHtml(p.displayName),
     });
+    if (sent) {
+      await ctx.runMutation(internal.email.markWelcomed, { userId });
+    }
+  },
+});
+
+export const onWelcomeRunComplete = internalMutation({
+  args: vOnCompleteValidator(v.object({ userId: v.id("users") })),
+  handler: async (_ctx, { context, result }) => {
+    if (result.kind === "failed") {
+      console.error("Welcome email exhausted all retries", context.userId, result.error);
+      // TODO(OBS-1): Sentry.captureMessage here.
+    }
+    // result.kind === "success" | "canceled" → nothing to do.
   },
 });
