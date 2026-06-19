@@ -12,6 +12,7 @@ import type * as auth from "../auth.js";
 import type * as categories from "../categories.js";
 import type * as circles from "../circles.js";
 import type * as dashboard from "../dashboard.js";
+import type * as email from "../email.js";
 import type * as guard from "../guard.js";
 import type * as history from "../history.js";
 import type * as historyView from "../historyView.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   categories: typeof categories;
   circles: typeof circles;
   dashboard: typeof dashboard;
+  email: typeof email;
   guard: typeof guard;
   history: typeof history;
   historyView: typeof historyView;

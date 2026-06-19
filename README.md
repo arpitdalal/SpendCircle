@@ -62,6 +62,8 @@ pnpm --filter @spend-circle/convex exec convex env set SITE_URL http://127.0.0.1
 pnpm --filter @spend-circle/convex exec convex env set GOOGLE_CLIENT_ID <id>
 pnpm --filter @spend-circle/convex exec convex env set GOOGLE_CLIENT_SECRET <secret>
 pnpm --filter @spend-circle/convex exec convex env set BETTER_AUTH_SECRET <secret>
+pnpm --filter @spend-circle/convex exec convex env set RESEND_API_KEY <resend-api-key>
+pnpm --filter @spend-circle/convex exec convex env set RESEND_FROM_EMAIL <verified-from-address>
 ```
 
 ## Run App

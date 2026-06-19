@@ -42,6 +42,8 @@ export default defineSchema({
     analyticsOptOut: v.boolean(),
     // null until Onboarding completes; a number means the User confirmed their profile (USR-1).
     onboardingCompletedAt: v.union(v.number(), v.null()),
+    // Set when the Welcome email is claimed/sent (EML-1); absent ⇒ not yet sent.
+    welcomeSentAt: v.optional(v.number()),
     createdAt: v.number(),
   }).index("by_email", ["email"]),
 
