@@ -19,11 +19,12 @@ export default function CircleMembers() {
   const circle = useCircle();
   const members = useMembers(circle.id);
   const isOwner = members?.some((member) => member.isSelf && member.role === "owner") ?? false;
+  const canInvite = circle.kind === "regular" && isOwner;
 
   return (
     <div className="space-y-4">
       <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
-      {isOwner ? <InviteMemberForm circleId={circle.id} /> : null}
+      {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
       <MemberList members={members} />
     </div>
   );

@@ -7,6 +7,7 @@ import type { Id } from "./_generated/dataModel.js";
 import type { MutationCtx } from "./_generated/server.js";
 import { circleEntity, listEntityHistory } from "./history.js";
 import { hashInvitationToken } from "./invitationToken.js";
+import { createUserWithPersonalCircle } from "./model.js";
 import schema from "./schema.js";
 import { addMember, makeUser, seedCircle, seedPersonalCircleOwner } from "./test/seed.js";
 
@@ -192,6 +193,36 @@ describe("createInvitation — duplicates", () => {
 
     await expect(
       t.mutation(api.invitations.createInvitation, { circleId, email: member.user.email }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteAlreadyMember),
+    });
+  });
+
+  it("rejects an active member when the invite email differs only by case", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const memberUserId = await t.run((ctx) =>
+      createUserWithPersonalCircle(ctx, {
+        email: "Ada@Example.com",
+        displayName: "Ada",
+        currency: "USD",
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("members", {
+        circleId,
+        userId: memberUserId,
+        role: "member",
+        status: "active",
+        displayName: "Ada",
+        joinedAt: Date.now(),
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "ada@example.com" }),
     ).rejects.toMatchObject({
       data: mutationErrorData(MUTATION_ERRORS.inviteAlreadyMember),
     });

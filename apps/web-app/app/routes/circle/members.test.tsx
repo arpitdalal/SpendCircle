@@ -3,7 +3,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
-import type { Member } from "~/lib/data.js";
+import type { Circle, Member } from "~/lib/data.js";
 import {
   configureConvex,
   makeCircleView,
@@ -23,9 +23,9 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 
 import CircleMembers from "./members.js";
 
-function setup(opts: { members?: Member[] | null; createInvitation?: Mock } = {}) {
+function setup(opts: { members?: Member[] | null; createInvitation?: Mock; circle?: Circle } = {}) {
   configureConvex({ members: opts.members, createInvitation: opts.createInvitation });
-  return renderInCircle(makeCircleView(), <CircleMembers />);
+  return renderInCircle(opts.circle ?? makeCircleView(), <CircleMembers />);
 }
 
 const owner = makeMemberView({
@@ -114,6 +114,14 @@ describe("CircleMembers — invite form", () => {
         owner,
         makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
       ],
+    });
+    expect(screen.queryByRole("form", { name: "Invite member" })).not.toBeInTheDocument();
+  });
+
+  it("hides the invite form on a Personal Circle", () => {
+    setup({
+      circle: makeCircleView({ kind: "personal" }),
+      members: [makeMemberView({ displayName: "You", role: "owner", isSelf: true })],
     });
     expect(screen.queryByRole("form", { name: "Invite member" })).not.toBeInTheDocument();
   });

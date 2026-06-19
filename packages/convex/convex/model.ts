@@ -1,4 +1,5 @@
 import {
+  canonicalEmail,
   DEFAULT_CURRENCY,
   initials,
   isSupportedCurrency,
@@ -38,7 +39,7 @@ export async function createUserWithPersonalCircle(
   const personalName = personalCircleName(profile.displayName);
 
   const userId = await ctx.db.insert("users", {
-    email: profile.email,
+    email: canonicalEmail(profile.email),
     displayName: profile.displayName,
     image: profile.image,
     acceptedTermsVersion: CURRENT_TERMS_VERSION,
@@ -166,5 +167,5 @@ export async function syncUserEmail(
   if (!user) {
     return;
   }
-  await ctx.db.patch(userId, { email });
+  await ctx.db.patch(userId, { email: canonicalEmail(email) });
 }
