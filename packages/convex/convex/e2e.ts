@@ -14,17 +14,16 @@ async function e2eStashedInvitationToken(ctx: QueryCtx, row: Doc<"e2eInvitationT
   const invite = await ctx.db.get(row.invitationId);
   const now = Date.now();
   if (
-    !invite ||
-    invite.status !== "pending" ||
-    invite.expiresAt <= now ||
-    invite.circleId !== row.circleId ||
-    invite.emailLower !== row.emailLower
+    invite?.status !== "pending" ||
+    (invite?.expiresAt ?? 0) <= now ||
+    invite?.circleId !== row.circleId ||
+    invite?.emailLower !== row.emailLower
   ) {
     return null;
   }
 
   const tokenHash = await hashInvitationToken(row.token);
-  if (tokenHash !== invite.tokenHash) {
+  if (!invite || tokenHash !== invite.tokenHash) {
     return null;
   }
 
