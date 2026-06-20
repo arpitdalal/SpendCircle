@@ -1,3 +1,4 @@
+import { MUTATION_ERRORS } from "@spend-circle/domain";
 import { LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { href, Link, useNavigate, useParams } from "react-router";
@@ -62,7 +63,7 @@ function InviteInvalid() {
         You&apos;ve been invited
       </h1>
       <p role="alert" className="text-sm text-muted-foreground">
-        This invitation is no longer valid.
+        {MUTATION_ERRORS.inviteInvalid.message}
       </p>
     </div>
   );

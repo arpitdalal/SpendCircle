@@ -69,7 +69,7 @@ describe("Invite landing", () => {
 
   it("shows a generic invalid message when the preview is null", () => {
     renderInvite("bad-token", { invitationPreview: null });
-    expect(screen.getByRole("alert")).toHaveTextContent("This invitation is no longer valid");
+    expect(screen.getByRole("alert")).toHaveTextContent(MUTATION_ERRORS.inviteInvalid.message);
     expect(screen.queryByRole("button", { name: "Accept invitation" })).not.toBeInTheDocument();
   });
 
@@ -143,7 +143,7 @@ describe("Invite landing", () => {
     await user.click(screen.getByRole("button", { name: "Accept invitation" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This invitation is no longer valid",
+      MUTATION_ERRORS.inviteInvalid.message,
     );
     expect(screen.getByRole("button", { name: "Accept invitation" })).toBeEnabled();
   });
