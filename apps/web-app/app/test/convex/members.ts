@@ -9,16 +9,19 @@ export interface MembersState {
   /** `listMembers` — `undefined` ≡ loading, `null` ≡ inaccessible. */
   members?: Member[] | null;
   removeMember?: Mock;
+  /** `members:leaveCircle` mock; unset ⇒ no-op. */
+  leaveCircle?: Mock;
 }
 
 export function membersDouble(state: MembersState): EntityDouble {
-  const { members, removeMember } = state;
+  const { members, removeMember, leaveCircle } = state;
   return {
     queries: {
       [getFunctionName(api.members.listMembers)]: () => members,
     },
     mutations: {
       [getFunctionName(api.members.removeMember)]: removeMember,
+      [getFunctionName(api.members.leaveCircle)]: leaveCircle,
     },
   };
 }

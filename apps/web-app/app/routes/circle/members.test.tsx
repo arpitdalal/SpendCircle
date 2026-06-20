@@ -2,8 +2,9 @@ import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
-import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
-import type { Circle, Member } from "~/lib/data.js";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import type { Circle, Member, PendingInvitation } from "~/lib/data.js";
+import { MOCK_PENDING_INVITATIONS } from "~/lib/fixtures.js";
 import {
   configureConvex,
   makeCircleView,
@@ -11,6 +12,12 @@ import {
   renderInCircle,
   testId,
 } from "~/test/convex-react.js";
+
+const navigate = vi.fn();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
+  return { ...actual, useNavigate: () => navigate };
+});
 
 /**
  * Behavior test for the Member List surface (jsdom). Only `convex/react` is
@@ -28,6 +35,10 @@ function setup(
     members?: Member[] | null;
     createInvitation?: Mock;
     removeMember?: Mock;
+    pendingInvitations?: PendingInvitation[] | null;
+    resendInvitation?: Mock;
+    revokeInvitation?: Mock;
+    leaveCircle?: Mock;
     circle?: Circle;
   } = {},
 ) {
@@ -35,6 +46,10 @@ function setup(
     members: opts.members,
     createInvitation: opts.createInvitation,
     removeMember: opts.removeMember,
+    pendingInvitations: "pendingInvitations" in opts ? opts.pendingInvitations : [],
+    resendInvitation: opts.resendInvitation,
+    revokeInvitation: opts.revokeInvitation,
+    leaveCircle: opts.leaveCircle,
   });
   return renderInCircle(opts.circle ?? makeCircleView(), <CircleMembers />);
 }
@@ -54,6 +69,10 @@ const maya = makeMemberView({
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+beforeEach(() => {
+  navigate.mockReset();
 });
 
 describe("CircleMembers", () => {
@@ -160,11 +179,11 @@ describe("CircleMembers — invite form", () => {
     expect(createInvitation).not.toHaveBeenCalled();
   });
 
-  it("renders a copyable invitation link on success and disables submit while in-flight", async () => {
+  it("shows a success confirmation on invite and disables submit while in-flight", async () => {
     const createInvitation = vi.fn().mockImplementation(
       () =>
         new Promise((resolve) => {
-          setTimeout(() => resolve({ token: "abc123token" }), 50);
+          setTimeout(() => resolve(undefined), 50);
         }),
     );
     const user = userEvent.setup();
@@ -180,10 +199,10 @@ describe("CircleMembers — invite form", () => {
     expect(submit).toBeDisabled();
     expect(submit).toHaveTextContent("Inviting…");
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/invitation created/i);
-    expect(screen.getByLabelText("Invitation link")).toHaveValue(
-      `${window.location.origin}/invite/abc123token`,
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /invitation sent to ada@example\.com/i,
     );
+    expect(screen.queryByLabelText("Invitation link")).not.toBeInTheDocument();
     expect(createInvitation).toHaveBeenCalledWith({
       circleId: makeCircleView().id,
       email: "ada@example.com",
@@ -346,5 +365,258 @@ describe("CircleMembers — remove member", () => {
 
     await expect(screen.findByRole("listitem")).resolves.toHaveTextContent("Olive Owner");
     expect(screen.queryByText("Maya Member")).not.toBeInTheDocument();
+  });
+});
+
+describe("CircleMembers — pending invitations", () => {
+  const ownerSelf = makeMemberView({
+    displayName: "Olive Owner",
+    role: "owner",
+    isSelf: true,
+  });
+  const mockPendingInvite = MOCK_PENDING_INVITATIONS[0];
+  if (!mockPendingInvite) {
+    throw new Error("MOCK_PENDING_INVITATIONS must include at least one row");
+  }
+
+  it("shows pending invitations for the Owner", () => {
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: MOCK_PENDING_INVITATIONS,
+    });
+    expect(screen.getByRole("region", { name: "Pending invitations" })).toBeInTheDocument();
+    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText("bob@example.com")).toBeInTheDocument();
+  });
+
+  it("hides pending invitations for a non-owner Member", () => {
+    setup({
+      members: [owner, makeMemberView({ ...maya, isSelf: true, role: "member" })],
+      pendingInvitations: MOCK_PENDING_INVITATIONS,
+    });
+    expect(screen.queryByRole("region", { name: "Pending invitations" })).not.toBeInTheDocument();
+  });
+
+  it("renders a skeleton while pending invitations load", () => {
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: undefined,
+    });
+    const skeleton = screen.getByTestId("pending-invitations-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("renders gracefully when there are no pending invitations", () => {
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [],
+    });
+    expect(screen.getByText(/no pending invitations/i)).toBeInTheDocument();
+  });
+
+  it("calls resend and shows a copyable link on success", async () => {
+    const resendInvitation = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ token: "resend-token-xyz" }), 50);
+        }),
+    );
+    const user = userEvent.setup();
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [mockPendingInvite],
+      resendInvitation,
+    });
+
+    const resend = screen.getByRole("button", { name: "Resend" });
+    await user.click(resend);
+
+    expect(resend).toBeDisabled();
+    expect(resend).toHaveTextContent("Resending…");
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/new invitation link/i);
+    expect(screen.getByLabelText("Invitation link")).toHaveValue(
+      `${window.location.origin}/invite/resend-token-xyz`,
+    );
+    expect(resendInvitation).toHaveBeenCalledWith({
+      invitationId: mockPendingInvite.id,
+    });
+  });
+
+  it("calls revoke and shows a confirmation status", async () => {
+    const revokeInvitation = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [mockPendingInvite],
+      revokeInvitation,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /revoked invitation for ada@example.com/i,
+    );
+    expect(revokeInvitation).toHaveBeenCalledWith({
+      invitationId: mockPendingInvite.id,
+    });
+  });
+
+  it("maps invite.resendCapReached to shared user copy", async () => {
+    const resendInvitation = vi
+      .fn()
+      .mockRejectedValue(
+        new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteResendCapReached)),
+      );
+    const user = userEvent.setup();
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [mockPendingInvite],
+      resendInvitation,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.inviteResendCapReached.message,
+    );
+  });
+
+  it("maps invite.dailyCapReached to shared user copy", async () => {
+    const resendInvitation = vi
+      .fn()
+      .mockRejectedValue(new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteDailyCapReached)));
+    const user = userEvent.setup();
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [mockPendingInvite],
+      resendInvitation,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.inviteDailyCapReached.message,
+    );
+  });
+});
+
+describe("CircleMembers — leave circle", () => {
+  it("hides the leave section on a Personal Circle", () => {
+    setup({
+      circle: makeCircleView({ kind: "personal" }),
+      members: [makeMemberView({ displayName: "You", role: "owner", isSelf: true })],
+    });
+    expect(screen.queryByRole("region", { name: "Leave circle" })).not.toBeInTheDocument();
+  });
+
+  it("shows a transfer-first notice for the Owner instead of a leave button", () => {
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+    });
+    expect(screen.getByText(/transfer ownership before leaving/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Leave Circle" })).not.toBeInTheDocument();
+  });
+
+  it("shows a leave button for a non-owner self member", () => {
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+    });
+    expect(screen.getByRole("button", { name: "Leave Circle" })).toBeInTheDocument();
+  });
+
+  it("does not show a leave button for other members' rows", () => {
+    setup({ members: [owner, maya] });
+    expect(screen.queryByRole("button", { name: "Leave Circle" })).not.toBeInTheDocument();
+  });
+
+  it("shows confirmation on leave click and dismisses on cancel without calling the mutation", async () => {
+    const leaveCircle = vi.fn();
+    const user = userEvent.setup();
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      leaveCircle,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Leave Circle" }));
+    expect(screen.getByText(/are you sure/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/are you sure/i)).not.toBeInTheDocument();
+    expect(leaveCircle).not.toHaveBeenCalled();
+  });
+
+  it("calls leaveCircle on confirm, disables buttons while in-flight, and navigates home on success", async () => {
+    const leaveCircle = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(resolve, 50);
+        }),
+    );
+    const user = userEvent.setup();
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      leaveCircle,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Leave Circle" }));
+    const confirm = screen.getByRole("button", { name: "Confirm Leave" });
+    await user.click(confirm);
+
+    expect(confirm).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(confirm).toHaveTextContent("Leaving…");
+
+    await vi.waitFor(() => {
+      expect(leaveCircle).toHaveBeenCalledWith({ circleId: makeCircleView().id });
+      expect(navigate).toHaveBeenCalledWith("/");
+    });
+  });
+
+  it("maps a coded leave error to shared user copy", async () => {
+    const leaveCircle = vi
+      .fn()
+      .mockRejectedValue(new ConvexError(mutationErrorData(MUTATION_ERRORS.ownerMustTransfer)));
+    const user = userEvent.setup();
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      leaveCircle,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Leave Circle" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Leave" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.ownerMustTransfer.message,
+    );
+  });
+
+  it("shows fallback copy for an unexpected leave error", async () => {
+    const leaveCircle = vi.fn().mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      leaveCircle,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Leave Circle" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Leave" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't leave. Please try again.");
   });
 });

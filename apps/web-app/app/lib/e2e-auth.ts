@@ -80,6 +80,22 @@ export function installE2EAuthHelper(): void {
           memberId: memberIdFromString(memberId),
         });
       },
+      /** Marks a non-owner Member removed (MEM-3 rejoin E2E until MEM-5 ships). */
+      async markMemberRemoved(circleId: Circle["id"], memberId: Member["id"]) {
+        await convex.mutation(api.e2eTesting.markMemberRemovedForE2E, {
+          circleId,
+          memberId,
+        });
+      },
+      async listMembers(circleId: Circle["id"]) {
+        return await convex.query(api.members.listMembers, {
+          circleId,
+        });
+      },
+      /** Accept a pending invitation by token (E2E-only backend; MEM-3 will replace this). */
+      async acceptInvitation(token: string) {
+        await convex.mutation(api.e2e.acceptInvitationForE2E, { token });
+      },
     },
   });
 }

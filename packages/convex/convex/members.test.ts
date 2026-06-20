@@ -2,6 +2,8 @@ import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
+import type { Id } from "./_generated/dataModel.js";
+import type { MutationCtx } from "./_generated/server.js";
 import { resolveCircleAccess } from "./guard.js";
 import { circleEntity, listEntityHistory } from "./history.js";
 import { setUserDisplayName } from "./model.js";
@@ -294,6 +296,171 @@ describe("removeMember — frozen identity and live list", () => {
       expect(events[0]?.action).toBe("member removed");
       expect(events[0]?.actorMemberId).toBe(ownerMemberId);
       expect(events[0]?.changes).toEqual([{ field: "member", from: "Maya Member" }]);
+    });
+  });
+});
+
+async function completeSetup(ctx: MutationCtx, circleId: Id<"circles">) {
+  await ctx.db.patch(circleId, { setupCompletedAt: Date.now() });
+}
+
+describe("leaveCircle — happy path", () => {
+  it("flips the caller's member row to removed with frozen identity and records history", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(maya.user);
+
+    const beforeLeave = Date.now();
+    await t.mutation(api.members.leaveCircle, { circleId });
+
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_user", (q) =>
+          q.eq("circleId", circleId).eq("userId", maya.user._id),
+        )
+        .unique();
+      expect(row?.status).toBe("removed");
+      expect(row?.removedAt).toBeGreaterThanOrEqual(beforeLeave);
+      expect(row?.displayName).toBe("Maya Member");
+      expect(row?.image).toBeUndefined();
+
+      const events = await listEntityHistory(ctx, circleEntity(circleId));
+      const event = events.find((entry) => entry.action === "member left");
+      expect(event?.actorMemberId).toBe(maya.memberId);
+      expect(event?.changes).toEqual([{ field: "member", from: "Maya Member" }]);
+      for (const change of event?.changes ?? []) {
+        expect(JSON.stringify(change)).not.toMatch(/[a-z0-9]{20,}/i);
+      }
+    });
+  });
+
+  it("drops the Circle from listMyCircles and revokes access reactively", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(maya.user);
+
+    await t.mutation(api.members.leaveCircle, { circleId });
+
+    mockCurrentUser.mockResolvedValue(maya.user);
+    const circles = await t.query(api.circles.listMyCircles, {});
+    expect(circles?.some((circle) => circle.id === circleId)).toBe(false);
+
+    await t.run(async (ctx) => {
+      mockCurrentUser.mockResolvedValue(maya.user);
+      expect(await resolveCircleAccess(ctx, circleId)).toBeNull();
+    });
+  });
+});
+
+describe("leaveCircle — guards", () => {
+  it("rejects the Owner with a coded error", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(t.mutation(api.members.leaveCircle, { circleId })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.ownerMustTransfer),
+    });
+  });
+
+  it("rejects a Personal Circle with a coded error", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { kind: "personal" }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(t.mutation(api.members.leaveCircle, { circleId })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.leavePersonalCircle),
+    });
+  });
+
+  it("rejects a non-member with Circle not found", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+    mockCurrentUser.mockResolvedValue(stranger);
+
+    await expect(t.mutation(api.members.leaveCircle, { circleId })).rejects.toThrow(
+      "Circle not found",
+    );
+  });
+
+  it("rejects an unauthenticated caller with Circle not found", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(null);
+
+    await expect(t.mutation(api.members.leaveCircle, { circleId })).rejects.toThrow(
+      "Circle not found",
+    );
+  });
+
+  it("rejects a removed member with Circle not found", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const removed = await t.run((ctx) =>
+      addMember(ctx, circleId, "removed@example.com", "Rex Removed", "removed"),
+    );
+    mockCurrentUser.mockResolvedValue(removed.user);
+
+    await expect(t.mutation(api.members.leaveCircle, { circleId })).rejects.toThrow(
+      "Circle not found",
+    );
+  });
+});
+
+describe("leaveCircle — frozen identity and rejoin", () => {
+  it("keeps displayName frozen after a profile update", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(maya.user);
+
+    await t.mutation(api.members.leaveCircle, { circleId });
+
+    await t.run(async (ctx) => {
+      await setUserDisplayName(ctx, maya.user._id, "New Name");
+      const row = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_user", (q) =>
+          q.eq("circleId", circleId).eq("userId", maya.user._id),
+        )
+        .unique();
+      expect(row?.displayName).toBe("Maya Member");
+    });
+  });
+
+  it("reactivates the same member row on rejoin", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(maya.user);
+
+    await t.mutation(api.members.leaveCircle, { circleId });
+
+    await t.run(async (ctx) => {
+      const removed = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_user", (q) =>
+          q.eq("circleId", circleId).eq("userId", maya.user._id),
+        )
+        .unique();
+      expect(removed?._id).toBe(maya.memberId);
+
+      await ctx.db.patch(maya.memberId, { status: "active", removedAt: undefined });
+      const reactivated = await ctx.db.get(maya.memberId);
+      expect(reactivated?._id).toBe(maya.memberId);
+      expect(reactivated?.status).toBe("active");
     });
   });
 });
