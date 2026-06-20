@@ -186,8 +186,9 @@ export const sendInvitationEmail = internalAction({
   args: {
     invitationId: v.id("invitations"),
     token: v.string(),
+    resendCount: v.number(),
   },
-  handler: async (ctx, { invitationId, token }) => {
+  handler: async (ctx, { invitationId, token, resendCount }) => {
     const p = await ctx.runQuery(internal.email.invitationPayload, { invitationId });
     if (!p) {
       return;
@@ -204,7 +205,7 @@ export const sendInvitationEmail = internalAction({
         ownerImage: p.ownerImage,
         recipientEmail: p.recipientEmail,
       }),
-      idempotencyKey: `invite:${invitationId}`,
+      idempotencyKey: `invite:${invitationId}:${resendCount}`,
     });
   },
 });

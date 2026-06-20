@@ -556,11 +556,11 @@ describe("CircleMembers — pending invitations", () => {
     expect(screen.getByText(/no pending invitations/i)).toBeInTheDocument();
   });
 
-  it("calls resend and shows a copyable link on success", async () => {
+  it("calls resend and shows a success status on success", async () => {
     const resendInvitation = vi.fn().mockImplementation(
       () =>
         new Promise((resolve) => {
-          setTimeout(() => resolve({ token: "resend-token-xyz" }), 50);
+          setTimeout(() => resolve(undefined), 50);
         }),
     );
     const user = userEvent.setup();
@@ -576,10 +576,11 @@ describe("CircleMembers — pending invitations", () => {
     expect(resend).toBeDisabled();
     expect(resend).toHaveTextContent("Resending…");
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/new invitation link/i);
-    expect(screen.getByLabelText("Invitation link")).toHaveValue(
-      `${window.location.origin}/invite/resend-token-xyz`,
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /invitation resent to ada@example.com/i,
     );
+    expect(screen.queryByLabelText("Invitation link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
     expect(resendInvitation).toHaveBeenCalledWith({
       invitationId: mockPendingInvite.id,
     });

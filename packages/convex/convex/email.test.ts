@@ -445,7 +445,7 @@ describe("invitationPayload", () => {
 });
 
 describe("sendInvitationEmail", () => {
-  it("posts the expected payload to Resend with per-invitation idempotency key", async () => {
+  it("posts the expected payload to Resend with per-send idempotency key", async () => {
     vi.stubEnv("RESEND_API_KEY", "test-key");
     vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
     vi.stubEnv("SITE_URL", "https://app.example.com");
@@ -457,7 +457,7 @@ describe("sendInvitationEmail", () => {
     });
     const token = "plaintext-invite-token";
 
-    await t.action(internal.email.sendInvitationEmail, { invitationId, token });
+    await t.action(internal.email.sendInvitationEmail, { invitationId, token, resendCount: 0 });
 
     const resend = capturedRequests.filter((r) => r.vendor === "resend");
     expect(resend).toHaveLength(1);
@@ -466,7 +466,7 @@ describe("sendInvitationEmail", () => {
       to: "ada@example.com",
       subject: INVITATION_SUBJECT,
     });
-    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${invitationId}`);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${invitationId}:0`);
     const html = resendBodyHtml(resend[0]?.body);
     expect(html).toContain(`https://app.example.com/invite/${token}`);
     expect(html).toContain(owner.displayName);
@@ -485,7 +485,11 @@ describe("sendInvitationEmail", () => {
       await ctx.db.patch(invitationId, { status: "revoked" });
     });
 
-    await t.action(internal.email.sendInvitationEmail, { invitationId, token: "tok" });
+    await t.action(internal.email.sendInvitationEmail, {
+      invitationId,
+      token: "tok",
+      resendCount: 0,
+    });
 
     expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
   });
@@ -497,7 +501,11 @@ describe("sendInvitationEmail", () => {
     const t = convexTest(schema, modules);
     const { invitationId } = await seedPendingInvitation(t);
 
-    await t.action(internal.email.sendInvitationEmail, { invitationId, token: "tok" });
+    await t.action(internal.email.sendInvitationEmail, {
+      invitationId,
+      token: "tok",
+      resendCount: 0,
+    });
 
     expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
   });
@@ -516,7 +524,11 @@ describe("sendInvitationEmail", () => {
     const { invitationId } = await seedPendingInvitation(t);
 
     await expect(
-      t.action(internal.email.sendInvitationEmail, { invitationId, token: "tok" }),
+      t.action(internal.email.sendInvitationEmail, {
+        invitationId,
+        token: "tok",
+        resendCount: 0,
+      }),
     ).rejects.toThrow(/Resend send failed: 500/);
 
     await t.run(async (ctx) => {
@@ -574,16 +586,39 @@ describe("sendInvitationEmail", () => {
     await t.action(internal.email.sendInvitationEmail, {
       invitationId: seed1.invitationId,
       token: "token-a",
+      resendCount: 0,
     });
     await t.action(internal.email.sendInvitationEmail, {
       invitationId: seed2.invitationId,
       token: "token-b",
+      resendCount: 0,
     });
 
     const resend = capturedRequests.filter((r) => r.vendor === "resend");
     expect(resend).toHaveLength(2);
-    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${seed1.invitationId}`);
-    expect(resend[1]?.headers?.["idempotency-key"]).toBe(`invite:${seed2.invitationId}`);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${seed1.invitationId}:0`);
+    expect(resend[1]?.headers?.["idempotency-key"]).toBe(`invite:${seed2.invitationId}:0`);
+  });
+
+  it("uses resendCount in idempotency key for resend sends", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = convexTest(schema, modules);
+    const { invitationId } = await seedPendingInvitation(t, {
+      email: "ada@example.com",
+      circleName: "Trip",
+    });
+
+    await t.action(internal.email.sendInvitationEmail, {
+      invitationId,
+      token: "token-r2",
+      resendCount: 2,
+    });
+
+    const resend = capturedRequests.filter((r) => r.vendor === "resend");
+    expect(resend).toHaveLength(1);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${invitationId}:2`);
   });
 });
 

@@ -184,7 +184,7 @@ function PendingInvitationsList({ circleId }: { circleId: Circle["id"] }) {
   const revokeInvitation = useRevokeInvitation();
   const [resendingId, setResendingId] = useState<PendingInvitation["id"] | null>(null);
   const [revokingId, setRevokingId] = useState<PendingInvitation["id"] | null>(null);
-  const [resendLinkById, setResendLinkById] = useState<
+  const [resendSuccessById, setResendSuccessById] = useState<
     Partial<Record<PendingInvitation["id"], string>>
   >({});
   const [resendErrorById, setResendErrorById] = useState<
@@ -217,15 +217,14 @@ function PendingInvitationsList({ circleId }: { circleId: Circle["id"] }) {
     }
     setResendingId(invitation.id);
     setResendErrorById((prev) => ({ ...prev, [invitation.id]: undefined }));
-    setResendLinkById((prev) => ({ ...prev, [invitation.id]: undefined }));
+    setResendSuccessById((prev) => ({ ...prev, [invitation.id]: undefined }));
     try {
-      const { token } = MOCKS
-        ? { token: "mock-resend-token" }
-        : await resendInvitation({ invitationId: invitation.id });
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
-      setResendLinkById((prev) => ({
+      if (!MOCKS) {
+        await resendInvitation({ invitationId: invitation.id });
+      }
+      setResendSuccessById((prev) => ({
         ...prev,
-        [invitation.id]: `${origin}/invite/${token}`,
+        [invitation.id]: `Invitation resent to ${invitation.email}.`,
       }));
     } catch (caught) {
       setResendErrorById((prev) => ({
@@ -274,7 +273,7 @@ function PendingInvitationsList({ circleId }: { circleId: Circle["id"] }) {
       <h3 className="text-sm font-medium">Pending invitations</h3>
       <ul className="space-y-3">
         {pendingInvitations.map((invitation) => {
-          const resendLink = resendLinkById[invitation.id];
+          const resendSuccess = resendSuccessById[invitation.id];
           const resendError = resendErrorById[invitation.id];
           const revokeError = revokeErrorById[invitation.id];
           const revokeSuccess = revokeSuccessById[invitation.id];
@@ -324,6 +323,12 @@ function PendingInvitationsList({ circleId }: { circleId: Circle["id"] }) {
                 </p>
               ) : null}
 
+              {resendSuccess ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {resendSuccess}
+                </p>
+              ) : null}
+
               {revokeError ? (
                 <p role="alert" className="text-sm text-destructive">
                   {revokeError}
@@ -334,31 +339,6 @@ function PendingInvitationsList({ circleId }: { circleId: Circle["id"] }) {
                 <p role="status" className="text-sm text-muted-foreground">
                   {revokeSuccess}
                 </p>
-              ) : null}
-
-              {resendLink ? (
-                <div
-                  role="status"
-                  className="space-y-2 rounded-lg border border-primary/30 bg-primary-soft/40 p-3"
-                >
-                  <p className="text-sm font-medium">New invitation link — share this link:</p>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <Input
-                      readOnly
-                      value={resendLink}
-                      aria-label="Invitation link"
-                      className="font-mono text-xs"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="shrink-0"
-                      onClick={() => void navigator.clipboard.writeText(resendLink)}
-                    >
-                      Copy link
-                    </Button>
-                  </div>
-                </div>
               ) : null}
             </li>
           );

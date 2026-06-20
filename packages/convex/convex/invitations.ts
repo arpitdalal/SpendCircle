@@ -130,7 +130,7 @@ export const createInvitation = mutation({
     await emailPool.enqueueAction(
       ctx,
       internal.email.sendInvitationEmail,
-      { invitationId, token },
+      { invitationId, token, resendCount: 0 },
       {
         onComplete: internal.email.onInvitationRunComplete,
         context: { invitationId },
@@ -356,8 +356,15 @@ export const resendInvitation = mutation({
       action: "invitation resent",
       changes: [{ field: "email", to: invitation.emailLower }],
     });
-
-    return { token };
+    await emailPool.enqueueAction(
+      ctx,
+      internal.email.sendInvitationEmail,
+      { invitationId: args.invitationId, token, resendCount: invitation.resendCount + 1 },
+      {
+        onComplete: internal.email.onInvitationRunComplete,
+        context: { invitationId: args.invitationId },
+      },
+    );
   },
 });
 
