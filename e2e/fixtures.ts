@@ -13,8 +13,19 @@ export async function waitForScE2E(page: Page) {
   await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });
 }
 
-export async function invokeScE2E<T>(page: Page, method: string, args: unknown[] = []) {
+/** Circle route mounted + Better Auth session wired into the Convex client (after navigation). */
+export async function ensureCircleConvexReady(page: Page) {
+  await page.waitForURL(/\/circles\/[^/]+/);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Circle tabs" })
+      .or(page.getByRole("navigation", { name: "Circle" })),
+  ).toBeVisible({ timeout: 30_000 });
   await waitForScE2E(page);
+}
+
+export async function invokeScE2E<T>(page: Page, method: string, args: unknown[] = []) {
+  await ensureCircleConvexReady(page);
   return page.evaluate(
     async ([name, methodArgs]) => {
       const helper = Reflect.get(globalThis, "__scE2E");
@@ -39,7 +50,7 @@ export type RemoveMemberProbeResult = { ok: true } | { ok: false; message: strin
 
 /** Permission probes: returns mutation outcome without throwing through Playwright. */
 export async function probeRemoveMember(page: Page, memberId: string) {
-  await waitForScE2E(page);
+  await ensureCircleConvexReady(page);
   return page.evaluate(async (id) => {
     const helper = Reflect.get(globalThis, "__scE2E");
     if (typeof helper !== "object" || helper === null) {

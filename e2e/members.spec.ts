@@ -111,11 +111,17 @@ test("removeMember as a non-owner returns the coded forbidden error", async ({
   });
 
   await createRegularCircleAndFinishSetup(page, { name: circleName });
-  const { memberId } = await seedActiveMemberOnCircle(page, memberEmail, "Maya Member");
-  await seedActiveMemberOnCircle(page, `e2e-other-${stamp}@example.com`, "Other Member");
+  await seedActiveMemberOnCircle(page, memberEmail, "Maya Member");
+  const { memberId: otherMemberId } = await seedActiveMemberOnCircle(
+    page,
+    `e2e-other-${stamp}@example.com`,
+    "Other Member",
+  );
 
   await memberPage.goto(page.url(), { waitUntil: "domcontentloaded" });
-  const result = await probeRemoveMember(memberPage, memberId);
+  await clickCircleChromeTab(memberPage, "Members");
+  await expect(memberPage.getByRole("heading", { name: "Members" })).toBeVisible();
+  const result = await probeRemoveMember(memberPage, otherMemberId);
   expect(result.ok).toBe(false);
   expect(JSON.stringify(result)).toContain("member.removeForbidden");
 
