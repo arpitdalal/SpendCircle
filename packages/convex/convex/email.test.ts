@@ -1,16 +1,11 @@
+import { INVITATION_SUBJECT, WELCOME_SUBJECT, welcomeEmail } from "@spend-circle/domain";
 import { capturedRequests, HttpResponse, http, resetCapturedRequests } from "@spend-circle/mocks";
 import { server } from "@spend-circle/mocks/server";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
-import {
-  INVITATION_SUBJECT,
-  invitationHtml,
-  sendEmail,
-  WELCOME_SUBJECT,
-  welcomeHtml,
-} from "./email.js";
+import { sendEmail } from "./email.js";
 import { hashInvitationToken } from "./invitationToken.js";
 import schema from "./schema.js";
 import { makeUser, seedCircle, seedPersonalCircleOwner } from "./test/seed.js";
@@ -104,16 +99,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
-});
-
-describe("welcomeHtml", () => {
-  it("includes the display name and welcome copy with no financial content", () => {
-    const html = welcomeHtml("Ada Lovelace");
-    expect(html).toContain("Ada Lovelace");
-    expect(html).toContain("Welcome to Spend Circle");
-    expect(html).toContain("Personal Circle");
-    expect(html).not.toMatch(FINANCIAL_PATTERN);
-  });
 });
 
 describe("welcomePayload", () => {
@@ -258,6 +243,7 @@ describe("sendWelcomeEmail", () => {
 describe("sendEmail env safety and vendor errors", () => {
   it("logs and returns false without fetch when env is missing", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubEnv("RESEND_API_KEY", "");
     vi.stubEnv("RESEND_FROM_EMAIL", "");
 
@@ -265,8 +251,25 @@ describe("sendEmail env safety and vendor errors", () => {
 
     expect(sent).toBe(false);
     expect(errSpy).toHaveBeenCalledWith("Resend env not configured; skipping email send");
+    expect(logSpy).toHaveBeenCalledWith('[email] to=a@b.com subject="Hi"');
+    expect(logSpy).toHaveBeenCalledWith("[email] body:\n<p>Hi</p>");
     expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
     errSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
+  it("logs subject and body when EMAIL_DEV_LOG=1 even with Resend configured", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+    vi.stubEnv("EMAIL_DEV_LOG", "1");
+
+    const { subject, html } = welcomeEmail({ displayName: "Ada" });
+    await sendEmail({ to: "a@b.com", subject, html });
+
+    expect(logSpy).toHaveBeenCalledWith(`[email] to=a@b.com subject=${JSON.stringify(subject)}`);
+    expect(logSpy).toHaveBeenCalledWith(`[email] body:\n${html}`);
+    logSpy.mockRestore();
   });
 
   it("rejects on non-2xx", async () => {
@@ -280,7 +283,11 @@ describe("sendEmail env safety and vendor errors", () => {
     );
 
     await expect(
-      sendEmail({ to: "a@b.com", subject: WELCOME_SUBJECT, html: welcomeHtml("Ada") }),
+      sendEmail({
+        to: "a@b.com",
+        subject: WELCOME_SUBJECT,
+        html: welcomeEmail({ displayName: "Ada" }).html,
+      }),
     ).rejects.toThrow(/Resend send failed: 500/);
   });
 
@@ -291,7 +298,7 @@ describe("sendEmail env safety and vendor errors", () => {
     await sendEmail({
       to: "a@b.com",
       subject: WELCOME_SUBJECT,
-      html: welcomeHtml("Ada"),
+      html: welcomeEmail({ displayName: "Ada" }).html,
       idempotencyKey: "welcome:user-123",
     });
 
@@ -353,38 +360,6 @@ describe("no activity emails", () => {
   });
 });
 
-describe("invitationHtml", () => {
-  it("includes circle, owner, recipient, invite link, expiry copy, and no financial content", () => {
-    const html = invitationHtml({
-      inviteLink: "https://app.example.com/invite/abc123",
-      circleName: "Trip",
-      ownerDisplayName: "Olive Owner",
-      ownerImage: undefined,
-      recipientEmail: "ada@example.com",
-    });
-    expect(html).toContain("ada@example.com");
-    expect(html).toContain("Olive Owner");
-    expect(html).toContain("Trip");
-    expect(html).toContain("https://app.example.com/invite/abc123");
-    expect(html).toContain("expires in 7 days");
-    expect(html).not.toMatch(FINANCIAL_PATTERN);
-  });
-
-  it("escapes HTML-special chars in interpolated values", () => {
-    const html = invitationHtml({
-      inviteLink: "https://app.example.com/invite/tok",
-      circleName: "<script>",
-      ownerDisplayName: 'O"wn',
-      ownerImage: undefined,
-      recipientEmail: "a&b@example.com",
-    });
-    expect(html).toContain("&lt;script&gt;");
-    expect(html).not.toContain("<script>");
-    expect(html).toContain("a&amp;b@example.com");
-    expect(html).toContain("O&quot;wn");
-  });
-});
-
 describe("invitationPayload", () => {
   it("returns payload for a pending invitation when send job matches the row", async () => {
     const t = convexTest(schema, modules);
@@ -401,6 +376,7 @@ describe("invitationPayload", () => {
       circleName: "Trip",
       ownerDisplayName: owner.displayName,
     });
+    expect(payload).not.toHaveProperty("ownerImage");
     expect(payload?.circleId).toBeTruthy();
   });
 
