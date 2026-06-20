@@ -60,6 +60,14 @@ const mutationErrors = defineMutationErrorCatalog({
     "invite.alreadyPending",
     "There's already a pending invitation for that email",
   ),
+  leavePersonalCircle: defineMutationError(
+    "leave.personalCircle",
+    "You can't leave your Personal Circle",
+  ),
+  ownerMustTransfer: defineMutationError(
+    "member.ownerMustTransfer",
+    "Transfer ownership before leaving",
+  ),
 });
 
 export const MUTATION_ERRORS = mutationErrors.errors;

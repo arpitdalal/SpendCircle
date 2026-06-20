@@ -1,5 +1,6 @@
 import { api } from "@spend-circle/convex";
 import { getFunctionName } from "convex/server";
+import type { Mock } from "vitest";
 import type { Member } from "~/lib/data.js";
 import type { EntityDouble } from "./contract.js";
 import { testId } from "./ids.js";
@@ -7,13 +8,18 @@ import { testId } from "./ids.js";
 export interface MembersState {
   /** `listMembers` — `undefined` ≡ loading, `null` ≡ inaccessible. */
   members?: Member[] | null;
+  /** `members:leaveCircle` mock; unset ⇒ no-op. */
+  leaveCircle?: Mock;
 }
 
 export function membersDouble(state: MembersState): EntityDouble {
-  const { members } = state;
+  const { members, leaveCircle } = state;
   return {
     queries: {
       [getFunctionName(api.members.listMembers)]: () => members,
+    },
+    mutations: {
+      [getFunctionName(api.members.leaveCircle)]: leaveCircle,
     },
   };
 }

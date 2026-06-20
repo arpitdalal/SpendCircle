@@ -6,8 +6,8 @@ import { MOCK_INVITATION_PREVIEW } from "../fixtures.js";
 
 /**
  * The Create-Invitation mutation (MEM-2), behind the data seam so the route
- * imports no Convex internals. Returns the plaintext token for manual link
- * delivery until EML-2 moves sending server-side.
+ * imports no Convex internals. Server-side email delivery is enqueued by the
+ * mutation (EML-2); the client receives no plaintext token.
  */
 export function useCreateInvitation() {
   return useMutation(api.invitations.createInvitation);
