@@ -118,17 +118,17 @@ describe("createInvitation — happy path", () => {
     expect(resend[0]?.body).toMatchObject({ to: "ada@example.com" });
     const html = resendBodyHtml(resend[0]?.body);
     const tokenMatch = html.match(/\/invite\/([^"]+)"/);
-    expect(tokenMatch?.[1]).toBeTruthy();
-
     const token = tokenMatch?.[1];
-    expect(token).toBeTruthy();
+    if (!token) {
+      throw new Error("expected invite token in Resend email html");
+    }
 
     await t.run(async (ctx) => {
       const invite = await ctx.db
         .query("invitations")
         .withIndex("by_circle", (q) => q.eq("circleId", circleId))
         .first();
-      expect(invite?.tokenHash).toBe(await hashInvitationToken(token as string));
+      expect(invite?.tokenHash).toBe(await hashInvitationToken(token));
     });
 
     vi.useRealTimers();
