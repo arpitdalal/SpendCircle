@@ -141,11 +141,11 @@ describe("CircleMembers — invite form", () => {
     expect(createInvitation).not.toHaveBeenCalled();
   });
 
-  it("renders a copyable invitation link on success and disables submit while in-flight", async () => {
+  it("shows a success confirmation on invite and disables submit while in-flight", async () => {
     const createInvitation = vi.fn().mockImplementation(
       () =>
         new Promise((resolve) => {
-          setTimeout(() => resolve({ token: "abc123token" }), 50);
+          setTimeout(() => resolve(undefined), 50);
         }),
     );
     const user = userEvent.setup();
@@ -161,10 +161,10 @@ describe("CircleMembers — invite form", () => {
     expect(submit).toBeDisabled();
     expect(submit).toHaveTextContent("Inviting…");
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/invitation created/i);
-    expect(screen.getByLabelText("Invitation link")).toHaveValue(
-      `${window.location.origin}/invite/abc123token`,
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /invitation sent to ada@example\.com/i,
     );
+    expect(screen.queryByLabelText("Invitation link")).not.toBeInTheDocument();
     expect(createInvitation).toHaveBeenCalledWith({
       circleId: makeCircleView().id,
       email: "ada@example.com",

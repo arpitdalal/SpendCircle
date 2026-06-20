@@ -1,7 +1,8 @@
 import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
+import { capturedRequests, resetCapturedRequests } from "@spend-circle/mocks";
 import { ConvexError } from "convex/values";
-import { convexTest } from "convex-test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { convexTest as createConvexTest } from "convex-test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import type { MutationCtx } from "./_generated/server.js";
@@ -9,6 +10,7 @@ import { circleEntity, listEntityHistory } from "./history.js";
 import { hashInvitationToken } from "./invitationToken.js";
 import { createUserWithPersonalCircle } from "./model.js";
 import schema from "./schema.js";
+import { registerEmailWorkpool } from "./test/registerComponents.js";
 import { addMember, makeUser, seedCircle, seedPersonalCircleOwner } from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
@@ -26,25 +28,69 @@ vi.mock("./auth.js", () => ({
 const modules = import.meta.glob("./**/*.ts");
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+function resendBodyHtml(body: unknown) {
+  if (typeof body !== "object" || body === null || !("html" in body)) {
+    throw new Error("expected Resend JSON body with html");
+  }
+  const { html } = body;
+  if (typeof html !== "string") {
+    throw new Error("expected Resend html field to be a string");
+  }
+  return html;
+}
+
 beforeEach(() => {
   mockCurrentUser.mockReset();
+  resetCapturedRequests();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 async function completeSetup(ctx: MutationCtx, circleId: Id<"circles">) {
   await ctx.db.patch(circleId, { setupCompletedAt: Date.now() });
 }
 
+function createTestConvex() {
+  const t = createConvexTest(schema, modules);
+  registerEmailWorkpool(t);
+  return t;
+}
+
+async function drainWorkpool(t: ReturnType<typeof createTestConvex>) {
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+}
+
+async function inviteAndDrain(
+  t: ReturnType<typeof createTestConvex>,
+  args: { circleId: Id<"circles">; email: string },
+) {
+  vi.useFakeTimers();
+  try {
+    await t.mutation(api.invitations.createInvitation, args);
+    await drainWorkpool(t);
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 describe("createInvitation — happy path", () => {
   it("creates a pending invitation with hashed token and records history", async () => {
-    const t = convexTest(schema, modules);
+    vi.useFakeTimers();
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(owner);
 
-    const { token } = await t.mutation(api.invitations.createInvitation, {
+    await t.mutation(api.invitations.createInvitation, {
       circleId,
       email: "ada@example.com",
     });
+    await drainWorkpool(t);
 
     await t.run(async (ctx) => {
       const invites = await ctx.db
@@ -57,8 +103,7 @@ describe("createInvitation — happy path", () => {
       expect(invite?.emailLower).toBe("ada@example.com");
       expect(invite?.resendCount).toBe(0);
       expect(invite?.invitedByUserId).toBe(owner._id);
-      expect(invite?.tokenHash).not.toBe(token);
-      expect(invite?.tokenHash).toBe(await hashInvitationToken(token));
+      expect(invite?.tokenHash).toBeTruthy();
       expect(invite?.expiresAt).toBe((invite?.createdAt ?? 0) + INVITE_TTL_MS);
 
       const events = await listEntityHistory(ctx, circleEntity(circleId));
@@ -66,12 +111,32 @@ describe("createInvitation — happy path", () => {
       expect(events[0]?.action).toBe("member invited");
       expect(events[0]?.changes).toEqual([{ field: "email", to: "ada@example.com" }]);
     });
+
+    const resend = capturedRequests.filter((r) => r.vendor === "resend");
+    expect(resend).toHaveLength(1);
+    expect(resend[0]?.body).toMatchObject({ to: "ada@example.com" });
+    const html = resendBodyHtml(resend[0]?.body);
+    const tokenMatch = html.match(/\/invite\/([^"]+)"/);
+    expect(tokenMatch?.[1]).toBeTruthy();
+
+    const token = tokenMatch?.[1];
+    expect(token).toBeTruthy();
+
+    await t.run(async (ctx) => {
+      const invite = await ctx.db
+        .query("invitations")
+        .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+        .first();
+      expect(invite?.tokenHash).toBe(await hashInvitationToken(token as string));
+    });
+
+    vi.useRealTimers();
   });
 });
 
 describe("createInvitation — permissions", () => {
   it("rejects a non-owner Member", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     const member = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya"));
@@ -85,7 +150,7 @@ describe("createInvitation — permissions", () => {
   });
 
   it("rejects a removed Member with Circle not found", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     const removed = await t.run((ctx) =>
@@ -99,7 +164,7 @@ describe("createInvitation — permissions", () => {
   });
 
   it("rejects a non-member with Circle not found", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     const stranger = await t.run((ctx) => makeUser(ctx, "stranger@example.com", "Stranger"));
@@ -111,7 +176,7 @@ describe("createInvitation — permissions", () => {
   });
 
   it("rejects an unauthenticated caller with Circle not found", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(null);
@@ -124,7 +189,7 @@ describe("createInvitation — permissions", () => {
 
 describe("createInvitation — circle constraints", () => {
   it("rejects a Personal Circle", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, personalCircleId } = await t.run((ctx) =>
       seedPersonalCircleOwner(ctx, {
         email: "owner@example.com",
@@ -145,7 +210,7 @@ describe("createInvitation — circle constraints", () => {
   });
 
   it("rejects an incomplete regular Circle", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     mockCurrentUser.mockResolvedValue(owner);
 
@@ -157,20 +222,19 @@ describe("createInvitation — circle constraints", () => {
   });
 
   it("succeeds once setup is complete", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(owner);
 
-    const { token } = await t.mutation(api.invitations.createInvitation, {
+    await inviteAndDrain(t, {
       circleId,
       email: "new@example.com",
     });
-    expect(token).toBeTruthy();
   });
 
   it("rejects an archived Circle", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(owner);
@@ -185,7 +249,7 @@ describe("createInvitation — circle constraints", () => {
 
 describe("createInvitation — duplicates", () => {
   it("rejects an active Member's email", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     const member = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya"));
@@ -199,7 +263,7 @@ describe("createInvitation — duplicates", () => {
   });
 
   it("rejects an active member when the invite email differs only by case", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     const memberUserId = await t.run((ctx) =>
@@ -229,12 +293,12 @@ describe("createInvitation — duplicates", () => {
   });
 
   it("rejects a pending unexpired invite for the same email", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.invitations.createInvitation, { circleId, email: "ada@example.com" });
+    await inviteAndDrain(t, { circleId, email: "ada@example.com" });
     await expect(
       t.mutation(api.invitations.createInvitation, { circleId, email: "ada@example.com" }),
     ).rejects.toMatchObject({
@@ -251,7 +315,7 @@ describe("createInvitation — duplicates", () => {
   });
 
   it("allows re-inviting a removed Member's email", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     const removed = await t.run((ctx) =>
@@ -259,15 +323,14 @@ describe("createInvitation — duplicates", () => {
     );
     mockCurrentUser.mockResolvedValue(owner);
 
-    const { token } = await t.mutation(api.invitations.createInvitation, {
+    await inviteAndDrain(t, {
       circleId,
       email: removed.user.email,
     });
-    expect(token).toBeTruthy();
   });
 
   it("allows a fresh invite when the prior one is expired", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(owner);
@@ -286,11 +349,10 @@ describe("createInvitation — duplicates", () => {
       });
     });
 
-    const { token } = await t.mutation(api.invitations.createInvitation, {
+    await inviteAndDrain(t, {
       circleId,
       email: "ada@example.com",
     });
-    expect(token).toBeTruthy();
 
     await t.run(async (ctx) => {
       const invites = await ctx.db
@@ -304,7 +366,7 @@ describe("createInvitation — duplicates", () => {
   });
 
   it("allows a fresh invite when the prior one is revoked or accepted", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(owner);
@@ -324,23 +386,22 @@ describe("createInvitation — duplicates", () => {
         });
       });
 
-      const { token } = await t.mutation(api.invitations.createInvitation, {
+      await inviteAndDrain(t, {
         circleId,
         email: `${status}@example.com`,
       });
-      expect(token).toBeTruthy();
     }
   });
 });
 
 describe("createInvitation — email normalization", () => {
   it("normalizes email and rejects a pending duplicate on emailLower", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.invitations.createInvitation, {
+    await inviteAndDrain(t, {
       circleId,
       email: "  Ada@Example.COM ",
     });
@@ -363,9 +424,57 @@ describe("createInvitation — email normalization", () => {
   });
 });
 
+describe("createInvitation — email enqueue", () => {
+  it("sends exactly one invitation email on success", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.invitations.createInvitation, {
+      circleId,
+      email: "ada@example.com",
+    });
+    await drainWorkpool(t);
+
+    const resend = capturedRequests.filter((r) => r.vendor === "resend");
+    expect(resend).toHaveLength(1);
+    expect(resend[0]?.body).toMatchObject({ to: "ada@example.com" });
+    const html = resendBodyHtml(resend[0]?.body);
+    expect(html).toMatch(/\/invite\/[^"]+"/);
+
+    vi.useRealTimers();
+  });
+
+  it("sends zero emails when createInvitation throws", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await inviteAndDrain(t, { circleId, email: "ada@example.com" });
+    resetCapturedRequests();
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "ada@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteAlreadyPending),
+    });
+
+    expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
+  });
+});
+
 describe("createInvitation — coded errors", () => {
   it("throws ConvexError for owner-facing validation failures", async () => {
-    const t = convexTest(schema, modules);
+    const t = createTestConvex();
     const { circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
     const member = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya"));

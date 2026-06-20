@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Shipped |
 | **Labels** | `area:email`, `backend`, `ui`, `security` |
 | **Depends on** | MEM-2 (shipped — PR #177), EML-1 (shipped — PR #176) |
 | **Unlocks** | MEM-4 (resend send path wired here, rate-limit enforcement in MEM-4) |
