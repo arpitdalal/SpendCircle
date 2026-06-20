@@ -1,17 +1,15 @@
 import { inviteEmailSchema, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api.js";
 import { mutation } from "./_generated/server.js";
+import { emailPool } from "./email.js";
 import { requireCircleAccess } from "./guard.js";
 import { circleEntity, recordEvent } from "./history.js";
 import { generateInvitationToken, hashInvitationToken } from "./invitationToken.js";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * Creates a hashed, 7-day Invitation for a regular Circle (MEM-2). Returns the
- * plaintext token to the inviting Owner for manual link delivery until EML-2 moves
- * sending server-side — at that point this return should be removed.
- */
+/** Creates a hashed, 7-day Invitation for a regular Circle (MEM-2) and enqueues email delivery (EML-2). */
 export const createInvitation = mutation({
   args: {
     circleId: v.id("circles"),
@@ -69,7 +67,7 @@ export const createInvitation = mutation({
     const token = generateInvitationToken();
     const tokenHash = await hashInvitationToken(token);
 
-    await ctx.db.insert("invitations", {
+    const invitationId = await ctx.db.insert("invitations", {
       circleId: args.circleId,
       emailLower: email,
       tokenHash,
@@ -87,6 +85,14 @@ export const createInvitation = mutation({
       changes: [{ field: "email", to: email }],
     });
 
-    return { token };
+    await emailPool.enqueueAction(
+      ctx,
+      internal.email.sendInvitationEmail,
+      { invitationId, token },
+      {
+        onComplete: internal.email.onInvitationRunComplete,
+        context: { invitationId },
+      },
+    );
   },
 });

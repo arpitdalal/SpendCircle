@@ -12,6 +12,7 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
  */
 
 export const WELCOME_SUBJECT = "Welcome to Spend Circle";
+export const INVITATION_SUBJECT = "You're invited to join a Spend Circle";
 
 // Durable, throttled handoff to Resend — the shared seam EML-2 / FBK-1 reuse.
 // maxParallelism caps concurrent sends so a vendor outage can't stampede Resend.
@@ -33,6 +34,28 @@ export function welcomeHtml(displayName: string) {
   <p>Hi ${escapeHtml(displayName)},</p>
   <p>Welcome to Spend Circle — a simple way to track shared spending with the people you trust.</p>
   <p>Your Personal Circle is ready. Open the app to finish setting up your profile and start organizing expenses together.</p>
+  <p>— The Spend Circle team</p>
+</body>
+</html>`;
+}
+
+/** Pure HTML builder — no financial content (PRD 84). */
+export function invitationHtml(args: {
+  inviteLink: string;
+  circleName: string;
+  ownerDisplayName: string;
+  ownerImage: string | undefined;
+  recipientEmail: string;
+}) {
+  const { inviteLink, circleName, ownerDisplayName, recipientEmail } = args;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>${INVITATION_SUBJECT}</title></head>
+<body>
+  <p>Hi ${escapeHtml(recipientEmail)},</p>
+  <p>${escapeHtml(ownerDisplayName)} has invited you to join the <strong>${escapeHtml(circleName)}</strong> Circle on Spend Circle.</p>
+  <p><a href="${escapeHtml(inviteLink)}">Accept the invitation</a></p>
+  <p>This link expires in 7 days and can only be used once.</p>
   <p>— The Spend Circle team</p>
 </body>
 </html>`;
@@ -133,5 +156,65 @@ export const onWelcomeRunComplete = internalMutation({
       // TODO(OBS-1): Sentry.captureMessage here.
     }
     // result.kind === "success" | "canceled" → nothing to do.
+  },
+});
+
+export const invitationPayload = internalQuery({
+  args: {
+    invitationId: v.id("invitations"),
+  },
+  handler: async (ctx, { invitationId }) => {
+    const invite = await ctx.db.get(invitationId);
+    if (invite?.status !== "pending") {
+      return null;
+    }
+    const circle = await ctx.db.get(invite.circleId);
+    const owner = await ctx.db.get(invite.invitedByUserId);
+    if (!circle || !owner) {
+      return null;
+    }
+    return {
+      recipientEmail: invite.emailLower,
+      circleName: circle.name,
+      ownerDisplayName: owner.displayName,
+      ownerImage: owner.image,
+    };
+  },
+});
+
+export const sendInvitationEmail = internalAction({
+  args: {
+    invitationId: v.id("invitations"),
+    token: v.string(),
+  },
+  handler: async (ctx, { invitationId, token }) => {
+    const p = await ctx.runQuery(internal.email.invitationPayload, { invitationId });
+    if (!p) {
+      return;
+    }
+    const siteUrl = process.env.SITE_URL ?? "http://127.0.0.1:5173";
+    const inviteLink = `${siteUrl}/invite/${token}`;
+    await sendEmail({
+      to: p.recipientEmail,
+      subject: INVITATION_SUBJECT,
+      html: invitationHtml({
+        inviteLink,
+        circleName: p.circleName,
+        ownerDisplayName: p.ownerDisplayName,
+        ownerImage: p.ownerImage,
+        recipientEmail: p.recipientEmail,
+      }),
+      idempotencyKey: `invite:${invitationId}`,
+    });
+  },
+});
+
+export const onInvitationRunComplete = internalMutation({
+  args: vOnCompleteValidator(v.object({ invitationId: v.id("invitations") })),
+  handler: async (_ctx, { context, result }) => {
+    if (result.kind === "failed") {
+      console.error("Invitation email exhausted all retries", context.invitationId, result.error);
+      // TODO(OBS-1): Sentry.captureMessage here.
+    }
   },
 });
