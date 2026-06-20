@@ -2,6 +2,7 @@ import { vOnCompleteValidator, Workpool } from "@convex-dev/workpool";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api.js";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server.js";
+import { hashInvitationToken } from "./invitationToken.js";
 
 /**
  * Transactional email via Resend (ADR 0008). v1 sends only Welcome + Invitation
@@ -159,13 +160,20 @@ export const onWelcomeRunComplete = internalMutation({
   },
 });
 
+/** Returns send payload only when the queued job still matches the invitation row. */
 export const invitationPayload = internalQuery({
   args: {
     invitationId: v.id("invitations"),
+    resendCount: v.number(),
+    tokenHash: v.string(),
   },
-  handler: async (ctx, { invitationId }) => {
+  handler: async (ctx, { invitationId, resendCount, tokenHash }) => {
     const invite = await ctx.db.get(invitationId);
-    if (invite?.status !== "pending") {
+    if (
+      invite?.status !== "pending" ||
+      invite.resendCount !== resendCount ||
+      invite.tokenHash !== tokenHash
+    ) {
       return null;
     }
     const circle = await ctx.db.get(invite.circleId);
@@ -189,7 +197,12 @@ export const sendInvitationEmail = internalAction({
     resendCount: v.number(),
   },
   handler: async (ctx, { invitationId, token, resendCount }) => {
-    const p = await ctx.runQuery(internal.email.invitationPayload, { invitationId });
+    const tokenHash = await hashInvitationToken(token);
+    const p = await ctx.runQuery(internal.email.invitationPayload, {
+      invitationId,
+      resendCount,
+      tokenHash,
+    });
     if (!p) {
       return;
     }
