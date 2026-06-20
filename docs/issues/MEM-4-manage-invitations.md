@@ -288,23 +288,28 @@ gate. The UI hiding the component is a courtesy on top.
 simply miss when given an old token — the row now has a new `tokenHash`. This is how "only the
 latest unexpired link accepts" works without tracking old tokens or invalidating them explicitly.
 
-**`resendTimestamps` array for the per-email day cap.** `resendCount` is a lifetime counter and
-cannot distinguish "3 yesterday + 0 today" from "3 today". A `resendTimestamps: number[]` array
-appended on each resend lets the handler check `timestamps.filter(t => t > now - 24h).length`
-in memory, with no extra query. The array is bounded because the cap is 3/day and the total
-lifetime resend count per invitation is practically small (Convex document size limits are not a
-concern). This is simpler than an extra `lastResendWindowStart + windowCount` field pair, and
-simpler than a separate resend-events table.
+**Invitation rate limits count email *events*, not invitation rows (ADR 0026 / MNT-3 #190).**
+> ⚠️ **Superseded — do not copy.** This slice originally shipped two row-scoped counters: a
+> `resendTimestamps: number[]` array on the invitation row for the per-email resend cap, and a
+> `.take(101)` scan over a `by_invitedByUserId` index for the 100/User/day cap. **Both were wrong:**
+> - The `.take(101)` scan reads a User's *oldest* invitations (the index has no time component),
+>   so once a sender has ≥101 lifetime invitations the in-window count is ~0 and the daily cap
+>   silently stops firing. A `cap + 1` early-exit is only valid when window-filtering happens at
+>   the index *before* the limit — here it happened afterward, in JS.
+> - One invitation row is up to 4 sends (1 create + 3 resends), so counting by row can never count
+>   email events; and the `resendTimestamps`-on-the-row resend cap resets on revoke → re-create.
+>
+> The correct model is a dedicated append-only `invitationEmailEvents` table — one row per send,
+> indexed for range queries — with every cap enforced as a real `(field == x) && sentAt > now-24h`
+> range-count inside the same mutation as the invitation write. See **ADR 0026** and **MNT-3 (#190)**
+> for the full schema, the three caps (User 100/day; resend 3/day per `(circle,email)`; create
+> 2/day per `(circle,email)`), and the rejected alternatives (`@convex-dev/rate-limiter`, Redis).
 
-**`by_invitedByUserId` index for the daily User cap.** The PRD's 100 invitation emails/User/day
-cap requires counting all creates + resends by a given User in 24 h. There is no existing index
-on `invitedByUserId`. Adding this index is the minimal justified schema change — README §4
-explicitly allows adding an index when a query needs it. Using `.take(101)` bounds the read.
-
-**No rate-limiter component exists (confirmed in `convex.config.ts`).** `betterAuth` and
-`emailWorkpool` are the only components. Both caps are hand-rolled against table data: the
-per-email cap reads `resendTimestamps` on the invitation row (no query needed); the User daily
-cap uses `.take(101)` on the new index.
+**No rate-limiter component is used (confirmed in `convex.config.ts`).** `betterAuth` and
+`emailWorkpool` are the only components. The caps are enforced against the `invitationEmailEvents`
+table via range queries (ADR 0026); the `@convex-dev/rate-limiter` component was considered and
+deferred (it would be the first tested component in this suite and carries a convex-test
+registration risk).
 
 **Anti-enumeration (ADR 0016).** A non-existent invitation, a revoked/accepted invitation, and
 one belonging to a different Circle all throw the identical generic plain `Error("Invitation not
