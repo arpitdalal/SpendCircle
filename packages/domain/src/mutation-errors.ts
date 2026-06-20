@@ -60,6 +60,14 @@ const mutationErrors = defineMutationErrorCatalog({
     "invite.alreadyPending",
     "There's already a pending invitation for that email",
   ),
+  inviteResendCapReached: defineMutationError(
+    "invite.resendCapReached",
+    "This invitation has been resent too many times today. Try again tomorrow.",
+  ),
+  inviteDailyCapReached: defineMutationError(
+    "invite.dailyCapReached",
+    "You've sent too many invitation emails today. Try again tomorrow.",
+  ),
 });
 
 export const MUTATION_ERRORS = mutationErrors.errors;

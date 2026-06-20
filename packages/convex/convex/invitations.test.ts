@@ -9,7 +9,13 @@ import { circleEntity, listEntityHistory } from "./history.js";
 import { hashInvitationToken } from "./invitationToken.js";
 import { createUserWithPersonalCircle } from "./model.js";
 import schema from "./schema.js";
-import { addMember, makeUser, seedCircle, seedPersonalCircleOwner } from "./test/seed.js";
+import {
+  addMember,
+  makeUser,
+  seedCircle,
+  seedInvitation,
+  seedPersonalCircleOwner,
+} from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({
@@ -281,6 +287,7 @@ describe("createInvitation — duplicates", () => {
         status: "pending",
         invitedByUserId: owner._id,
         resendCount: 0,
+        resendTimestamps: [],
         createdAt: now - INVITE_TTL_MS - 1,
         expiresAt: now - 1,
       });
@@ -319,6 +326,7 @@ describe("createInvitation — duplicates", () => {
           status,
           invitedByUserId: owner._id,
           resendCount: 0,
+          resendTimestamps: [],
           createdAt: now,
           expiresAt: now + INVITE_TTL_MS,
         });
@@ -377,5 +385,536 @@ describe("createInvitation — coded errors", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(ConvexError);
     }
+  });
+});
+
+describe("createInvitation — daily cap", () => {
+  it("rejects when the owner has sent 100 invitation emails in the last 24 h", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 100; i++) {
+        await seedInvitation(ctx, circleId, owner._id, {
+          email: `cap-${i}@example.com`,
+          createdAt: now - 1000,
+        });
+      }
+    });
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "one-more@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteDailyCapReached),
+    });
+  });
+});
+
+describe("listPendingInvitations", () => {
+  it("returns pending non-expired invitations for the Owner without tokenHash", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    const result = await t.query(api.invitations.listPendingInvitations, { circleId });
+    expect(result).toHaveLength(1);
+    expect(result?.[0]).toEqual({
+      id: inviteId,
+      email: "ada@example.com",
+      createdAt: expect.any(Number),
+      expiresAt: expect.any(Number),
+      resendCount: 0,
+    });
+    expect(result?.[0]).not.toHaveProperty("tokenHash");
+  });
+
+  it("returns null for a non-owner Member", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const member = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya"));
+    await t.run((ctx) => seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }));
+    mockCurrentUser.mockResolvedValue(member.user);
+
+    expect(await t.query(api.invitations.listPendingInvitations, { circleId })).toBeNull();
+  });
+
+  it("returns null for a non-member", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const stranger = await t.run((ctx) => makeUser(ctx, "stranger@example.com", "Stranger"));
+    await t.run((ctx) => seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }));
+    mockCurrentUser.mockResolvedValue(stranger);
+
+    expect(await t.query(api.invitations.listPendingInvitations, { circleId })).toBeNull();
+  });
+
+  it("returns null when unauthenticated", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }));
+    mockCurrentUser.mockResolvedValue(null);
+
+    expect(await t.query(api.invitations.listPendingInvitations, { circleId })).toBeNull();
+  });
+
+  it("excludes expired, revoked, and accepted invitations", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await seedInvitation(ctx, circleId, owner._id, {
+        email: "expired@example.com",
+        expiresAt: now - 1,
+      });
+      await seedInvitation(ctx, circleId, owner._id, {
+        email: "revoked@example.com",
+        status: "revoked",
+      });
+      await seedInvitation(ctx, circleId, owner._id, {
+        email: "accepted@example.com",
+        status: "accepted",
+      });
+      await seedInvitation(ctx, circleId, owner._id, { email: "pending@example.com" });
+    });
+
+    const result = await t.query(api.invitations.listPendingInvitations, { circleId });
+    expect(result).toHaveLength(1);
+    expect(result?.[0]?.email).toBe("pending@example.com");
+  });
+
+  it("returns all pending invitations when multiple exist", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.run(async (ctx) => {
+      for (const email of ["a@example.com", "b@example.com", "c@example.com"]) {
+        await seedInvitation(ctx, circleId, owner._id, { email });
+      }
+    });
+
+    expect(await t.query(api.invitations.listPendingInvitations, { circleId })).toHaveLength(3);
+  });
+});
+
+describe("resendInvitation", () => {
+  it("rotates the token, refreshes expiry, and records history", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const oldToken = "old-plaintext-token";
+    const oldHash = await hashInvitationToken(oldToken);
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "ada@example.com",
+        tokenHash: oldHash,
+        expiresAt: Date.now() + 1000,
+      }),
+    );
+
+    const before = Date.now();
+    const { token } = await t.mutation(api.invitations.resendInvitation, {
+      invitationId: inviteId,
+    });
+    expect(token).toBeTruthy();
+    expect(token).not.toBe(oldToken);
+
+    await t.run(async (ctx) => {
+      const invite = await ctx.db.get(inviteId);
+      expect(invite?.tokenHash).not.toBe(oldHash);
+      expect(invite?.tokenHash).toBe(await hashInvitationToken(token));
+      expect(invite?.resendCount).toBe(1);
+      expect(invite?.resendTimestamps).toHaveLength(1);
+      expect(invite?.expiresAt).toBeGreaterThanOrEqual(before + INVITE_TTL_MS - 1000);
+
+      const events = await listEntityHistory(ctx, circleEntity(circleId));
+      expect(events.some((event) => event.action === "invitation resent")).toBe(true);
+      const resent = events.find((event) => event.action === "invitation resent");
+      expect(resent?.changes).toEqual([{ field: "email", to: "ada@example.com" }]);
+    });
+  });
+
+  it("rejects an archived Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    await expect(
+      t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
+  });
+
+  it("rejects a non-owner Member", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const member = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya"));
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+
+    await expect(
+      t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteForbidden),
+    });
+  });
+
+  it("rejects a non-member with a generic error", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const stranger = await t.run((ctx) => makeUser(ctx, "stranger@example.com", "Stranger"));
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+    mockCurrentUser.mockResolvedValue(stranger);
+
+    await expect(
+      t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+    ).rejects.toThrow("Circle not found");
+  });
+
+  it("rejects an invitation from a different Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const { circleId: otherCircleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => completeSetup(ctx, otherCircleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, otherCircleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    await expect(
+      t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+    ).rejects.toThrow("Circle not found");
+  });
+
+  it("rejects revoked and expired invitations with a generic error", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const revokedId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "revoked@example.com",
+        status: "revoked",
+      }),
+    );
+    const expiredId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "expired@example.com",
+        expiresAt: Date.now() - 1,
+      }),
+    );
+
+    for (const invitationId of [revokedId, expiredId]) {
+      await expect(t.mutation(api.invitations.resendInvitation, { invitationId })).rejects.toThrow(
+        "Invitation not found",
+      );
+    }
+  });
+
+  it("rejects setup-incomplete Circles", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    await expect(
+      t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteSetupIncomplete),
+    });
+  });
+
+  it("enforces the per-email resend cap within 24 h", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "ada@example.com",
+        resendTimestamps: [now - 1000, now - 2000, now - 3000],
+      }),
+    );
+
+    await expect(
+      t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteResendCapReached),
+    });
+  });
+
+  it("allows resend when prior timestamps are outside the 24 h window", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "ada@example.com",
+        resendTimestamps: [now - INVITE_TTL_MS, now - INVITE_TTL_MS - 1, now - INVITE_TTL_MS - 2],
+      }),
+    );
+
+    const { token } = await t.mutation(api.invitations.resendInvitation, {
+      invitationId: inviteId,
+    });
+    expect(token).toBeTruthy();
+  });
+
+  it("counts only in-window resend timestamps toward the cap", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "ada@example.com",
+        resendTimestamps: [now - 1000, now - 2000, now - INVITE_TTL_MS],
+      }),
+    );
+
+    const { token } = await t.mutation(api.invitations.resendInvitation, {
+      invitationId: inviteId,
+    });
+    expect(token).toBeTruthy();
+  });
+
+  it("increments resendCount across multiple resends", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
+    await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
+
+    await t.run(async (ctx) => {
+      const invite = await ctx.db.get(inviteId);
+      expect(invite?.resendCount).toBe(2);
+    });
+  });
+
+  it("enforces the daily user cap on resend", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 100; i++) {
+        await seedInvitation(ctx, circleId, owner._id, {
+          email: `daily-${i}@example.com`,
+          createdAt: now - 1000,
+        });
+      }
+    });
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "target@example.com",
+        createdAt: now - INVITE_TTL_MS,
+      }),
+    );
+
+    await expect(
+      t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteDailyCapReached),
+    });
+  });
+
+  it("allows resend when 99 emails are in-window and one is outside", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 99; i++) {
+        await seedInvitation(ctx, circleId, owner._id, {
+          email: `daily-${i}@example.com`,
+          createdAt: now - 1000,
+        });
+      }
+      await seedInvitation(ctx, circleId, owner._id, {
+        email: "old@example.com",
+        createdAt: now - INVITE_TTL_MS,
+      });
+    });
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "target@example.com",
+        createdAt: now - INVITE_TTL_MS,
+      }),
+    );
+
+    const { token } = await t.mutation(api.invitations.resendInvitation, {
+      invitationId: inviteId,
+    });
+    expect(token).toBeTruthy();
+  });
+});
+
+describe("revokeInvitation", () => {
+  it("sets status to revoked and records history", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    await t.mutation(api.invitations.revokeInvitation, { invitationId: inviteId });
+
+    await t.run(async (ctx) => {
+      const invite = await ctx.db.get(inviteId);
+      expect(invite?.status).toBe("revoked");
+
+      const events = await listEntityHistory(ctx, circleEntity(circleId));
+      const revoked = events.find((event) => event.action === "invitation revoked");
+      expect(revoked?.changes).toEqual([{ field: "email", from: "ada@example.com" }]);
+    });
+  });
+
+  it("rejects an archived Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    await expect(
+      t.mutation(api.invitations.revokeInvitation, { invitationId: inviteId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
+  });
+
+  it("rejects a non-owner Member", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const member = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya"));
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+
+    await expect(
+      t.mutation(api.invitations.revokeInvitation, { invitationId: inviteId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteForbidden),
+    });
+  });
+
+  it("rejects a non-member with a generic error", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const stranger = await t.run((ctx) => makeUser(ctx, "stranger@example.com", "Stranger"));
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+    mockCurrentUser.mockResolvedValue(stranger);
+
+    await expect(
+      t.mutation(api.invitations.revokeInvitation, { invitationId: inviteId }),
+    ).rejects.toThrow("Circle not found");
+  });
+
+  it("rejects already-revoked and accepted invitations", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const revokedId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "revoked@example.com",
+        status: "revoked",
+      }),
+    );
+    const acceptedId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "accepted@example.com",
+        status: "accepted",
+      }),
+    );
+
+    for (const invitationId of [revokedId, acceptedId]) {
+      await expect(t.mutation(api.invitations.revokeInvitation, { invitationId })).rejects.toThrow(
+        "Invitation not found",
+      );
+    }
+  });
+
+  it("rejects an invitation from a different Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const { circleId: otherCircleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => completeSetup(ctx, otherCircleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, otherCircleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    await expect(
+      t.mutation(api.invitations.revokeInvitation, { invitationId: inviteId }),
+    ).rejects.toThrow("Circle not found");
   });
 });
