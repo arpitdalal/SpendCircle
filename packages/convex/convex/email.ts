@@ -2,6 +2,7 @@ import { vOnCompleteValidator, Workpool } from "@convex-dev/workpool";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api.js";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server.js";
+import { hashInvitationToken } from "./invitationToken.js";
 
 /**
  * Transactional email via Resend (ADR 0008). v1 sends only Welcome + Invitation
@@ -159,13 +160,20 @@ export const onWelcomeRunComplete = internalMutation({
   },
 });
 
+/** Returns send payload only when the queued job still matches the invitation row. */
 export const invitationPayload = internalQuery({
   args: {
     invitationId: v.id("invitations"),
+    resendCount: v.number(),
+    tokenHash: v.string(),
   },
-  handler: async (ctx, { invitationId }) => {
+  handler: async (ctx, { invitationId, resendCount, tokenHash }) => {
     const invite = await ctx.db.get(invitationId);
-    if (invite?.status !== "pending") {
+    if (
+      invite?.status !== "pending" ||
+      invite.resendCount !== resendCount ||
+      invite.tokenHash !== tokenHash
+    ) {
       return null;
     }
     const circle = await ctx.db.get(invite.circleId);
@@ -174,6 +182,7 @@ export const invitationPayload = internalQuery({
       return null;
     }
     return {
+      circleId: invite.circleId,
       recipientEmail: invite.emailLower,
       circleName: circle.name,
       ownerDisplayName: owner.displayName,
@@ -182,16 +191,66 @@ export const invitationPayload = internalQuery({
   },
 });
 
+export const recordE2EInvitationToken = internalMutation({
+  args: {
+    invitationId: v.id("invitations"),
+    circleId: v.id("circles"),
+    emailLower: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (process.env.E2E_TEST_AUTH !== "1") {
+      return;
+    }
+
+    const existing = await ctx.db
+      .query("e2eInvitationTokens")
+      .withIndex("by_circle_and_email", (q) =>
+        q.eq("circleId", args.circleId).eq("emailLower", args.emailLower),
+      )
+      .unique();
+
+    const row = {
+      invitationId: args.invitationId,
+      token: args.token,
+      updatedAt: Date.now(),
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, row);
+      return;
+    }
+
+    await ctx.db.insert("e2eInvitationTokens", {
+      circleId: args.circleId,
+      emailLower: args.emailLower,
+      ...row,
+    });
+  },
+});
+
 export const sendInvitationEmail = internalAction({
   args: {
     invitationId: v.id("invitations"),
     token: v.string(),
+    resendCount: v.number(),
   },
-  handler: async (ctx, { invitationId, token }) => {
-    const p = await ctx.runQuery(internal.email.invitationPayload, { invitationId });
+  handler: async (ctx, { invitationId, token, resendCount }) => {
+    const tokenHash = await hashInvitationToken(token);
+    const p = await ctx.runQuery(internal.email.invitationPayload, {
+      invitationId,
+      resendCount,
+      tokenHash,
+    });
     if (!p) {
       return;
     }
+    await ctx.runMutation(internal.email.recordE2EInvitationToken, {
+      invitationId,
+      circleId: p.circleId,
+      emailLower: p.recipientEmail,
+      token,
+    });
     const siteUrl = process.env.SITE_URL ?? "http://127.0.0.1:5173";
     const inviteLink = `${siteUrl}/invite/${token}`;
     await sendEmail({
@@ -204,7 +263,7 @@ export const sendInvitationEmail = internalAction({
         ownerImage: p.ownerImage,
         recipientEmail: p.recipientEmail,
       }),
-      idempotencyKey: `invite:${invitationId}`,
+      idempotencyKey: `invite:${invitationId}:${resendCount}`,
     });
   },
 });

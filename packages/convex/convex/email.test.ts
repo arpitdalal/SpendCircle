@@ -11,6 +11,7 @@ import {
   WELCOME_SUBJECT,
   welcomeHtml,
 } from "./email.js";
+import { hashInvitationToken } from "./invitationToken.js";
 import schema from "./schema.js";
 import { makeUser, seedCircle, seedPersonalCircleOwner } from "./test/seed.js";
 
@@ -63,8 +64,15 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function seedPendingInvitation(
   t: TestCtx,
-  opts: { circleName?: string; email?: string } = {},
+  opts: {
+    circleName?: string;
+    email?: string;
+    token?: string;
+    resendCount?: number;
+  } = {},
 ) {
+  const token = opts.token ?? "plaintext-invite-token";
+  const tokenHash = await hashInvitationToken(token);
   const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
   if (opts.circleName) {
     await t.run(async (ctx) => {
@@ -76,16 +84,16 @@ async function seedPendingInvitation(
     return await ctx.db.insert("invitations", {
       circleId,
       emailLower: opts.email ?? "invitee@example.com",
-      tokenHash: "hash-placeholder",
+      tokenHash,
       status: "pending" as const,
       invitedByUserId: owner._id,
-      resendCount: 0,
+      resendCount: opts.resendCount ?? 0,
       resendTimestamps: [],
       createdAt: now,
       expiresAt: now + INVITE_TTL_MS,
     });
   });
-  return { owner, circleId, invitationId };
+  return { owner, circleId, invitationId, token };
 }
 
 beforeEach(() => {
@@ -378,17 +386,22 @@ describe("invitationHtml", () => {
 });
 
 describe("invitationPayload", () => {
-  it("returns payload for a pending invitation", async () => {
+  it("returns payload for a pending invitation when send job matches the row", async () => {
     const t = convexTest(schema, modules);
-    const { owner, invitationId } = await seedPendingInvitation(t, { circleName: "Trip" });
+    const { owner, invitationId, token } = await seedPendingInvitation(t, { circleName: "Trip" });
+    const tokenHash = await hashInvitationToken(token);
 
-    const payload = await t.query(internal.email.invitationPayload, { invitationId });
-    expect(payload).toEqual({
+    const payload = await t.query(internal.email.invitationPayload, {
+      invitationId,
+      resendCount: 0,
+      tokenHash,
+    });
+    expect(payload).toMatchObject({
       recipientEmail: "invitee@example.com",
       circleName: "Trip",
       ownerDisplayName: owner.displayName,
-      ownerImage: owner.image,
     });
+    expect(payload?.circleId).toBeTruthy();
   });
 
   it.each([
@@ -397,67 +410,115 @@ describe("invitationPayload", () => {
     "expired",
   ] as const)("returns null when status is %s", async (status) => {
     const t = convexTest(schema, modules);
-    const { invitationId } = await seedPendingInvitation(t);
+    const { invitationId, token } = await seedPendingInvitation(t);
+    const tokenHash = await hashInvitationToken(token);
 
     await t.run(async (ctx) => {
       await ctx.db.patch(invitationId, { status });
     });
 
-    const payload = await t.query(internal.email.invitationPayload, { invitationId });
+    const payload = await t.query(internal.email.invitationPayload, {
+      invitationId,
+      resendCount: 0,
+      tokenHash,
+    });
     expect(payload).toBeNull();
   });
 
   it("returns null when the invitation row does not exist", async () => {
     const t = convexTest(schema, modules);
-    const { invitationId } = await seedPendingInvitation(t);
+    const { invitationId, token } = await seedPendingInvitation(t);
+    const tokenHash = await hashInvitationToken(token);
 
     await t.run(async (ctx) => {
       await ctx.db.delete(invitationId);
     });
 
-    const payload = await t.query(internal.email.invitationPayload, { invitationId });
+    const payload = await t.query(internal.email.invitationPayload, {
+      invitationId,
+      resendCount: 0,
+      tokenHash,
+    });
     expect(payload).toBeNull();
   });
 
   it("returns null when the circle row is missing", async () => {
     const t = convexTest(schema, modules);
-    const { circleId, invitationId } = await seedPendingInvitation(t);
+    const { circleId, invitationId, token } = await seedPendingInvitation(t);
+    const tokenHash = await hashInvitationToken(token);
 
     await t.run(async (ctx) => {
       await ctx.db.delete(circleId);
     });
 
-    const payload = await t.query(internal.email.invitationPayload, { invitationId });
+    const payload = await t.query(internal.email.invitationPayload, {
+      invitationId,
+      resendCount: 0,
+      tokenHash,
+    });
     expect(payload).toBeNull();
   });
 
   it("returns null when the owner row is missing", async () => {
     const t = convexTest(schema, modules);
-    const { owner, invitationId } = await seedPendingInvitation(t);
+    const { owner, invitationId, token } = await seedPendingInvitation(t);
+    const tokenHash = await hashInvitationToken(token);
 
     await t.run(async (ctx) => {
       await ctx.db.delete(owner._id);
     });
 
-    const payload = await t.query(internal.email.invitationPayload, { invitationId });
+    const payload = await t.query(internal.email.invitationPayload, {
+      invitationId,
+      resendCount: 0,
+      tokenHash,
+    });
+    expect(payload).toBeNull();
+  });
+
+  it("returns null when resendCount no longer matches the invitation row", async () => {
+    const t = convexTest(schema, modules);
+    const { invitationId, token } = await seedPendingInvitation(t);
+    const tokenHash = await hashInvitationToken(token);
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(invitationId, { resendCount: 1 });
+    });
+
+    const payload = await t.query(internal.email.invitationPayload, {
+      invitationId,
+      resendCount: 0,
+      tokenHash,
+    });
+    expect(payload).toBeNull();
+  });
+
+  it("returns null when tokenHash no longer matches the invitation row", async () => {
+    const t = convexTest(schema, modules);
+    const { invitationId } = await seedPendingInvitation(t);
+
+    const payload = await t.query(internal.email.invitationPayload, {
+      invitationId,
+      resendCount: 0,
+      tokenHash: await hashInvitationToken("superseded-token"),
+    });
     expect(payload).toBeNull();
   });
 });
 
 describe("sendInvitationEmail", () => {
-  it("posts the expected payload to Resend with per-invitation idempotency key", async () => {
+  it("posts the expected payload to Resend with per-send idempotency key", async () => {
     vi.stubEnv("RESEND_API_KEY", "test-key");
     vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
     vi.stubEnv("SITE_URL", "https://app.example.com");
 
     const t = convexTest(schema, modules);
-    const { owner, invitationId } = await seedPendingInvitation(t, {
+    const { owner, invitationId, token } = await seedPendingInvitation(t, {
       circleName: "Trip",
       email: "ada@example.com",
     });
-    const token = "plaintext-invite-token";
 
-    await t.action(internal.email.sendInvitationEmail, { invitationId, token });
+    await t.action(internal.email.sendInvitationEmail, { invitationId, token, resendCount: 0 });
 
     const resend = capturedRequests.filter((r) => r.vendor === "resend");
     expect(resend).toHaveLength(1);
@@ -466,7 +527,7 @@ describe("sendInvitationEmail", () => {
       to: "ada@example.com",
       subject: INVITATION_SUBJECT,
     });
-    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${invitationId}`);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${invitationId}:0`);
     const html = resendBodyHtml(resend[0]?.body);
     expect(html).toContain(`https://app.example.com/invite/${token}`);
     expect(html).toContain(owner.displayName);
@@ -479,13 +540,17 @@ describe("sendInvitationEmail", () => {
     vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
 
     const t = convexTest(schema, modules);
-    const { invitationId } = await seedPendingInvitation(t);
+    const { invitationId, token } = await seedPendingInvitation(t);
 
     await t.run(async (ctx) => {
       await ctx.db.patch(invitationId, { status: "revoked" });
     });
 
-    await t.action(internal.email.sendInvitationEmail, { invitationId, token: "tok" });
+    await t.action(internal.email.sendInvitationEmail, {
+      invitationId,
+      token,
+      resendCount: 0,
+    });
 
     expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
   });
@@ -495,9 +560,13 @@ describe("sendInvitationEmail", () => {
     vi.stubEnv("RESEND_FROM_EMAIL", "");
 
     const t = convexTest(schema, modules);
-    const { invitationId } = await seedPendingInvitation(t);
+    const { invitationId, token } = await seedPendingInvitation(t);
 
-    await t.action(internal.email.sendInvitationEmail, { invitationId, token: "tok" });
+    await t.action(internal.email.sendInvitationEmail, {
+      invitationId,
+      token,
+      resendCount: 0,
+    });
 
     expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
   });
@@ -513,10 +582,14 @@ describe("sendInvitationEmail", () => {
     );
 
     const t = convexTest(schema, modules);
-    const { invitationId } = await seedPendingInvitation(t);
+    const { invitationId, token } = await seedPendingInvitation(t);
 
     await expect(
-      t.action(internal.email.sendInvitationEmail, { invitationId, token: "tok" }),
+      t.action(internal.email.sendInvitationEmail, {
+        invitationId,
+        token,
+        resendCount: 0,
+      }),
     ).rejects.toThrow(/Resend send failed: 500/);
 
     await t.run(async (ctx) => {
@@ -533,6 +606,7 @@ describe("sendInvitationEmail", () => {
     const seed1 = await seedPendingInvitation(t, {
       email: "ada@example.com",
       circleName: "Trip A",
+      token: "token-a",
     });
     const seed2 = await t.run(async (ctx) => {
       const now = Date.now();
@@ -560,7 +634,7 @@ describe("sendInvitationEmail", () => {
       const invitationId = await ctx.db.insert("invitations", {
         circleId,
         emailLower: "ada@example.com",
-        tokenHash: "hash-b",
+        tokenHash: await hashInvitationToken("token-b"),
         status: "pending",
         invitedByUserId: owner._id,
         resendCount: 0,
@@ -573,17 +647,63 @@ describe("sendInvitationEmail", () => {
 
     await t.action(internal.email.sendInvitationEmail, {
       invitationId: seed1.invitationId,
-      token: "token-a",
+      token: seed1.token,
+      resendCount: 0,
     });
     await t.action(internal.email.sendInvitationEmail, {
       invitationId: seed2.invitationId,
       token: "token-b",
+      resendCount: 0,
     });
 
     const resend = capturedRequests.filter((r) => r.vendor === "resend");
     expect(resend).toHaveLength(2);
-    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${seed1.invitationId}`);
-    expect(resend[1]?.headers?.["idempotency-key"]).toBe(`invite:${seed2.invitationId}`);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${seed1.invitationId}:0`);
+    expect(resend[1]?.headers?.["idempotency-key"]).toBe(`invite:${seed2.invitationId}:0`);
+  });
+
+  it("uses resendCount in idempotency key for resend sends", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = convexTest(schema, modules);
+    const { invitationId, token } = await seedPendingInvitation(t, {
+      email: "ada@example.com",
+      circleName: "Trip",
+      token: "token-r2",
+      resendCount: 2,
+    });
+
+    await t.action(internal.email.sendInvitationEmail, {
+      invitationId,
+      token,
+      resendCount: 2,
+    });
+
+    const resend = capturedRequests.filter((r) => r.vendor === "resend");
+    expect(resend).toHaveLength(1);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${invitationId}:2`);
+  });
+
+  it("does not send when the queued token or resendCount was superseded", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = convexTest(schema, modules);
+    const { invitationId, token } = await seedPendingInvitation(t, { token: "current-token" });
+
+    await t.action(internal.email.sendInvitationEmail, {
+      invitationId,
+      token: "superseded-token",
+      resendCount: 0,
+    });
+    await t.action(internal.email.sendInvitationEmail, {
+      invitationId,
+      token,
+      resendCount: 1,
+    });
+
+    expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
   });
 });
 

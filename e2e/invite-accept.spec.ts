@@ -6,6 +6,9 @@ import {
   createRegularCircleAndFinishSetup,
   establishE2ESession,
   expect,
+  inviteMemberByEmail,
+  memberListItems,
+  pendingInvitationListItems,
   test,
 } from "./fixtures.js";
 
@@ -16,20 +19,6 @@ function circleIdFromUrl(url: string): Circle["id"] {
   }
   const lastDash = ref.lastIndexOf("-");
   return testId<Circle["id"]>(lastDash === -1 ? ref : ref.slice(lastDash + 1));
-}
-
-async function inviteByEmail(page: Page, email: string) {
-  await clickCircleChromeTab(page, "Members");
-  const form = page.getByRole("form", { name: "Invite member" });
-  await form.getByLabel("Email address").fill(email);
-  await form.getByRole("button", { name: "Invite member" }).click();
-  await expect(form.getByRole("status")).toHaveText(/invitation created/i);
-  const inviteLink = await form.getByLabel("Invitation link").inputValue();
-  const token = inviteLink.split("/invite/")[1];
-  if (!token) {
-    throw new Error("invite link missing token");
-  }
-  return token;
 }
 
 async function acceptInviteAs(page: Page, token: string) {
@@ -73,7 +62,7 @@ test("an invited user accepts and lands in the Circle member list", async ({
       email: `e2e+owner-${Date.now()}@example.com`,
     });
     await createRegularCircleAndFinishSetup(ownerPage, { name: circleName });
-    const token = await inviteByEmail(ownerPage, inviteeEmail);
+    const token = await inviteMemberByEmail(ownerPage, inviteeEmail);
 
     const inviteeContext = await browser.newContext();
     const inviteePage = await inviteeContext.newPage();
@@ -85,7 +74,7 @@ test("an invited user accepts and lands in the Circle member list", async ({
       await acceptInviteAs(inviteePage, token);
 
       await clickCircleChromeTab(ownerPage, "Members");
-      await expect(ownerPage.getByRole("listitem")).toHaveCount(2);
+      await expect(memberListItems(ownerPage)).toHaveCount(2);
       await expect(ownerPage.getByText("E2E Tester")).toHaveCount(2);
     } finally {
       await inviteeContext.close();
@@ -112,7 +101,7 @@ test("a removed member rejoins through a fresh invitation on the same member row
       email: `e2e+rejoin-owner-${Date.now()}@example.com`,
     });
     await createRegularCircleAndFinishSetup(ownerPage, { name: circleName });
-    const firstToken = await inviteByEmail(ownerPage, inviteeEmail);
+    const firstToken = await inviteMemberByEmail(ownerPage, inviteeEmail);
 
     const inviteeContext = await browser.newContext();
     const inviteePage = await inviteeContext.newPage();
@@ -146,7 +135,7 @@ test("a removed member rejoins through a fresh invitation on the same member row
       const membersAfterRemove = await listMembers(ownerPage, circleId);
       expect(membersAfterRemove.filter((member) => member.role === "member")).toHaveLength(0);
 
-      const reinviteToken = await inviteByEmail(ownerPage, inviteeEmail);
+      const reinviteToken = await inviteMemberByEmail(ownerPage, inviteeEmail);
       await acceptInviteAs(inviteePage, reinviteToken);
 
       const membersAfterRejoin = await listMembers(ownerPage, circleId);
@@ -154,7 +143,7 @@ test("a removed member rejoins through a fresh invitation on the same member row
         membersAfterJoin.map((member) => member.id).sort(),
       );
       await clickCircleChromeTab(ownerPage, "Members");
-      await expect(ownerPage.getByRole("listitem")).toHaveCount(2);
+      await expect(memberListItems(ownerPage)).toHaveCount(2);
     } finally {
       await inviteeContext.close();
     }
@@ -179,7 +168,7 @@ test("a signed-in user with the wrong email sees a generic accept error", async 
       email: `e2e+wrong-owner-${Date.now()}@example.com`,
     });
     await createRegularCircleAndFinishSetup(ownerPage, { name: circleName });
-    const token = await inviteByEmail(ownerPage, invitedEmail);
+    const token = await inviteMemberByEmail(ownerPage, invitedEmail);
 
     const wrongContext = await browser.newContext();
     const wrongPage = await wrongContext.newPage();
@@ -193,7 +182,9 @@ test("a signed-in user with the wrong email sees a generic accept error", async 
       await expect(wrongPage.getByRole("alert")).toHaveText("Something went wrong");
 
       await clickCircleChromeTab(ownerPage, "Members");
-      await expect(ownerPage.getByRole("listitem")).toHaveCount(1);
+      await expect(memberListItems(ownerPage)).toHaveCount(1);
+      await expect(pendingInvitationListItems(ownerPage)).toHaveCount(1);
+      await expect(pendingInvitationListItems(ownerPage).first()).toContainText(invitedEmail);
     } finally {
       await wrongContext.close();
     }

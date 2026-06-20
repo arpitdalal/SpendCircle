@@ -3,6 +3,7 @@ import {
   createRegularCircleAndFinishSetup,
   establishE2ESession,
   expect,
+  memberListItems,
   pickFormCategory,
   probeRemoveMember,
   seedActiveMemberOnCircle,
@@ -31,7 +32,7 @@ test("a member views the Member List with their own identity and Owner badge", a
   await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
 
   // The Personal Circle is always solo: exactly one Member, who is the Owner.
-  const rows = page.getByRole("listitem");
+  const rows = memberListItems(page);
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText("E2E Tester");
   await expect(rows.first().getByText("Owner", { exact: true })).toBeVisible();
@@ -67,12 +68,8 @@ test("an owner transfers ownership and owner-only actions follow the new owner",
   await expect(page.getByRole("status", { name: "Ownership transfer result" })).toContainText(
     "Ownership transferred to Maya Member",
   );
-  await expect(page.getByRole("listitem").filter({ hasText: "Maya Member" })).toContainText(
-    "Owner",
-  );
-  await expect(page.getByRole("listitem").filter({ hasText: "E2E Tester" })).not.toContainText(
-    "Owner",
-  );
+  await expect(memberListItems(page).filter({ hasText: "Maya Member" })).toContainText("Owner");
+  await expect(memberListItems(page).filter({ hasText: "E2E Tester" })).not.toContainText("Owner");
   await expect(page.getByRole("form", { name: "Invite member" })).toHaveCount(0);
 
   await newOwnerPage.goto(circleUrl);
@@ -104,13 +101,13 @@ test("an owner removes a member and the row disappears from the list", async ({
   await seedActiveMemberOnCircle(page, memberEmail, "Maya Member");
 
   await clickCircleChromeTab(page, "Members");
-  await expect(page.getByRole("listitem").filter({ hasText: "Maya Member" })).toBeVisible();
+  await expect(memberListItems(page).filter({ hasText: "Maya Member" })).toBeVisible();
 
   await page.getByRole("button", { name: "Remove Maya Member" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Remove member" }).click();
 
-  await expect(page.getByRole("listitem").filter({ hasText: "Maya Member" })).toHaveCount(0);
-  await expect(page.getByRole("listitem")).toHaveCount(1);
+  await expect(memberListItems(page).filter({ hasText: "Maya Member" })).toHaveCount(0);
+  await expect(memberListItems(page)).toHaveCount(1);
 });
 
 test("a non-owner member does not see remove buttons", async ({ page, browser, baseURL }) => {
@@ -217,7 +214,7 @@ test("a removed member's transactions still show their frozen display name", asy
   await clickCircleChromeTab(page, "Members");
   await page.getByRole("button", { name: "Remove Maya Member" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Remove member" }).click();
-  await expect(page.getByRole("listitem").filter({ hasText: "Maya Member" })).toHaveCount(0);
+  await expect(memberListItems(page).filter({ hasText: "Maya Member" })).toHaveCount(0);
 
   await clickCircleChromeTab(page, "Transactions");
   const item = page.getByRole("listitem").filter({ hasText: title });

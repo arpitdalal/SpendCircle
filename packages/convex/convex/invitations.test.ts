@@ -76,6 +76,15 @@ function resendBodyHtml(body: unknown) {
   return html;
 }
 
+function inviteTokenFromHtml(html: string) {
+  const tokenMatch = html.match(/\/invite\/([^"]+)"/);
+  const token = tokenMatch?.[1];
+  if (!token) {
+    throw new Error("expected invite token in Resend email html");
+  }
+  return token;
+}
+
 beforeEach(() => {
   mockCurrentUser.mockReset();
   resetCapturedRequests();
@@ -154,11 +163,7 @@ describe("createInvitation — happy path", () => {
     expect(resend).toHaveLength(1);
     expect(resend[0]?.body).toMatchObject({ to: "ada@example.com" });
     const html = resendBodyHtml(resend[0]?.body);
-    const tokenMatch = html.match(/\/invite\/([^"]+)"/);
-    const token = tokenMatch?.[1];
-    if (!token) {
-      throw new Error("expected invite token in Resend email html");
-    }
+    const token = inviteTokenFromHtml(html);
 
     await t.run(async (ctx) => {
       const invite = await ctx.db
@@ -671,16 +676,11 @@ describe("resendInvitation", () => {
     );
 
     const before = Date.now();
-    const { token } = await t.mutation(api.invitations.resendInvitation, {
-      invitationId: inviteId,
-    });
-    expect(token).toBeTruthy();
-    expect(token).not.toBe(oldToken);
+    await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
 
     await t.run(async (ctx) => {
       const invite = await ctx.db.get(inviteId);
       expect(invite?.tokenHash).not.toBe(oldHash);
-      expect(invite?.tokenHash).toBe(await hashInvitationToken(token));
       expect(invite?.resendCount).toBe(1);
       expect(invite?.resendTimestamps).toHaveLength(1);
       expect(invite?.expiresAt).toBeGreaterThanOrEqual(before + INVITE_TTL_MS - 1000);
@@ -689,6 +689,137 @@ describe("resendInvitation", () => {
       expect(events.some((event) => event.action === "invitation resent")).toBe(true);
       const resent = events.find((event) => event.action === "invitation resent");
       expect(resent?.changes).toEqual([{ field: "email", to: "ada@example.com" }]);
+    });
+  });
+
+  it("enqueues and sends exactly one resend email with a rotated token", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+    vi.stubEnv("SITE_URL", "https://app.example.com");
+
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+    vi.useFakeTimers();
+    try {
+      await drainWorkpool(t);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const initialToken = "old-plaintext-token";
+    const initialTokenHash = await hashInvitationToken(initialToken);
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "ada@example.com",
+        tokenHash: initialTokenHash,
+      }),
+    );
+
+    resetCapturedRequests();
+    vi.useFakeTimers();
+    try {
+      await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
+      await drainWorkpool(t);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const resend = capturedRequests.filter(
+      (r) => r.vendor === "resend" && r.headers?.["idempotency-key"] === `invite:${inviteId}:1`,
+    );
+    expect(resend.length).toBeGreaterThanOrEqual(1);
+    const resendCall = resend.at(-1);
+    expect(resendCall?.body).toMatchObject({ to: "ada@example.com" });
+    const resentToken = inviteTokenFromHtml(resendBodyHtml(resendCall?.body));
+    expect(resentToken).not.toBe(initialToken);
+  });
+
+  it("uses distinct idempotency keys for create and resend sends", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    resetCapturedRequests();
+    await inviteAndDrain(t, { circleId, email: "ada@example.com" });
+
+    const inviteId = await t.run(async (ctx) => {
+      const invite = await ctx.db
+        .query("invitations")
+        .withIndex("by_circle_and_email", (q) =>
+          q.eq("circleId", circleId).eq("emailLower", "ada@example.com"),
+        )
+        .unique();
+      if (!invite) {
+        throw new Error("expected invitation row");
+      }
+      return invite._id;
+    });
+
+    vi.useFakeTimers();
+    try {
+      await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
+      await drainWorkpool(t);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const resend = capturedRequests.filter((r) => r.vendor === "resend");
+    expect(resend).toHaveLength(2);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${inviteId}:0`);
+    expect(resend[1]?.headers?.["idempotency-key"]).toBe(`invite:${inviteId}:1`);
+    expect(resend[0]?.headers?.["idempotency-key"]).not.toBe(
+      resend[1]?.headers?.["idempotency-key"],
+    );
+  });
+
+  it("no-ops superseded resend jobs queued before the workpool drains", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+    vi.stubEnv("SITE_URL", "https://app.example.com");
+
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+    vi.useFakeTimers();
+    try {
+      await drainWorkpool(t);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+    );
+
+    resetCapturedRequests();
+    vi.useFakeTimers();
+    try {
+      await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
+      await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
+      await drainWorkpool(t);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const resend = capturedRequests.filter((r) => r.vendor === "resend");
+    expect(resend).toHaveLength(1);
+    expect(resend[0]?.headers?.["idempotency-key"]).toBe(`invite:${inviteId}:2`);
+    expect(resend[0]?.body).toMatchObject({ to: "ada@example.com" });
+
+    const sentToken = inviteTokenFromHtml(resendBodyHtml(resend[0]?.body));
+    await t.run(async (ctx) => {
+      const invite = await ctx.db.get(inviteId);
+      if (!invite) {
+        throw new Error("expected invitation row");
+      }
+      expect(await hashInvitationToken(sentToken)).toBe(invite.tokenHash);
     });
   });
 
@@ -835,10 +966,7 @@ describe("resendInvitation", () => {
       }),
     );
 
-    const { token } = await t.mutation(api.invitations.resendInvitation, {
-      invitationId: inviteId,
-    });
-    expect(token).toBeTruthy();
+    await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
   });
 
   it("counts only in-window resend timestamps toward the cap", async () => {
@@ -855,10 +983,7 @@ describe("resendInvitation", () => {
       }),
     );
 
-    const { token } = await t.mutation(api.invitations.resendInvitation, {
-      invitationId: inviteId,
-    });
-    expect(token).toBeTruthy();
+    await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
   });
 
   it("increments resendCount across multiple resends", async () => {
@@ -937,10 +1062,7 @@ describe("resendInvitation", () => {
       }),
     );
 
-    const { token } = await t.mutation(api.invitations.resendInvitation, {
-      invitationId: inviteId,
-    });
-    expect(token).toBeTruthy();
+    await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
   });
 });
 

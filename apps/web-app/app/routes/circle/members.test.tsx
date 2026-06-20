@@ -80,7 +80,9 @@ beforeEach(() => {
 describe("CircleMembers", () => {
   it("lists members in the order the query returns them (Owner-first)", () => {
     setup({ members: [owner, maya] });
-    const items = screen.getAllByRole("listitem");
+    const items = within(screen.getByRole("list", { name: "Circle members" })).getAllByRole(
+      "listitem",
+    );
     expect(items[0]).toHaveTextContent("Olive Owner");
     expect(items[1]).toHaveTextContent("Maya Member");
   });
@@ -115,7 +117,9 @@ describe("CircleMembers", () => {
 
   it("renders exactly one row for a Personal Circle", () => {
     setup({ members: [makeMemberView({ displayName: "You", isSelf: true })] });
-    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(
+      within(screen.getByRole("list", { name: "Circle members" })).getAllByRole("listitem"),
+    ).toHaveLength(1);
   });
 
   it("shows a skeleton while members resolve", () => {
@@ -505,7 +509,9 @@ describe("CircleMembers — remove member", () => {
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove member" }),
     );
 
-    await expect(screen.findByRole("listitem")).resolves.toHaveTextContent("Olive Owner");
+    await expect(
+      within(screen.getByRole("list", { name: "Circle members" })).findByRole("listitem"),
+    ).resolves.toHaveTextContent("Olive Owner");
     expect(screen.queryByText("Maya Member")).not.toBeInTheDocument();
   });
 });
@@ -556,11 +562,11 @@ describe("CircleMembers — pending invitations", () => {
     expect(screen.getByText(/no pending invitations/i)).toBeInTheDocument();
   });
 
-  it("calls resend and shows a copyable link on success", async () => {
+  it("calls resend and shows a success status on success", async () => {
     const resendInvitation = vi.fn().mockImplementation(
       () =>
         new Promise((resolve) => {
-          setTimeout(() => resolve({ token: "resend-token-xyz" }), 50);
+          setTimeout(() => resolve(undefined), 50);
         }),
     );
     const user = userEvent.setup();
@@ -576,10 +582,11 @@ describe("CircleMembers — pending invitations", () => {
     expect(resend).toBeDisabled();
     expect(resend).toHaveTextContent("Resending…");
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/new invitation link/i);
-    expect(screen.getByLabelText("Invitation link")).toHaveValue(
-      `${window.location.origin}/invite/resend-token-xyz`,
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /invitation resent to ada@example.com/i,
     );
+    expect(screen.queryByLabelText("Invitation link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
     expect(resendInvitation).toHaveBeenCalledWith({
       invitationId: mockPendingInvite.id,
     });
