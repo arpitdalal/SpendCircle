@@ -1,57 +1,15 @@
-import type { Page } from "@playwright/test";
 import {
   clickCircleChromeTab,
   createRegularCircleAndFinishSetup,
   establishE2ESession,
   expect,
   pickFormCategory,
+  probeRemoveMember,
+  seedActiveMemberOnCircle,
   test,
 } from "./fixtures.js";
 
 const E2E_PASSWORD = "e2e-Password-123";
-
-async function seedMemberOnCurrentCircle(page: Page, email: string, displayName: string) {
-  return page.evaluate(
-    async ([memberEmail, memberName]) => {
-      const helper = Reflect.get(globalThis, "__scE2E");
-      if (typeof helper !== "object" || helper === null) {
-        throw new Error("missing __scE2E");
-      }
-      const seed = Reflect.get(helper, "seedActiveMember");
-      if (typeof seed !== "function") {
-        throw new Error("missing seedActiveMember");
-      }
-      return Reflect.apply(seed, helper, [memberEmail, memberName]);
-    },
-    [email, displayName],
-  ) as Promise<{ memberId: string }>;
-}
-
-async function callRemoveMember(page: Page, memberId: string) {
-  return page.evaluate(async (id) => {
-    const helper = Reflect.get(globalThis, "__scE2E");
-    if (typeof helper !== "object" || helper === null) {
-      throw new Error("missing __scE2E");
-    }
-    const remove = Reflect.get(helper, "removeMember");
-    if (typeof remove !== "function") {
-      throw new Error("missing removeMember");
-    }
-    try {
-      await Reflect.apply(remove, helper, [id]);
-      return { ok: true as const };
-    } catch (err) {
-      return {
-        ok: false as const,
-        message: err instanceof Error ? err.message : String(err),
-        data:
-          err && typeof err === "object" && "data" in err
-            ? (err as { data: unknown }).data
-            : undefined,
-      };
-    }
-  }, memberId);
-}
 
 /**
  * TRUE-E2E (ADR 0019): open the Member List through the real frontend → Convex
@@ -98,7 +56,7 @@ test("an owner removes a member and the row disappears from the list", async ({
   await memberContext.close();
 
   await createRegularCircleAndFinishSetup(page, { name: circleName });
-  await seedMemberOnCurrentCircle(page, memberEmail, "Maya Member");
+  await seedActiveMemberOnCircle(page, memberEmail, "Maya Member");
 
   await clickCircleChromeTab(page, "Members");
   await expect(page.getByRole("listitem").filter({ hasText: "Maya Member" })).toBeVisible();
@@ -125,7 +83,7 @@ test("a non-owner member does not see remove buttons", async ({ page, browser, b
 
   await createRegularCircleAndFinishSetup(page, { name: circleName });
   const circleUrl = page.url();
-  await seedMemberOnCurrentCircle(page, memberEmail, "Maya Member");
+  await seedActiveMemberOnCircle(page, memberEmail, "Maya Member");
 
   await memberPage.goto(circleUrl);
   await clickCircleChromeTab(memberPage, "Members");
@@ -153,11 +111,11 @@ test("removeMember as a non-owner returns the coded forbidden error", async ({
   });
 
   await createRegularCircleAndFinishSetup(page, { name: circleName });
-  const { memberId } = await seedMemberOnCurrentCircle(page, memberEmail, "Maya Member");
-  await seedMemberOnCurrentCircle(page, `e2e-other-${stamp}@example.com`, "Other Member");
+  const { memberId } = await seedActiveMemberOnCircle(page, memberEmail, "Maya Member");
+  await seedActiveMemberOnCircle(page, `e2e-other-${stamp}@example.com`, "Other Member");
 
-  await memberPage.goto(page.url());
-  const result = await callRemoveMember(memberPage, memberId);
+  await memberPage.goto(page.url(), { waitUntil: "domcontentloaded" });
+  const result = await probeRemoveMember(memberPage, memberId);
   expect(result.ok).toBe(false);
   expect(JSON.stringify(result)).toContain("member.removeForbidden");
 
@@ -185,7 +143,7 @@ test("a removed member's transactions still show their frozen display name", asy
 
   await createRegularCircleAndFinishSetup(page, { name: circleName });
   const circleUrl = page.url();
-  await seedMemberOnCurrentCircle(page, memberEmail, "Maya Member");
+  await seedActiveMemberOnCircle(page, memberEmail, "Maya Member");
 
   await memberPage.goto(circleUrl);
   await clickCircleChromeTab(memberPage, "Categories");
