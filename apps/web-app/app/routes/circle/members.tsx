@@ -49,7 +49,7 @@ export default function CircleMembers() {
         />
       ) : null}
       {transferSuccess ? (
-        <p role="status" className="text-sm text-foreground">
+        <p role="status" aria-label="Ownership transfer result" className="text-sm text-foreground">
           Ownership transferred to {transferSuccess}.
         </p>
       ) : null}

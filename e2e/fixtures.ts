@@ -12,6 +12,9 @@ export type CircleChromeTab = "Dashboard" | "Transactions" | "Search" | "Categor
 export async function finishCircleSetup(page: Page) {
   await page.getByRole("button", { name: "Finish setup" }).click();
   await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+  const setupToast = page.getByText("Circle setup complete.");
+  await expect(setupToast).toBeVisible();
+  await expect(setupToast).toBeHidden({ timeout: 10_000 });
 }
 
 /**

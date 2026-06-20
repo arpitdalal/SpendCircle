@@ -311,9 +311,9 @@ describe("CircleMembers — transfer ownership", () => {
       screen.getByRole("button", { name: "Confirm transfer ownership to Maya Member" }),
     );
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Ownership transferred to Maya Member.",
-    );
+    expect(
+      await screen.findByRole("status", { name: "Ownership transfer result" }),
+    ).toHaveTextContent("Ownership transferred to Maya Member.");
     expect(screen.queryByText("Transfer ownership to Maya Member?")).not.toBeInTheDocument();
   });
 

@@ -79,7 +79,9 @@ test("an owner transfers ownership and owner-only actions follow the new owner",
   await page.getByRole("option", { name: "Maya Member" }).click();
   await page.getByRole("button", { name: "Confirm transfer ownership to Maya Member" }).click();
 
-  await expect(page.getByRole("status")).toContainText("Ownership transferred to Maya Member");
+  await expect(page.getByRole("status", { name: "Ownership transfer result" })).toContainText(
+    "Ownership transferred to Maya Member",
+  );
   await expect(page.getByRole("listitem").filter({ hasText: "Maya Member" })).toContainText(
     "Owner",
   );
