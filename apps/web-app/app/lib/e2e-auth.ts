@@ -96,6 +96,27 @@ export function installE2EAuthHelper(): void {
       async acceptInvitation(token: string) {
         await convex.mutation(api.e2e.acceptInvitationForE2E, { token });
       },
+
+      /**
+       * Poll for the last emailed invitation token on the current Circle (EML-2).
+       * The Members UI no longer exposes copyable links; E2E reads from the
+       * flag-gated backend stash populated by `sendInvitationEmail`.
+       */
+      async getInvitationToken(email: string) {
+        const circleId = circleIdFromLocation();
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          const token = await convex.query(api.e2e.getInvitationTokenForE2E, {
+            circleId,
+            email,
+          });
+          if (token) {
+            return token;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        throw new Error("E2E: invitation token not available");
+      },
     },
   });
 }

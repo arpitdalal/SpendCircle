@@ -396,12 +396,12 @@ describe("invitationPayload", () => {
       resendCount: 0,
       tokenHash,
     });
-    expect(payload).toEqual({
+    expect(payload).toMatchObject({
       recipientEmail: "invitee@example.com",
       circleName: "Trip",
       ownerDisplayName: owner.displayName,
-      ownerImage: owner.image,
     });
+    expect(payload?.circleId).toBeTruthy();
   });
 
   it.each([

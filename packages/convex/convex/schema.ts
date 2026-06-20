@@ -221,6 +221,17 @@ export default defineSchema({
     .index("by_token_hash", ["tokenHash"])
     .index("by_invitedByUserId", ["invitedByUserId"]),
 
+  // E2E-only (ADR 0019): last emailed invitation token per Circle+email so Playwright
+  // can drive accept flows after EML-2 stopped returning plaintext tokens to clients.
+  // Never written when E2E_TEST_AUTH is unset — table stays empty in production.
+  e2eInvitationTokens: defineTable({
+    circleId: v.id("circles"),
+    emailLower: v.string(),
+    invitationId: v.id("invitations"),
+    token: v.string(),
+    updatedAt: v.number(),
+  }).index("by_circle_and_email", ["circleId", "emailLower"]),
+
   notifications: defineTable({
     userId: v.id("users"),
     type: v.string(),

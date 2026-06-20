@@ -105,21 +105,23 @@ export async function createRegularCircleAndFinishSetup(
 }
 
 /**
- * Owner invites `memberEmail`, returns the invite token extracted from the copyable link.
+ * Owner invites `memberEmail` via the Members form, waits for the server-driven
+ * success status, then reads the emailed token from the E2E-only backend stash.
  * Requires the owner page to already be authenticated on a setup-complete regular Circle.
  */
 export async function inviteMemberByEmail(page: Page, memberEmail: string): Promise<string> {
   await clickCircleChromeTab(page, "Members");
-  await page.getByLabel("Email address").fill(memberEmail);
-  await page.getByRole("button", { name: "Invite member" }).click();
-  const link = page.getByLabel("Invitation link");
-  await expect(link).toBeVisible();
-  const href = await link.inputValue();
-  const token = href.split("/invite/")[1];
-  if (!token) {
-    throw new Error("Could not extract invitation token from link");
-  }
-  return token;
+  const form = page.getByRole("form", { name: "Invite member" });
+  await form.getByLabel("Email address").fill(memberEmail);
+  await form.getByRole("button", { name: "Invite member" }).click();
+  await expect(form.getByRole("status")).toHaveText(
+    new RegExp(`Invitation sent to ${escapeRegExp(memberEmail)}`, "i"),
+  );
+  return invokeScE2E<string>(page, "getInvitationToken", [memberEmail]);
+}
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Signs in a second User and accepts an invitation via the E2E-only backend helper. */
