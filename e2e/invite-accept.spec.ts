@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import type { Circle, Member } from "../apps/web-app/app/lib/data.js";
 import { testId } from "../apps/web-app/app/test/convex/ids.js";
+import { MUTATION_ERRORS } from "../packages/domain/src/mutation-errors.js";
 import {
   clickCircleChromeTab,
   createRegularCircleAndFinishSetup,
@@ -152,7 +153,7 @@ test("a removed member rejoins through a fresh invitation on the same member row
   }
 });
 
-test("a signed-in user with the wrong email sees a generic accept error", async ({
+test("a signed-in user with the wrong email sees invite.invalid accept copy", async ({
   browser,
   baseURL,
 }) => {
@@ -179,7 +180,7 @@ test("a signed-in user with the wrong email sees a generic accept error", async 
       });
       await wrongPage.goto(`${resolvedBase}/invite/${token}`);
       await wrongPage.getByRole("button", { name: "Accept invitation" }).click();
-      await expect(wrongPage.getByRole("alert")).toHaveText("Something went wrong");
+      await expect(wrongPage.getByRole("alert")).toHaveText(MUTATION_ERRORS.inviteInvalid.message);
 
       await clickCircleChromeTab(ownerPage, "Members");
       await expect(memberListItems(ownerPage)).toHaveCount(1);

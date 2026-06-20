@@ -92,7 +92,7 @@ export const transferOwnership = mutation({
 
     const targetMember = await ctx.db.get(args.toMemberId);
     if (!targetMember || targetMember.circleId !== args.circleId) {
-      throw new Error("Member not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.memberNotFound));
     }
 
     if (targetMember.status !== "active") {
@@ -141,20 +141,20 @@ export const removeMember = mutation({
     access.assertWritable();
 
     if (access.circle.kind === "personal") {
-      throw new Error("Circle not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.memberNotFound));
     }
 
     const target = await ctx.db.get(args.memberId);
     if (!target || target.circleId !== args.circleId) {
-      throw new Error("Member not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.memberNotFound));
     }
 
     if (target.role === "owner") {
-      throw new Error("Cannot remove the Circle owner — transfer ownership first (MEM-7)");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.memberCannotRemoveOwner));
     }
 
     if (target.status === "removed") {
-      throw new Error("Member is already removed");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.memberNotFound));
     }
 
     const now = Date.now();

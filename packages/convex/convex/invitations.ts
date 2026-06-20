@@ -10,8 +10,6 @@ import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import { circleEntity, recordEvent } from "./history.js";
 import { generateInvitationToken, hashInvitationToken } from "./invitationToken.js";
 
-const INVITATION_INVALID = "Invitation invalid";
-
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAILY_INVITATION_EMAIL_CAP = 100;
@@ -155,7 +153,7 @@ async function resolvePendingInvitation(ctx: QueryCtx | MutationCtx, token: stri
   }
 
   const circle = await ctx.db.get(invitation.circleId);
-  if (circle === null || circle.setupCompletedAt === null) {
+  if (circle === null || circle.setupCompletedAt === null || circle.status !== "active") {
     return null;
   }
 
@@ -210,16 +208,16 @@ export const acceptInvitation = mutation({
       invitation.expiresAt <= Date.now() ||
       invitation.status !== "pending"
     ) {
-      throw new Error(INVITATION_INVALID);
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     if (invitation.emailLower !== user.email.toLowerCase()) {
-      throw new Error(INVITATION_INVALID);
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     const circle = await ctx.db.get(invitation.circleId);
-    if (circle === null || circle.setupCompletedAt === null) {
-      throw new Error(INVITATION_INVALID);
+    if (circle === null || circle.setupCompletedAt === null || circle.status !== "active") {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     const existingMembership = await ctx.db
@@ -228,7 +226,7 @@ export const acceptInvitation = mutation({
       .unique();
 
     if (existingMembership?.status === "active") {
-      throw new Error(INVITATION_INVALID);
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     let membership: Doc<"members">;
@@ -241,7 +239,8 @@ export const acceptInvitation = mutation({
       });
       const reactivated = await ctx.db.get(existingMembership._id);
       if (!reactivated) {
-        throw new Error(INVITATION_INVALID);
+        // unreachable: row existed immediately before patch
+        throw new Error("Member row missing after reactivation");
       }
       membership = reactivated;
     } else {
@@ -256,7 +255,8 @@ export const acceptInvitation = mutation({
       });
       const inserted = await ctx.db.get(memberId);
       if (!inserted) {
-        throw new Error(INVITATION_INVALID);
+        // unreachable: insert returned an id
+        throw new Error("Member row missing after insert");
       }
       membership = inserted;
     }
@@ -309,7 +309,7 @@ export const resendInvitation = mutation({
   handler: async (ctx, args) => {
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation) {
-      throw new Error("Invitation not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     const access = await requireCircleAccess(ctx, invitation.circleId);
@@ -321,12 +321,12 @@ export const resendInvitation = mutation({
     access.assertWritable();
 
     if (invitation.circleId !== access.circle._id) {
-      throw new Error("Invitation not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     const now = Date.now();
     if (invitation.status !== "pending" || invitation.expiresAt <= now) {
-      throw new Error("Invitation not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     if (access.circle.setupCompletedAt === null) {
@@ -374,7 +374,7 @@ export const revokeInvitation = mutation({
   handler: async (ctx, args) => {
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation) {
-      throw new Error("Invitation not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     const access = await requireCircleAccess(ctx, invitation.circleId);
@@ -386,11 +386,11 @@ export const revokeInvitation = mutation({
     access.assertWritable();
 
     if (invitation.circleId !== access.circle._id) {
-      throw new Error("Invitation not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     if (invitation.status !== "pending") {
-      throw new Error("Invitation not found");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
     await ctx.db.patch(args.invitationId, { status: "revoked" });
