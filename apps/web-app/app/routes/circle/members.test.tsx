@@ -2,7 +2,7 @@ import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
-import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { Circle, Member } from "~/lib/data.js";
 import {
   configureConvex,
@@ -11,6 +11,12 @@ import {
   renderInCircle,
   testId,
 } from "~/test/convex-react.js";
+
+const navigate = vi.fn();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
+  return { ...actual, useNavigate: () => navigate };
+});
 
 /**
  * Behavior test for the Member List surface (jsdom). Only `convex/react` is
@@ -23,8 +29,19 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 
 import CircleMembers from "./members.js";
 
-function setup(opts: { members?: Member[] | null; createInvitation?: Mock; circle?: Circle } = {}) {
-  configureConvex({ members: opts.members, createInvitation: opts.createInvitation });
+function setup(
+  opts: {
+    members?: Member[] | null;
+    createInvitation?: Mock;
+    leaveCircle?: Mock;
+    circle?: Circle;
+  } = {},
+) {
+  configureConvex({
+    members: opts.members,
+    createInvitation: opts.createInvitation,
+    leaveCircle: opts.leaveCircle,
+  });
   return renderInCircle(opts.circle ?? makeCircleView(), <CircleMembers />);
 }
 
@@ -43,6 +60,10 @@ const maya = makeMemberView({
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+beforeEach(() => {
+  navigate.mockReset();
 });
 
 describe("CircleMembers", () => {
@@ -187,5 +208,125 @@ describe("CircleMembers — invite form", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       MUTATION_ERRORS.inviteAlreadyPending.message,
     );
+  });
+});
+
+describe("CircleMembers — leave circle", () => {
+  it("hides the leave section on a Personal Circle", () => {
+    setup({
+      circle: makeCircleView({ kind: "personal" }),
+      members: [makeMemberView({ displayName: "You", role: "owner", isSelf: true })],
+    });
+    expect(screen.queryByRole("region", { name: "Leave circle" })).not.toBeInTheDocument();
+  });
+
+  it("shows a transfer-first notice for the Owner instead of a leave button", () => {
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+    });
+    expect(screen.getByText(/transfer ownership before leaving/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Leave Circle" })).not.toBeInTheDocument();
+  });
+
+  it("shows a leave button for a non-owner self member", () => {
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+    });
+    expect(screen.getByRole("button", { name: "Leave Circle" })).toBeInTheDocument();
+  });
+
+  it("does not show a leave button for other members' rows", () => {
+    setup({ members: [owner, maya] });
+    expect(screen.queryByRole("button", { name: "Leave Circle" })).not.toBeInTheDocument();
+  });
+
+  it("shows confirmation on leave click and dismisses on cancel without calling the mutation", async () => {
+    const leaveCircle = vi.fn();
+    const user = userEvent.setup();
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      leaveCircle,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Leave Circle" }));
+    expect(screen.getByText(/are you sure/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/are you sure/i)).not.toBeInTheDocument();
+    expect(leaveCircle).not.toHaveBeenCalled();
+  });
+
+  it("calls leaveCircle on confirm, disables buttons while in-flight, and navigates home on success", async () => {
+    const leaveCircle = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(resolve, 50);
+        }),
+    );
+    const user = userEvent.setup();
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      leaveCircle,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Leave Circle" }));
+    const confirm = screen.getByRole("button", { name: "Confirm Leave" });
+    await user.click(confirm);
+
+    expect(confirm).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(confirm).toHaveTextContent("Leaving…");
+
+    await vi.waitFor(() => {
+      expect(leaveCircle).toHaveBeenCalledWith({ circleId: makeCircleView().id });
+      expect(navigate).toHaveBeenCalledWith("/");
+    });
+  });
+
+  it("maps a coded leave error to shared user copy", async () => {
+    const leaveCircle = vi
+      .fn()
+      .mockRejectedValue(new ConvexError(mutationErrorData(MUTATION_ERRORS.ownerMustTransfer)));
+    const user = userEvent.setup();
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      leaveCircle,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Leave Circle" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Leave" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.ownerMustTransfer.message,
+    );
+  });
+
+  it("shows fallback copy for an unexpected leave error", async () => {
+    const leaveCircle = vi.fn().mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      leaveCircle,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Leave Circle" }));
+    await user.click(screen.getByRole("button", { name: "Confirm Leave" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't leave. Please try again.");
   });
 });
