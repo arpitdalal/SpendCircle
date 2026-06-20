@@ -1,6 +1,7 @@
 import { api } from "@spend-circle/convex";
 import { authClient } from "./auth-client.js";
 import { convex } from "./convex.js";
+import type { Circle, Member } from "./data.js";
 
 /**
  * E2E-only test-auth helper (ADR 0019). Exposes a tiny `window.__scE2E` so the
@@ -43,6 +44,18 @@ export function installE2EAuthHelper(): void {
           }
         }
         throw new Error("E2E sign-in: onboarding completion timed out");
+      },
+      /** Marks a non-owner Member removed (MEM-3 rejoin E2E until MEM-5 ships). */
+      async markMemberRemoved(circleId: string, memberId: string) {
+        await convex.mutation(api.e2eTesting.markMemberRemovedForE2E, {
+          circleId: circleId as Circle["id"],
+          memberId: memberId as Member["id"],
+        });
+      },
+      async listMembers(circleId: string) {
+        return await convex.query(api.members.listMembers, {
+          circleId: circleId as Circle["id"],
+        });
       },
     },
   });
