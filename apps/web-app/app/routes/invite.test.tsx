@@ -1,5 +1,7 @@
+import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ConvexError } from "convex/values";
 import { Route } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOCK_INVITATION_PREVIEW } from "~/lib/fixtures.js";
@@ -123,7 +125,9 @@ describe("Invite landing", () => {
   });
 
   it("maps an accept error to neutral user copy and re-enables the button", async () => {
-    const acceptInvitation = vi.fn().mockRejectedValue(new Error("Invitation invalid"));
+    const acceptInvitation = vi
+      .fn()
+      .mockRejectedValue(new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid)));
     configureConvex({
       invitationPreview: preview,
       currentUser: makeCurrentUserView(),
@@ -138,7 +142,9 @@ describe("Invite landing", () => {
 
     await user.click(screen.getByRole("button", { name: "Accept invitation" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This invitation is no longer valid",
+    );
     expect(screen.getByRole("button", { name: "Accept invitation" })).toBeEnabled();
   });
 });

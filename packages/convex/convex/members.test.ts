@@ -247,7 +247,9 @@ describe("transferOwnership — target validation", () => {
 
     await expect(
       t.mutation(api.members.transferOwnership, { circleId, toMemberId: outsider.memberId }),
-    ).rejects.toThrow("Member not found");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.memberNotFound),
+    });
   });
 
   it("rejects a missing memberId with Member not found", async () => {
@@ -262,7 +264,9 @@ describe("transferOwnership — target validation", () => {
 
     await expect(
       t.mutation(api.members.transferOwnership, { circleId, toMemberId: ghost }),
-    ).rejects.toThrow("Member not found");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.memberNotFound),
+    });
   });
 
   it("rejects a removed target in this Circle with transfer.targetNotMember", async () => {
@@ -401,7 +405,9 @@ describe("removeMember — permissions", () => {
 
     await expect(
       t.mutation(api.members.removeMember, { circleId, memberId: outsider.memberId }),
-    ).rejects.toThrow("Member not found");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.memberNotFound),
+    });
   });
 
   it("rejects removing the Owner's membership row", async () => {
@@ -411,10 +417,12 @@ describe("removeMember — permissions", () => {
 
     await expect(
       t.mutation(api.members.removeMember, { circleId, memberId: ownerMemberId }),
-    ).rejects.toThrow("Cannot remove the Circle owner");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.memberCannotRemoveOwner),
+    });
   });
 
-  it("rejects removal from a Personal Circle with Circle not found", async () => {
+  it("rejects removal from a Personal Circle with member.notFound", async () => {
     const t = convexTest(schema, modules);
     const { owner, ownerMemberId, circleId } = await t.run((ctx) =>
       seedCircle(ctx, { kind: "personal" }),
@@ -423,7 +431,9 @@ describe("removeMember — permissions", () => {
 
     await expect(
       t.mutation(api.members.removeMember, { circleId, memberId: ownerMemberId }),
-    ).rejects.toThrow("Circle not found");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.memberNotFound),
+    });
   });
 
   it("rejects removal from an archived Circle with circle.archived", async () => {
@@ -451,7 +461,9 @@ describe("removeMember — permissions", () => {
 
     await expect(
       t.mutation(api.members.removeMember, { circleId, memberId: ghost }),
-    ).rejects.toThrow("Member not found");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.memberNotFound),
+    });
   });
 
   it("rejects removing an already-removed Member", async () => {
@@ -464,7 +476,9 @@ describe("removeMember — permissions", () => {
 
     await expect(
       t.mutation(api.members.removeMember, { circleId, memberId: removed.memberId }),
-    ).rejects.toThrow("Member is already removed");
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.memberNotFound),
+    });
   });
 });
 

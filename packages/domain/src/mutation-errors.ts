@@ -60,6 +60,15 @@ const mutationErrors = defineMutationErrorCatalog({
     "invite.alreadyPending",
     "There's already a pending invitation for that email",
   ),
+  inviteInvalid: defineMutationError("invite.invalid", "This invitation is no longer valid."),
+  memberNotFound: defineMutationError(
+    "member.notFound",
+    "This member is no longer part of this Circle.",
+  ),
+  memberCannotRemoveOwner: defineMutationError(
+    "member.cannotRemoveOwner",
+    "The Circle owner can't be removed — transfer ownership first.",
+  ),
   transferForbidden: defineMutationError(
     "transfer.forbidden",
     "Only the Circle owner can transfer ownership",

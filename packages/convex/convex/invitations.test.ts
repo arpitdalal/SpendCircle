@@ -35,7 +35,6 @@ vi.mock("./auth.js", () => ({
 
 const modules = import.meta.glob("./**/*.ts");
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const INVITATION_INVALID = "Invitation invalid";
 
 async function seedPendingInvitation(
   ctx: MutationCtx,
@@ -909,9 +908,11 @@ describe("resendInvitation", () => {
     );
 
     for (const invitationId of [revokedId, expiredId]) {
-      await expect(t.mutation(api.invitations.resendInvitation, { invitationId })).rejects.toThrow(
-        "Invitation not found",
-      );
+      await expect(
+        t.mutation(api.invitations.resendInvitation, { invitationId }),
+      ).rejects.toMatchObject({
+        data: mutationErrorData(MUTATION_ERRORS.inviteInvalid),
+      });
     }
   });
 
@@ -1158,9 +1159,11 @@ describe("revokeInvitation", () => {
     );
 
     for (const invitationId of [revokedId, acceptedId]) {
-      await expect(t.mutation(api.invitations.revokeInvitation, { invitationId })).rejects.toThrow(
-        "Invitation not found",
-      );
+      await expect(
+        t.mutation(api.invitations.revokeInvitation, { invitationId }),
+      ).rejects.toMatchObject({
+        data: mutationErrorData(MUTATION_ERRORS.inviteInvalid),
+      });
     }
   });
 
@@ -1257,6 +1260,23 @@ describe("getInvitationPreview", () => {
     );
     expect(await t.query(api.invitations.getInvitationPreview, { token })).toBeNull();
   });
+
+  it("returns null for an archived Circle", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const token = await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: "ada@example.com",
+        invitedByUserId: owner._id,
+      }),
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.patch(circleId, { status: "archived" });
+    });
+    expect(await t.query(api.invitations.getInvitationPreview, { token })).toBeNull();
+  });
 });
 
 describe("acceptInvitation — happy path", () => {
@@ -1301,9 +1321,9 @@ describe("acceptInvitation — happy path", () => {
     });
 
     mockCurrentUser.mockResolvedValue(ada);
-    await expect(t.mutation(api.invitations.acceptInvitation, { token })).rejects.toThrow(
-      INVITATION_INVALID,
-    );
+    await expect(t.mutation(api.invitations.acceptInvitation, { token })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteInvalid),
+    });
   });
 });
 
@@ -1426,9 +1446,9 @@ describe("acceptInvitation — failures", () => {
 
     mockCurrentUser.mockResolvedValue(caseName === "wrong-email" ? wrong : ada);
 
-    await expect(t.mutation(api.invitations.acceptInvitation, { token })).rejects.toThrow(
-      INVITATION_INVALID,
-    );
+    await expect(t.mutation(api.invitations.acceptInvitation, { token })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteInvalid),
+    });
 
     await t.run(async (ctx) => {
       const membership = await ctx.db
@@ -1451,6 +1471,36 @@ describe("acceptInvitation — failures", () => {
           expect(invite?.status).toBe("pending");
         }
       }
+    });
+  });
+
+  it("rejects accept into an archived Circle with invite.invalid", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    const ada = await t.run((ctx) => makeUser(ctx, "ada@example.com", "Ada"));
+    const token = await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: ada.email,
+        invitedByUserId: owner._id,
+      }),
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.patch(circleId, { status: "archived" });
+    });
+    mockCurrentUser.mockResolvedValue(ada);
+
+    await expect(t.mutation(api.invitations.acceptInvitation, { token })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteInvalid),
+    });
+
+    await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_user", (q) => q.eq("circleId", circleId).eq("userId", ada._id))
+        .unique();
+      expect(membership).toBeNull();
     });
   });
 
