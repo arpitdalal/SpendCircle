@@ -137,6 +137,14 @@ describe("CircleMembers — invite form", () => {
     expect(screen.queryByRole("form", { name: "Invite member" })).not.toBeInTheDocument();
   });
 
+  it("hides the invite form on an archived Circle", () => {
+    setup({
+      circle: makeCircleView({ status: "archived" }),
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+    });
+    expect(screen.queryByRole("form", { name: "Invite member" })).not.toBeInTheDocument();
+  });
+
   it("shows a field error for an invalid email without calling the mutation", async () => {
     const createInvitation = vi.fn();
     const user = userEvent.setup();
@@ -223,6 +231,22 @@ describe("CircleMembers — remove member", () => {
         owner,
         makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
       ],
+    });
+    expect(screen.queryByRole("button", { name: /Remove / })).not.toBeInTheDocument();
+  });
+
+  it("hides Remove buttons on a Personal Circle", () => {
+    setup({
+      circle: makeCircleView({ kind: "personal" }),
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+    });
+    expect(screen.queryByRole("button", { name: /Remove / })).not.toBeInTheDocument();
+  });
+
+  it("hides Remove buttons on an archived Circle", () => {
+    setup({
+      circle: makeCircleView({ status: "archived" }),
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
     });
     expect(screen.queryByRole("button", { name: /Remove / })).not.toBeInTheDocument();
   });

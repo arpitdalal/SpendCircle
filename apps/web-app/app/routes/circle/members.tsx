@@ -29,13 +29,14 @@ export default function CircleMembers() {
   const circle = useCircle();
   const members = useMembers(circle.id);
   const isOwner = members?.some((member) => member.isSelf && member.role === "owner") ?? false;
-  const canInvite = circle.kind === "regular" && isOwner;
+  const canWrite = circle.kind === "regular" && circle.status === "active";
+  const canInvite = canWrite && isOwner;
 
   return (
     <div className="space-y-4">
       <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
       {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
-      <MemberList circleId={circle.id} members={members} isOwner={isOwner} />
+      <MemberList circleId={circle.id} members={members} canRemoveMembers={canWrite && isOwner} />
     </div>
   );
 }
@@ -226,11 +227,11 @@ function RemoveMemberDialog({
 function MemberList({
   circleId,
   members,
-  isOwner,
+  canRemoveMembers,
 }: {
   circleId: Circle["id"];
   members: Member[] | null | undefined;
-  isOwner: boolean;
+  canRemoveMembers: boolean;
 }) {
   const removeMember = useRemoveMember();
   const [removingId, setRemovingId] = useState<Member["id"] | null>(null);
@@ -273,7 +274,10 @@ function MemberList({
       <ul className="space-y-2">
         {members.map((member) => {
           const canRemove =
-            isOwner && member.role !== "owner" && !member.isSelf && member.status === "active";
+            canRemoveMembers &&
+            member.role !== "owner" &&
+            !member.isSelf &&
+            member.status === "active";
 
           return (
             <li

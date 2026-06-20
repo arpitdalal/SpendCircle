@@ -1,38 +1,24 @@
 import { api } from "@spend-circle/convex";
+import { testId } from "~/test/convex/ids.js";
 import { authClient } from "./auth-client.js";
 import { convex } from "./convex.js";
 import type { Circle, Member } from "./data.js";
 import { parseCircleRef } from "./refs.js";
 
-function isConvexId(value: string) {
-  return /^[a-z0-9]+$/i.test(value);
-}
-
-/** Convex Id brands are nominal; URL segments are validated before minting (see `testId`). */
-function brandCircleId(value: string): Circle["id"] {
-  return value as Circle["id"];
-}
-
-/** Convex Id brands are nominal; Playwright passes serialized ids from seed helpers. */
-function brandMemberId(value: string): Member["id"] {
-  return value as Member["id"];
-}
-
-function circleIdFromLocation(): Circle["id"] {
+function circleIdFromLocation() {
   const ref = window.location.pathname.match(/\/circles\/([^/]+)/)?.[1];
   const parsed = parseCircleRef(ref);
-  const id = parsed?.id;
-  if (!id || !isConvexId(id)) {
+  if (!parsed) {
     throw new Error("E2E: not on a Circle route");
   }
-  return brandCircleId(id);
+  return testId<Circle["id"]>(parsed.id);
 }
 
-function memberIdFromString(memberId: string): Member["id"] {
-  if (!isConvexId(memberId)) {
+function memberIdFromString(memberId: string) {
+  if (!/^[a-z0-9]+$/i.test(memberId)) {
     throw new Error("E2E removeMember: invalid member id");
   }
-  return brandMemberId(memberId);
+  return testId<Member["id"]>(memberId);
 }
 
 /**
