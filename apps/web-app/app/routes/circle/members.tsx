@@ -9,13 +9,28 @@ import { Input } from "~/components/ui/input.js";
 import {
   type Circle,
   type Member,
+  type PendingInvitation,
   useCreateInvitation,
   useLeaveCircle,
   useMembers,
+  usePendingInvitations,
+  useResendInvitation,
+  useRevokeInvitation,
 } from "~/lib/data.js";
 import { MOCKS } from "~/lib/env.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function formatExpiresIn(expiresAt: number): string {
+  const ms = expiresAt - Date.now();
+  if (ms <= 0) {
+    return "Expired";
+  }
+  const days = Math.ceil(ms / DAY_MS);
+  return days === 1 ? "Expires in 1 day" : `Expires in ${days} days`;
+}
 
 /**
  * Circle-scoped Member List (CONTEXT: Member List; PRD story 43). Read-only list
@@ -32,6 +47,7 @@ export default function CircleMembers() {
     <div className="space-y-4">
       <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
       {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
+      {canInvite ? <PendingInvitationsList circleId={circle.id} /> : null}
       <MemberList members={members} />
       {circle.kind !== "personal" && isSelfMember ? (
         <LeaveCircle circleId={circle.id} isOwner={isOwner} />
@@ -129,6 +145,196 @@ function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
         {submitting ? "Inviting…" : "Invite member"}
       </Button>
     </form>
+  );
+}
+
+function PendingInvitationsList({ circleId }: { circleId: Circle["id"] }) {
+  const pendingInvitations = usePendingInvitations(circleId);
+  const resendInvitation = useResendInvitation();
+  const revokeInvitation = useRevokeInvitation();
+  const [resendingId, setResendingId] = useState<PendingInvitation["id"] | null>(null);
+  const [revokingId, setRevokingId] = useState<PendingInvitation["id"] | null>(null);
+  const [resendLinkById, setResendLinkById] = useState<
+    Partial<Record<PendingInvitation["id"], string>>
+  >({});
+  const [resendErrorById, setResendErrorById] = useState<
+    Partial<Record<PendingInvitation["id"], string>>
+  >({});
+  const [revokeErrorById, setRevokeErrorById] = useState<
+    Partial<Record<PendingInvitation["id"], string>>
+  >({});
+  const [revokeSuccessById, setRevokeSuccessById] = useState<
+    Partial<Record<PendingInvitation["id"], string>>
+  >({});
+
+  if (pendingInvitations === undefined) {
+    return (
+      <SkeletonRegion label="Loading pending invitations…" testId="pending-invitations-skeleton">
+        <RowsSkeleton rows={2} />
+      </SkeletonRegion>
+    );
+  }
+
+  if (pendingInvitations === null || pendingInvitations.length === 0) {
+    return pendingInvitations === null ? null : (
+      <p className="text-sm text-muted-foreground">No pending invitations.</p>
+    );
+  }
+
+  async function onResend(invitation: PendingInvitation) {
+    if (resendingId != null) {
+      return;
+    }
+    setResendingId(invitation.id);
+    setResendErrorById((prev) => ({ ...prev, [invitation.id]: undefined }));
+    setResendLinkById((prev) => ({ ...prev, [invitation.id]: undefined }));
+    try {
+      const { token } = MOCKS
+        ? { token: "mock-resend-token" }
+        : await resendInvitation({ invitationId: invitation.id });
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      setResendLinkById((prev) => ({
+        ...prev,
+        [invitation.id]: `${origin}/invite/${token}`,
+      }));
+    } catch (caught) {
+      setResendErrorById((prev) => ({
+        ...prev,
+        [invitation.id]: mutationErrorMessageForUser(
+          caught,
+          "Couldn't resend the invitation. Please try again.",
+        ),
+      }));
+    } finally {
+      setResendingId(null);
+    }
+  }
+
+  async function onRevoke(invitation: PendingInvitation) {
+    if (revokingId != null) {
+      return;
+    }
+    setRevokingId(invitation.id);
+    setRevokeErrorById((prev) => ({ ...prev, [invitation.id]: undefined }));
+    setRevokeSuccessById((prev) => ({ ...prev, [invitation.id]: undefined }));
+    try {
+      await revokeInvitation({ invitationId: invitation.id });
+      setRevokeSuccessById((prev) => ({
+        ...prev,
+        [invitation.id]: `Revoked invitation for ${invitation.email}.`,
+      }));
+    } catch (caught) {
+      setRevokeErrorById((prev) => ({
+        ...prev,
+        [invitation.id]: mutationErrorMessageForUser(
+          caught,
+          "Couldn't revoke the invitation. Please try again.",
+        ),
+      }));
+    } finally {
+      setRevokingId(null);
+    }
+  }
+
+  return (
+    <section
+      aria-label="Pending invitations"
+      className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm"
+    >
+      <h3 className="text-sm font-medium">Pending invitations</h3>
+      <ul className="space-y-3">
+        {pendingInvitations.map((invitation) => {
+          const resendLink = resendLinkById[invitation.id];
+          const resendError = resendErrorById[invitation.id];
+          const revokeError = revokeErrorById[invitation.id];
+          const revokeSuccess = revokeSuccessById[invitation.id];
+          const resendBusy = resendingId === invitation.id;
+          const revokeBusy = revokingId === invitation.id;
+
+          return (
+            <li
+              key={invitation.id}
+              className="space-y-2 rounded-lg border border-border/70 bg-background px-3 py-2.5"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="truncate text-sm font-medium">{invitation.email}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatExpiresIn(invitation.expiresAt)}
+                    {invitation.resendCount > 0
+                      ? ` · Resent ${invitation.resendCount} time${invitation.resendCount === 1 ? "" : "s"}`
+                      : null}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={resendBusy || revokeBusy}
+                    onClick={() => void onResend(invitation)}
+                  >
+                    {resendBusy ? "Resending…" : "Resend"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={resendBusy || revokeBusy}
+                    onClick={() => void onRevoke(invitation)}
+                  >
+                    {revokeBusy ? "Revoking…" : "Revoke"}
+                  </Button>
+                </div>
+              </div>
+
+              {resendError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {resendError}
+                </p>
+              ) : null}
+
+              {revokeError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {revokeError}
+                </p>
+              ) : null}
+
+              {revokeSuccess ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {revokeSuccess}
+                </p>
+              ) : null}
+
+              {resendLink ? (
+                <div
+                  role="status"
+                  className="space-y-2 rounded-lg border border-primary/30 bg-primary-soft/40 p-3"
+                >
+                  <p className="text-sm font-medium">New invitation link — share this link:</p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Input
+                      readOnly
+                      value={resendLink}
+                      aria-label="Invitation link"
+                      className="font-mono text-xs"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => void navigator.clipboard.writeText(resendLink)}
+                    >
+                      Copy link
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

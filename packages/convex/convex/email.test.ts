@@ -80,6 +80,7 @@ async function seedPendingInvitation(
       status: "pending" as const,
       invitedByUserId: owner._id,
       resendCount: 0,
+      resendTimestamps: [],
       createdAt: now,
       expiresAt: now + INVITE_TTL_MS,
     });
@@ -563,6 +564,7 @@ describe("sendInvitationEmail", () => {
         status: "pending",
         invitedByUserId: owner._id,
         resendCount: 0,
+        resendTimestamps: [],
         createdAt: now,
         expiresAt: now + INVITE_TTL_MS,
       });

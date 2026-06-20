@@ -3,7 +3,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import type { Circle, Member } from "~/lib/data.js";
+import type { Circle, Member, PendingInvitation } from "~/lib/data.js";
+import { MOCK_PENDING_INVITATIONS } from "~/lib/fixtures.js";
 import {
   configureConvex,
   makeCircleView,
@@ -33,6 +34,9 @@ function setup(
   opts: {
     members?: Member[] | null;
     createInvitation?: Mock;
+    pendingInvitations?: PendingInvitation[] | null;
+    resendInvitation?: Mock;
+    revokeInvitation?: Mock;
     leaveCircle?: Mock;
     circle?: Circle;
   } = {},
@@ -40,6 +44,9 @@ function setup(
   configureConvex({
     members: opts.members,
     createInvitation: opts.createInvitation,
+    pendingInvitations: "pendingInvitations" in opts ? opts.pendingInvitations : [],
+    resendInvitation: opts.resendInvitation,
+    revokeInvitation: opts.revokeInvitation,
     leaveCircle: opts.leaveCircle,
   });
   return renderInCircle(opts.circle ?? makeCircleView(), <CircleMembers />);
@@ -207,6 +214,139 @@ describe("CircleMembers — invite form", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       MUTATION_ERRORS.inviteAlreadyPending.message,
+    );
+  });
+});
+
+describe("CircleMembers — pending invitations", () => {
+  const ownerSelf = makeMemberView({
+    displayName: "Olive Owner",
+    role: "owner",
+    isSelf: true,
+  });
+  const mockPendingInvite = MOCK_PENDING_INVITATIONS[0];
+  if (!mockPendingInvite) {
+    throw new Error("MOCK_PENDING_INVITATIONS must include at least one row");
+  }
+
+  it("shows pending invitations for the Owner", () => {
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: MOCK_PENDING_INVITATIONS,
+    });
+    expect(screen.getByRole("region", { name: "Pending invitations" })).toBeInTheDocument();
+    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText("bob@example.com")).toBeInTheDocument();
+  });
+
+  it("hides pending invitations for a non-owner Member", () => {
+    setup({
+      members: [owner, makeMemberView({ ...maya, isSelf: true, role: "member" })],
+      pendingInvitations: MOCK_PENDING_INVITATIONS,
+    });
+    expect(screen.queryByRole("region", { name: "Pending invitations" })).not.toBeInTheDocument();
+  });
+
+  it("renders a skeleton while pending invitations load", () => {
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: undefined,
+    });
+    const skeleton = screen.getByTestId("pending-invitations-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("renders gracefully when there are no pending invitations", () => {
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [],
+    });
+    expect(screen.getByText(/no pending invitations/i)).toBeInTheDocument();
+  });
+
+  it("calls resend and shows a copyable link on success", async () => {
+    const resendInvitation = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ token: "resend-token-xyz" }), 50);
+        }),
+    );
+    const user = userEvent.setup();
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [mockPendingInvite],
+      resendInvitation,
+    });
+
+    const resend = screen.getByRole("button", { name: "Resend" });
+    await user.click(resend);
+
+    expect(resend).toBeDisabled();
+    expect(resend).toHaveTextContent("Resending…");
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/new invitation link/i);
+    expect(screen.getByLabelText("Invitation link")).toHaveValue(
+      `${window.location.origin}/invite/resend-token-xyz`,
+    );
+    expect(resendInvitation).toHaveBeenCalledWith({
+      invitationId: mockPendingInvite.id,
+    });
+  });
+
+  it("calls revoke and shows a confirmation status", async () => {
+    const revokeInvitation = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [mockPendingInvite],
+      revokeInvitation,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /revoked invitation for ada@example.com/i,
+    );
+    expect(revokeInvitation).toHaveBeenCalledWith({
+      invitationId: mockPendingInvite.id,
+    });
+  });
+
+  it("maps invite.resendCapReached to shared user copy", async () => {
+    const resendInvitation = vi
+      .fn()
+      .mockRejectedValue(
+        new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteResendCapReached)),
+      );
+    const user = userEvent.setup();
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [mockPendingInvite],
+      resendInvitation,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.inviteResendCapReached.message,
+    );
+  });
+
+  it("maps invite.dailyCapReached to shared user copy", async () => {
+    const resendInvitation = vi
+      .fn()
+      .mockRejectedValue(new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteDailyCapReached)));
+    const user = userEvent.setup();
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: [mockPendingInvite],
+      resendInvitation,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Resend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.inviteDailyCapReached.message,
     );
   });
 });

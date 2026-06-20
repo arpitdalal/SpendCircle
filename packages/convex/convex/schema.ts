@@ -211,12 +211,15 @@ export default defineSchema({
     ),
     invitedByUserId: v.id("users"),
     resendCount: v.number(),
+    // Epoch-ms of each resend within rolling windows; enforces ≤3 resends/day per email.
+    resendTimestamps: v.array(v.number()),
     createdAt: v.number(),
     expiresAt: v.number(),
   })
     .index("by_circle", ["circleId"])
     .index("by_circle_and_email", ["circleId", "emailLower"])
-    .index("by_token_hash", ["tokenHash"]),
+    .index("by_token_hash", ["tokenHash"])
+    .index("by_invitedByUserId", ["invitedByUserId"]),
 
   notifications: defineTable({
     userId: v.id("users"),
