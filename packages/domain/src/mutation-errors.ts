@@ -90,6 +90,10 @@ const mutationErrors = defineMutationErrorCatalog({
     "invite.resendCapReached",
     "This invitation has been resent too many times today. Try again tomorrow.",
   ),
+  inviteAddressCapReached: defineMutationError(
+    "invite.addressCapReached",
+    "Too many invitations have been sent to this email today. Try again tomorrow.",
+  ),
   inviteDailyCapReached: defineMutationError(
     "invite.dailyCapReached",
     "You've sent too many invitation emails today. Try again tomorrow.",

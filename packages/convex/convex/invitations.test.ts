@@ -17,6 +17,7 @@ import {
   seedCircle,
   seedFixture,
   seedInvitation,
+  seedInvitationEmailEvent,
   seedPersonalCircleOwner,
   seedTransaction,
 } from "./test/seed.js";
@@ -543,9 +544,12 @@ describe("createInvitation — daily cap", () => {
     const now = Date.now();
     await t.run(async (ctx) => {
       for (let i = 0; i < 100; i++) {
-        await seedInvitation(ctx, circleId, owner._id, {
-          email: `cap-${i}@example.com`,
-          createdAt: now - 1000,
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: `cap-${i}@example.com`,
+          kind: "create",
+          sentAt: now - 1000,
         });
       }
     });
@@ -554,6 +558,111 @@ describe("createInvitation — daily cap", () => {
       t.mutation(api.invitations.createInvitation, { circleId, email: "one-more@example.com" }),
     ).rejects.toMatchObject({
       data: mutationErrorData(MUTATION_ERRORS.inviteDailyCapReached),
+    });
+  });
+
+  it("fires the daily cap even when the sender has many lifetime invitation events outside the window", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 150; i++) {
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: `old-${i}@example.com`,
+          kind: "create",
+          sentAt: now - INVITE_TTL_MS,
+        });
+      }
+      for (let i = 0; i < 100; i++) {
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: `recent-${i}@example.com`,
+          kind: "create",
+          sentAt: now - 1000,
+        });
+      }
+    });
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "one-more@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteDailyCapReached),
+    });
+  });
+
+  it("counts email events (creates and resends), not invitation rows", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await seedInvitationEmailEvent(ctx, {
+        invitedByUserId: owner._id,
+        circleId,
+        emailLower: "ada@example.com",
+        kind: "create",
+        sentAt: now - 4000,
+      });
+      for (let i = 0; i < 3; i++) {
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: "ada@example.com",
+          kind: "resend",
+          sentAt: now - 3000 + i,
+        });
+      }
+      for (let i = 0; i < 96; i++) {
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: `other-${i}@example.com`,
+          kind: "create",
+          sentAt: now - 1000,
+        });
+      }
+    });
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "one-more@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteDailyCapReached),
+    });
+  });
+});
+
+describe("createInvitation — per-address create cap", () => {
+  it("rejects a third create to the same email within 24 h", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 2; i++) {
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: "a@x.com",
+          kind: "create",
+          sentAt: now - 1000 - i,
+        });
+      }
+    });
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "a@x.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteAddressCapReached),
     });
   });
 });
@@ -942,7 +1051,48 @@ describe("resendInvitation", () => {
     const inviteId = await t.run((ctx) =>
       seedInvitation(ctx, circleId, owner._id, {
         email: "ada@example.com",
-        resendTimestamps: [now - 1000, now - 2000, now - 3000],
+      }),
+    );
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 3; i++) {
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: "ada@example.com",
+          kind: "resend",
+          sentAt: now - 1000 - i,
+        });
+      }
+    });
+
+    await expect(
+      t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteResendCapReached),
+    });
+  });
+
+  it("resend cap survives revoke and recreate for the same email", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 3; i++) {
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: "a@x.com",
+          kind: "resend",
+          sentAt: now - 1000 - i,
+        });
+      }
+    });
+    const inviteId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, {
+        email: "a@x.com",
       }),
     );
 
@@ -963,14 +1113,24 @@ describe("resendInvitation", () => {
     const inviteId = await t.run((ctx) =>
       seedInvitation(ctx, circleId, owner._id, {
         email: "ada@example.com",
-        resendTimestamps: [now - INVITE_TTL_MS, now - INVITE_TTL_MS - 1, now - INVITE_TTL_MS - 2],
       }),
     );
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 3; i++) {
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: "ada@example.com",
+          kind: "resend",
+          sentAt: now - INVITE_TTL_MS - i,
+        });
+      }
+    });
 
     await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
   });
 
-  it("counts only in-window resend timestamps toward the cap", async () => {
+  it("counts only in-window resend events toward the cap", async () => {
     const t = createTestConvex();
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
     await t.run((ctx) => completeSetup(ctx, circleId));
@@ -980,9 +1140,31 @@ describe("resendInvitation", () => {
     const inviteId = await t.run((ctx) =>
       seedInvitation(ctx, circleId, owner._id, {
         email: "ada@example.com",
-        resendTimestamps: [now - 1000, now - 2000, now - INVITE_TTL_MS],
       }),
     );
+    await t.run(async (ctx) => {
+      await seedInvitationEmailEvent(ctx, {
+        invitedByUserId: owner._id,
+        circleId,
+        emailLower: "ada@example.com",
+        kind: "resend",
+        sentAt: now - 1000,
+      });
+      await seedInvitationEmailEvent(ctx, {
+        invitedByUserId: owner._id,
+        circleId,
+        emailLower: "ada@example.com",
+        kind: "resend",
+        sentAt: now - 2000,
+      });
+      await seedInvitationEmailEvent(ctx, {
+        invitedByUserId: owner._id,
+        circleId,
+        emailLower: "ada@example.com",
+        kind: "resend",
+        sentAt: now - INVITE_TTL_MS,
+      });
+    });
 
     await t.mutation(api.invitations.resendInvitation, { invitationId: inviteId });
   });
@@ -1015,9 +1197,12 @@ describe("resendInvitation", () => {
     const now = Date.now();
     await t.run(async (ctx) => {
       for (let i = 0; i < 100; i++) {
-        await seedInvitation(ctx, circleId, owner._id, {
-          email: `daily-${i}@example.com`,
-          createdAt: now - 1000,
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: `daily-${i}@example.com`,
+          kind: "create",
+          sentAt: now - 1000,
         });
       }
     });
@@ -1045,14 +1230,20 @@ describe("resendInvitation", () => {
     const now = Date.now();
     await t.run(async (ctx) => {
       for (let i = 0; i < 99; i++) {
-        await seedInvitation(ctx, circleId, owner._id, {
-          email: `daily-${i}@example.com`,
-          createdAt: now - 1000,
+        await seedInvitationEmailEvent(ctx, {
+          invitedByUserId: owner._id,
+          circleId,
+          emailLower: `daily-${i}@example.com`,
+          kind: "create",
+          sentAt: now - 1000,
         });
       }
-      await seedInvitation(ctx, circleId, owner._id, {
-        email: "old@example.com",
-        createdAt: now - INVITE_TTL_MS,
+      await seedInvitationEmailEvent(ctx, {
+        invitedByUserId: owner._id,
+        circleId,
+        emailLower: "old@example.com",
+        kind: "create",
+        sentAt: now - INVITE_TTL_MS,
       });
     });
 

@@ -14,36 +14,70 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAILY_INVITATION_EMAIL_CAP = 100;
 const PER_EMAIL_RESEND_CAP = 3;
+const PER_EMAIL_CREATE_CAP = 2;
 
-function countRecentInvitationEmails(
-  invitations: Doc<"invitations">[],
-  userId: Id<"users">,
-  now: number,
-): number {
+async function assertUnderDailyInvitationCap(ctx: MutationCtx, userId: Id<"users">, now: number) {
   const windowStart = now - DAY_MS;
-  let count = 0;
-  for (const invitation of invitations) {
-    if (invitation.invitedByUserId !== userId) continue;
-    if (invitation.createdAt > windowStart) count++;
-    for (const ts of invitation.resendTimestamps ?? []) {
-      if (ts > windowStart) count++;
-    }
-  }
-  return count;
-}
-
-async function assertUnderDailyInvitationCap(
-  ctx: MutationCtx,
-  userId: Id<"users">,
-  now: number,
-): Promise<void> {
-  const recentByUser = await ctx.db
-    .query("invitations")
-    .withIndex("by_invitedByUserId", (q) => q.eq("invitedByUserId", userId))
-    .take(DAILY_INVITATION_EMAIL_CAP + 1);
-  if (countRecentInvitationEmails(recentByUser, userId, now) >= DAILY_INVITATION_EMAIL_CAP) {
+  const recent = await ctx.db
+    .query("invitationEmailEvents")
+    .withIndex("by_user_and_sentAt", (q) =>
+      q.eq("invitedByUserId", userId).gt("sentAt", windowStart),
+    )
+    .take(DAILY_INVITATION_EMAIL_CAP);
+  if (recent.length >= DAILY_INVITATION_EMAIL_CAP) {
     throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteDailyCapReached));
   }
+}
+
+async function assertUnderCreateAddressCap(
+  ctx: MutationCtx,
+  circleId: Id<"circles">,
+  emailLower: string,
+  now: number,
+) {
+  const windowStart = now - DAY_MS;
+  const events = await ctx.db
+    .query("invitationEmailEvents")
+    .withIndex("by_circle_email_and_sentAt", (q) =>
+      q.eq("circleId", circleId).eq("emailLower", emailLower).gt("sentAt", windowStart),
+    )
+    .collect();
+  const createCount = events.filter((event) => event.kind === "create").length;
+  if (createCount >= PER_EMAIL_CREATE_CAP) {
+    throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteAddressCapReached));
+  }
+}
+
+async function assertUnderResendAddressCap(
+  ctx: MutationCtx,
+  circleId: Id<"circles">,
+  emailLower: string,
+  now: number,
+) {
+  const windowStart = now - DAY_MS;
+  const events = await ctx.db
+    .query("invitationEmailEvents")
+    .withIndex("by_circle_email_and_sentAt", (q) =>
+      q.eq("circleId", circleId).eq("emailLower", emailLower).gt("sentAt", windowStart),
+    )
+    .collect();
+  const resendCount = events.filter((event) => event.kind === "resend").length;
+  if (resendCount >= PER_EMAIL_RESEND_CAP) {
+    throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteResendCapReached));
+  }
+}
+
+async function recordEmailSend(
+  ctx: MutationCtx,
+  args: {
+    invitedByUserId: Id<"users">;
+    circleId: Id<"circles">;
+    emailLower: string;
+    kind: "create" | "resend";
+    sentAt: number;
+  },
+) {
+  await ctx.db.insert("invitationEmailEvents", args);
 }
 
 /** Creates a hashed, 7-day Invitation for a regular Circle (MEM-2) and enqueues email delivery (EML-2). */
@@ -102,6 +136,7 @@ export const createInvitation = mutation({
     }
 
     await assertUnderDailyInvitationCap(ctx, access.user._id, now);
+    await assertUnderCreateAddressCap(ctx, args.circleId, email, now);
 
     const token = generateInvitationToken();
     const tokenHash = await hashInvitationToken(token);
@@ -134,6 +169,14 @@ export const createInvitation = mutation({
         context: { invitationId },
       },
     );
+
+    await recordEmailSend(ctx, {
+      invitedByUserId: access.user._id,
+      circleId: args.circleId,
+      emailLower: email,
+      kind: "create",
+      sentAt: now,
+    });
   },
 });
 
@@ -333,11 +376,7 @@ export const resendInvitation = mutation({
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteSetupIncomplete));
     }
 
-    const recentResends = (invitation.resendTimestamps ?? []).filter((ts) => ts > now - DAY_MS);
-    if (recentResends.length >= PER_EMAIL_RESEND_CAP) {
-      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteResendCapReached));
-    }
-
+    await assertUnderResendAddressCap(ctx, invitation.circleId, invitation.emailLower, now);
     await assertUnderDailyInvitationCap(ctx, access.user._id, now);
 
     const token = generateInvitationToken();
@@ -365,6 +404,14 @@ export const resendInvitation = mutation({
         context: { invitationId: args.invitationId },
       },
     );
+
+    await recordEmailSend(ctx, {
+      invitedByUserId: access.user._id,
+      circleId: invitation.circleId,
+      emailLower: invitation.emailLower,
+      kind: "resend",
+      sentAt: now,
+    });
   },
 });
 

@@ -257,6 +257,20 @@ export async function seedTransaction(
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Inserts an invitation email send event for rate-limit tests (ADR 0026). */
+export async function seedInvitationEmailEvent(
+  ctx: MutationCtx,
+  args: {
+    invitedByUserId: Id<"users">;
+    circleId: Id<"circles">;
+    emailLower: string;
+    kind: "create" | "resend";
+    sentAt: number;
+  },
+) {
+  return await ctx.db.insert("invitationEmailEvents", args);
+}
+
 /** Inserts an invitation row directly for tests that need arbitrary states. */
 export async function seedInvitation(
   ctx: MutationCtx,

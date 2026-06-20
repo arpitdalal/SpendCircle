@@ -218,8 +218,18 @@ export default defineSchema({
   })
     .index("by_circle", ["circleId"])
     .index("by_circle_and_email", ["circleId", "emailLower"])
-    .index("by_token_hash", ["tokenHash"])
-    .index("by_invitedByUserId", ["invitedByUserId"]),
+    .index("by_token_hash", ["tokenHash"]),
+
+  // Append-only send log for invitation rate limits (ADR 0026).
+  invitationEmailEvents: defineTable({
+    invitedByUserId: v.id("users"),
+    circleId: v.id("circles"),
+    emailLower: v.string(),
+    kind: v.union(v.literal("create"), v.literal("resend")),
+    sentAt: v.number(),
+  })
+    .index("by_user_and_sentAt", ["invitedByUserId", "sentAt"])
+    .index("by_circle_email_and_sentAt", ["circleId", "emailLower", "sentAt"]),
 
   // E2E-only (ADR 0019): last emailed invitation token per Circle+email so Playwright
   // can drive accept flows after EML-2 stopped returning plaintext tokens to clients.
