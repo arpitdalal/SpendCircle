@@ -1,6 +1,39 @@
 import { api } from "@spend-circle/convex";
 import { authClient } from "./auth-client.js";
 import { convex } from "./convex.js";
+import type { Circle, Member } from "./data.js";
+import { parseCircleRef } from "./refs.js";
+
+function isConvexId(value: string) {
+  return /^[a-z0-9]+$/i.test(value);
+}
+
+/** Convex Id brands are nominal; URL segments are validated before minting (see `testId`). */
+function brandCircleId(value: string): Circle["id"] {
+  return value as Circle["id"];
+}
+
+/** Convex Id brands are nominal; Playwright passes serialized ids from seed helpers. */
+function brandMemberId(value: string): Member["id"] {
+  return value as Member["id"];
+}
+
+function circleIdFromLocation(): Circle["id"] {
+  const ref = window.location.pathname.match(/\/circles\/([^/]+)/)?.[1];
+  const parsed = parseCircleRef(ref);
+  const id = parsed?.id;
+  if (!id || !isConvexId(id)) {
+    throw new Error("E2E: not on a Circle route");
+  }
+  return brandCircleId(id);
+}
+
+function memberIdFromString(memberId: string): Member["id"] {
+  if (!isConvexId(memberId)) {
+    throw new Error("E2E removeMember: invalid member id");
+  }
+  return brandMemberId(memberId);
+}
 
 /**
  * E2E-only test-auth helper (ADR 0019). Exposes a tiny `window.__scE2E` so the
@@ -43,6 +76,23 @@ export function installE2EAuthHelper(): void {
           }
         }
         throw new Error("E2E sign-in: onboarding completion timed out");
+      },
+
+      /** Seeds an active Member on the current Circle route (MEM-5 E2E until MEM-3). */
+      async seedActiveMember(email: string, displayName: string) {
+        return convex.mutation(api.e2e.seedActiveMember, {
+          circleId: circleIdFromLocation(),
+          email,
+          displayName,
+        });
+      },
+
+      /** Calls removeMember for the current Circle route (permission probes). */
+      async removeMember(memberId: string) {
+        return convex.mutation(api.members.removeMember, {
+          circleId: circleIdFromLocation(),
+          memberId: memberIdFromString(memberId),
+        });
       },
     },
   });

@@ -60,6 +60,10 @@ const mutationErrors = defineMutationErrorCatalog({
     "invite.alreadyPending",
     "There's already a pending invitation for that email",
   ),
+  memberRemoveForbidden: defineMutationError(
+    "member.removeForbidden",
+    "Only the Circle owner can remove members",
+  ),
 });
 
 export const MUTATION_ERRORS = mutationErrors.errors;

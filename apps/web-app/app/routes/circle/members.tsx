@@ -1,13 +1,23 @@
+import { Dialog } from "@base-ui/react/dialog";
 import { inviteEmailSchema } from "@spend-circle/domain";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useId, useState } from "react";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Avatar } from "~/components/ui/avatar.js";
 import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field.js";
 import { Input } from "~/components/ui/input.js";
-import { type Circle, type Member, useCreateInvitation, useMembers } from "~/lib/data.js";
+import { mobileSheetBackdropClassName } from "~/components/ui/mobile-sheet-primitives.js";
+import {
+  type Circle,
+  type Member,
+  useCreateInvitation,
+  useMembers,
+  useRemoveMember,
+} from "~/lib/data.js";
 import { MOCKS } from "~/lib/env.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
+import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
 /**
@@ -25,7 +35,7 @@ export default function CircleMembers() {
     <div className="space-y-4">
       <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
       {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
-      <MemberList members={members} />
+      <MemberList circleId={circle.id} members={members} isOwner={isOwner} />
     </div>
   );
 }
@@ -144,7 +154,109 @@ function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
   );
 }
 
-function MemberList({ members }: { members: Member[] | null | undefined }) {
+function RemoveMemberDialog({
+  open,
+  onOpenChange,
+  memberName,
+  onConfirm,
+  confirming,
+  error,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  memberName: string;
+  onConfirm: () => void;
+  confirming: boolean;
+  error: string | null;
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={mobileSheetBackdropClassName} />
+        <Dialog.Popup
+          role="alertdialog"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          className={cn(
+            "fixed top-1/2 left-1/2 z-50 w-[min(100%-2rem,24rem)] -translate-x-1/2 -translate-y-1/2",
+            "space-y-4 rounded-xl border border-border bg-card p-5 shadow-xl outline-none",
+            "data-open:animate-fade-in",
+          )}
+        >
+          <Dialog.Title id={titleId} className="font-display text-lg font-semibold tracking-tight">
+            Remove member?
+          </Dialog.Title>
+          <Dialog.Description id={descriptionId} className="text-sm text-muted-foreground">
+            {memberName} will lose access to this Circle. Their past Transactions stay visible with
+            the name and photo shown now.
+          </Dialog.Description>
+
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Dialog.Close
+              type="button"
+              disabled={confirming}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Cancel
+            </Dialog.Close>
+            <Button
+              type="button"
+              disabled={confirming}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onConfirm}
+            >
+              {confirming ? "Removing…" : "Remove member"}
+            </Button>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function MemberList({
+  circleId,
+  members,
+  isOwner,
+}: {
+  circleId: Circle["id"];
+  members: Member[] | null | undefined;
+  isOwner: boolean;
+}) {
+  const removeMember = useRemoveMember();
+  const [removingId, setRemovingId] = useState<Member["id"] | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+
+  const removingMember = members?.find((member) => member.id === removingId);
+
+  async function handleRemoveConfirm() {
+    if (!removingId) {
+      return;
+    }
+    setRemoving(true);
+    setRemoveError(null);
+    try {
+      await removeMember({ circleId, memberId: removingId });
+      setRemovingId(null);
+    } catch (caught) {
+      setRemoveError(
+        mutationErrorMessageForUser(caught, "Couldn't remove the member. Please try again."),
+      );
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   if (members === undefined) {
     return (
       <SkeletonRegion label="Loading members…" testId="members-skeleton">
@@ -152,37 +264,66 @@ function MemberList({ members }: { members: Member[] | null | undefined }) {
       </SkeletonRegion>
     );
   }
-  // null ≡ inaccessible Circle (ADR 0016); the Circle guard already gated entry, so
-  // a late null means there's nothing to show. An empty list can't normally happen
-  // (every Circle keeps its Owner) — fall through to the same message defensively.
   if (members === null || members.length === 0) {
     return <p className="text-sm text-muted-foreground">Members are unavailable.</p>;
   }
 
   return (
-    <ul className="space-y-2">
-      {members.map((member) => (
-        <li
-          key={member.id}
-          className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
-        >
-          <Avatar name={member.displayName} image={member.image} />
-          {/* Name + (You) form one flex-1 cluster: the name truncates so a long
-              Google display name can't push the Owner badge off a narrow row,
-              while (You) stays pinned beside it. */}
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="truncate text-sm font-medium">{member.displayName}</span>
-            {member.isSelf ? (
-              <span className="shrink-0 text-xs text-muted-foreground">(You)</span>
-            ) : null}
-          </span>
-          {member.role === "owner" ? (
-            <span className="shrink-0 rounded-full border border-primary/40 bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-foreground">
-              Owner
-            </span>
-          ) : null}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-2">
+        {members.map((member) => {
+          const canRemove =
+            isOwner && member.role !== "owner" && !member.isSelf && member.status === "active";
+
+          return (
+            <li
+              key={member.id}
+              className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
+            >
+              <Avatar name={member.displayName} image={member.image} />
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="truncate text-sm font-medium">{member.displayName}</span>
+                {member.isSelf ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">(You)</span>
+                ) : null}
+              </span>
+              {member.role === "owner" ? (
+                <span className="shrink-0 rounded-full border border-primary/40 bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-foreground">
+                  Owner
+                </span>
+              ) : null}
+              {canRemove ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 shrink-0 px-3"
+                  aria-label={`Remove ${member.displayName}`}
+                  onClick={() => {
+                    setRemoveError(null);
+                    setRemovingId(member.id);
+                  }}
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+
+      <RemoveMemberDialog
+        open={removingId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRemovingId(null);
+            setRemoveError(null);
+          }
+        }}
+        memberName={removingMember?.displayName ?? ""}
+        onConfirm={() => void handleRemoveConfirm()}
+        confirming={removing}
+        error={removeError}
+      />
+    </>
   );
 }
