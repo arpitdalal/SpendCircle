@@ -1,5 +1,5 @@
 import { api } from "@spend-circle/convex";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "../env.js";
 import { MOCK_MEMBERS } from "../fixtures.js";
@@ -22,4 +22,8 @@ export type Member = NonNullable<FunctionReturnType<typeof api.members.listMembe
 export function useMembers(circleId: Circle["id"]): Member[] | null | undefined {
   const queried = useQuery(api.members.listMembers, MOCKS ? "skip" : { circleId });
   return MOCKS ? MOCK_MEMBERS : queried;
+}
+
+export function useTransferOwnership() {
+  return useMutation(api.members.transferOwnership);
 }

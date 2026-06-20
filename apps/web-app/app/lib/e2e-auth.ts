@@ -1,6 +1,23 @@
 import { api } from "@spend-circle/convex";
 import { authClient } from "./auth-client.js";
 import { convex } from "./convex.js";
+import type { Circle } from "./data.js";
+import { parseCircleRef } from "./refs.js";
+
+function isConvexId(value: string) {
+  return /^[a-z0-9]+$/i.test(value);
+}
+
+function circleIdFromLocation(): Circle["id"] {
+  const ref = window.location.pathname.match(/\/circles\/([^/]+)/)?.[1];
+  const parsed = parseCircleRef(ref);
+  const id = parsed?.id;
+  if (!id || !isConvexId(id)) {
+    throw new Error("E2E: not on a Circle route");
+  }
+  // Nominal Id brand — validated URL segment; same boundary as mock fixtures.
+  return id as Circle["id"];
+}
 
 /**
  * E2E-only test-auth helper (ADR 0019). Exposes a tiny `window.__scE2E` so the
@@ -43,6 +60,15 @@ export function installE2EAuthHelper(): void {
           }
         }
         throw new Error("E2E sign-in: onboarding completion timed out");
+      },
+
+      /** Seeds an active Member on the current Circle route (MEM-7 E2E until MEM-3). */
+      async seedActiveMember(email: string, displayName: string) {
+        return convex.mutation(api.e2e.seedActiveMember, {
+          circleId: circleIdFromLocation(),
+          email,
+          displayName,
+        });
       },
     },
   });

@@ -23,8 +23,19 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 
 import CircleMembers from "./members.js";
 
-function setup(opts: { members?: Member[] | null; createInvitation?: Mock; circle?: Circle } = {}) {
-  configureConvex({ members: opts.members, createInvitation: opts.createInvitation });
+function setup(
+  opts: {
+    members?: Member[] | null;
+    createInvitation?: Mock;
+    transferOwnership?: Mock;
+    circle?: Circle;
+  } = {},
+) {
+  configureConvex({
+    members: opts.members,
+    createInvitation: opts.createInvitation,
+    transferOwnership: opts.transferOwnership,
+  });
   return renderInCircle(opts.circle ?? makeCircleView(), <CircleMembers />);
 }
 
@@ -187,5 +198,145 @@ describe("CircleMembers — invite form", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       MUTATION_ERRORS.inviteAlreadyPending.message,
     );
+  });
+});
+
+function pickTransferTarget(user: ReturnType<typeof userEvent.setup>, targetName: string) {
+  return (async () => {
+    const form = screen.getByRole("region", { name: "Transfer ownership" });
+    await user.click(within(form).getByRole("combobox", { name: "Transfer to member" }));
+    await user.click(await screen.findByRole("option", { name: targetName }));
+  })();
+}
+
+describe("CircleMembers — transfer ownership", () => {
+  it("renders the transfer form for an owner on a regular circle with another member", () => {
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+    });
+    expect(screen.getByRole("region", { name: "Transfer ownership" })).toBeInTheDocument();
+  });
+
+  it("hides the transfer form when the owner is solo", () => {
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+    });
+    expect(screen.queryByRole("region", { name: "Transfer ownership" })).not.toBeInTheDocument();
+  });
+
+  it("hides the transfer form for a non-owner member", () => {
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+    });
+    expect(screen.queryByRole("region", { name: "Transfer ownership" })).not.toBeInTheDocument();
+  });
+
+  it("hides the transfer form on a Personal Circle", () => {
+    setup({
+      circle: makeCircleView({ kind: "personal" }),
+      members: [makeMemberView({ displayName: "You", role: "owner", isSelf: true })],
+    });
+    expect(screen.queryByRole("region", { name: "Transfer ownership" })).not.toBeInTheDocument();
+  });
+
+  it("shows a confirm section after picking a target", async () => {
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+    });
+
+    await pickTransferTarget(user, "Maya Member");
+
+    expect(screen.getByText("Transfer ownership to Maya Member?")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Confirm transfer ownership to Maya Member" }),
+    ).toBeInTheDocument();
+  });
+
+  it("clears the selection on Cancel without calling the mutation", async () => {
+    const transferOwnership = vi.fn();
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+      transferOwnership,
+    });
+
+    await pickTransferTarget(user, "Maya Member");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByText("Transfer ownership to Maya Member?")).not.toBeInTheDocument();
+    expect(transferOwnership).not.toHaveBeenCalled();
+  });
+
+  it("calls transferOwnership with correct args and disables Confirm while in-flight", async () => {
+    const transferOwnership = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(resolve, 50);
+        }),
+    );
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+      transferOwnership,
+    });
+
+    await pickTransferTarget(user, "Maya Member");
+    const confirm = screen.getByRole("button", {
+      name: "Confirm transfer ownership to Maya Member",
+    });
+    await user.click(confirm);
+
+    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveTextContent("Transferring…");
+    expect(transferOwnership).toHaveBeenCalledWith({
+      circleId: makeCircleView().id,
+      toMemberId: maya.id,
+    });
+  });
+
+  it("shows a success message and clears the form on success", async () => {
+    const transferOwnership = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+      transferOwnership,
+    });
+
+    await pickTransferTarget(user, "Maya Member");
+    await user.click(
+      screen.getByRole("button", { name: "Confirm transfer ownership to Maya Member" }),
+    );
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Ownership transferred to Maya Member.",
+    );
+    expect(screen.queryByText("Transfer ownership to Maya Member?")).not.toBeInTheDocument();
+  });
+
+  it("maps a coded mutation error to shared user copy", async () => {
+    const transferOwnership = vi
+      .fn()
+      .mockRejectedValue(
+        new ConvexError(mutationErrorData(MUTATION_ERRORS.transferTargetNotMember)),
+      );
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+      transferOwnership,
+    });
+
+    await pickTransferTarget(user, "Maya Member");
+    await user.click(
+      screen.getByRole("button", { name: "Confirm transfer ownership to Maya Member" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.transferTargetNotMember.message,
+    );
+    expect(transferOwnership).toHaveBeenCalledTimes(1);
   });
 });

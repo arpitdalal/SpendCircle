@@ -1,9 +1,10 @@
+import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api.js";
-import type { Doc, Id } from "./_generated/dataModel.js";
-import type { MutationCtx } from "./_generated/server.js";
+import { circleEntity, listEntityHistory } from "./history.js";
 import schema from "./schema.js";
+import { addMember, makeUser, seedCircle } from "./test/seed.js";
 
 // listMembers resolves access through guard.ts, which folds in
 // `getCurrentUserOrNull` — backed by Better Auth and unrunnable under
@@ -25,78 +26,6 @@ const modules = import.meta.glob("./**/*.ts");
 beforeEach(() => {
   mockCurrentUser.mockReset();
 });
-
-async function makeUser(
-  ctx: MutationCtx,
-  email: string,
-  displayName: string,
-): Promise<Doc<"users">> {
-  const now = Date.now();
-  const userId = await ctx.db.insert("users", {
-    email,
-    displayName,
-    acceptedTermsVersion: "2026-05-01",
-    acceptedPrivacyVersion: "2026-05-01",
-    acceptedAt: now,
-    analyticsOptOut: false,
-    onboardingCompletedAt: now,
-    createdAt: now,
-  });
-  const user = await ctx.db.get(userId);
-  if (!user) {
-    throw new Error("seed failed");
-  }
-  return user;
-}
-
-async function seedCircle(
-  ctx: MutationCtx,
-  opts: { kind?: "personal" | "regular" } = {},
-): Promise<{ owner: Doc<"users">; circleId: Id<"circles"> }> {
-  const now = Date.now();
-  const owner = await makeUser(ctx, "owner@example.com", "Olive Owner");
-  const circleId = await ctx.db.insert("circles", {
-    name: "Trip",
-    kind: opts.kind ?? "regular",
-    currency: "USD",
-    color: "blue",
-    mark: "T",
-    ownerUserId: owner._id,
-    status: "active",
-    setupCompletedAt: now,
-    currencyLocked: false,
-    createdAt: now,
-  });
-  await ctx.db.insert("members", {
-    circleId,
-    userId: owner._id,
-    role: "owner",
-    status: "active",
-    displayName: owner.displayName,
-    joinedAt: now,
-  });
-  return { owner, circleId };
-}
-
-async function addMember(
-  ctx: MutationCtx,
-  circleId: Id<"circles">,
-  email: string,
-  displayName: string,
-  status: "active" | "removed" = "active",
-): Promise<Doc<"users">> {
-  const user = await makeUser(ctx, email, displayName);
-  await ctx.db.insert("members", {
-    circleId,
-    userId: user._id,
-    role: "member",
-    status,
-    displayName,
-    joinedAt: Date.now() + 1, // join after the owner for stable ordering
-    ...(status === "removed" ? { removedAt: Date.now() } : {}),
-  });
-  return user;
-}
 
 describe("listMembers — access", () => {
   it("allows an active Member", async () => {
@@ -133,10 +62,8 @@ describe("listMembers — content", () => {
     const members = await t.query(api.members.listMembers, { circleId });
     expect(members?.map((m) => m.displayName)).toEqual(["Olive Owner", "Maya Member"]);
     expect(members?.[0]?.role).toBe("owner");
-    // The caller (the owner here) is flagged self; the other Member is not.
     expect(members?.[0]?.isSelf).toBe(true);
     expect(members?.[1]?.isSelf).toBe(false);
-    // No raw userId surfaces to the client.
     for (const member of members ?? []) {
       expect(member).not.toHaveProperty("userId");
     }
@@ -146,7 +73,7 @@ describe("listMembers — content", () => {
     const t = convexTest(schema, modules);
     const { circleId } = await t.run((ctx) => seedCircle(ctx));
     const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
-    mockCurrentUser.mockResolvedValue(maya); // Maya is the caller, not the owner
+    mockCurrentUser.mockResolvedValue(maya.user);
 
     const members = await t.query(api.members.listMembers, { circleId });
     expect(members?.find((m) => m.displayName === "Maya Member")?.isSelf).toBe(true);
@@ -171,5 +98,242 @@ describe("listMembers — content", () => {
     const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { kind: "personal" }));
     mockCurrentUser.mockResolvedValue(owner);
     expect((await t.query(api.members.listMembers, { circleId }))?.length).toBe(1);
+  });
+});
+
+describe("transferOwnership — happy path and invariant", () => {
+  it("atomically moves ownership on member rows and circles.ownerUserId", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, ownerMemberId, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.members.transferOwnership, {
+      circleId,
+      toMemberId: maya.memberId,
+    });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      const ownerRow = await ctx.db.get(ownerMemberId);
+      const targetRow = await ctx.db.get(maya.memberId);
+      expect(targetRow?.role).toBe("owner");
+      expect(ownerRow?.role).toBe("member");
+      expect(circle?.ownerUserId).toBe(maya.user._id);
+
+      const members = await ctx.db
+        .query("members")
+        .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+        .collect();
+      const owners = members.filter((member) => member.role === "owner");
+      expect(owners).toHaveLength(1);
+      expect(owners[0]?.userId).toBe(circle?.ownerUserId);
+    });
+  });
+
+  it("records ownership transferred history with display names only", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, ownerMemberId, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.members.transferOwnership, {
+      circleId,
+      toMemberId: maya.memberId,
+    });
+
+    await t.run(async (ctx) => {
+      const events = await listEntityHistory(ctx, circleEntity(circleId));
+      expect(events).toHaveLength(1);
+      expect(events[0]?.action).toBe("ownership transferred");
+      expect(events[0]?.actorMemberId).toBe(ownerMemberId);
+      expect(events[0]?.changes).toEqual([
+        { field: "owner", from: "Olive Owner", to: "Maya Member" },
+      ]);
+    });
+  });
+
+  it("reorders listMembers with the new owner first and demotes the old owner", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.members.transferOwnership, {
+      circleId,
+      toMemberId: maya.memberId,
+    });
+
+    mockCurrentUser.mockResolvedValue(maya.user);
+    const members = await t.query(api.members.listMembers, { circleId });
+    expect(members?.map((m) => m.displayName)).toEqual(["Maya Member", "Olive Owner"]);
+    expect(members?.[0]?.role).toBe("owner");
+  });
+});
+
+describe("transferOwnership — permissions", () => {
+  it("rejects a non-owner Member with transfer.forbidden", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    const other = await t.run((ctx) => addMember(ctx, circleId, "o@example.com", "Other Member"));
+    mockCurrentUser.mockResolvedValue(maya.user);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: other.memberId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.transferForbidden),
+    });
+  });
+
+  it("rejects a Removed Member with Circle not found", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    const removed = await t.run((ctx) =>
+      addMember(ctx, circleId, "r@example.com", "Rex Removed", "removed"),
+    );
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(removed.user);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: maya.memberId }),
+    ).rejects.toThrow("Circle not found");
+  });
+
+  it("rejects an unauthenticated caller with Circle not found", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId, ownerMemberId } = await t.run((ctx) => seedCircle(ctx));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(null);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: maya.memberId }),
+    ).rejects.toThrow("Circle not found");
+
+    await t.run(async (ctx) => {
+      const ownerRow = await ctx.db.get(ownerMemberId);
+      expect(ownerRow?.role).toBe("owner");
+    });
+  });
+
+  it("rejects a non-member with Circle not found", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+    mockCurrentUser.mockResolvedValue(stranger);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: maya.memberId }),
+    ).rejects.toThrow("Circle not found");
+  });
+});
+
+describe("transferOwnership — target validation", () => {
+  it("rejects a memberId from a different Circle with Member not found", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const otherCircle = await t.run((ctx) => seedCircle(ctx));
+    const outsider = await t.run((ctx) =>
+      addMember(ctx, otherCircle.circleId, "o@example.com", "Other Member"),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: outsider.memberId }),
+    ).rejects.toThrow("Member not found");
+  });
+
+  it("rejects a missing memberId with Member not found", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const ghost = await t.run(async (ctx) => {
+      const maya = await addMember(ctx, circleId, "m@example.com", "Maya Member");
+      await ctx.db.delete(maya.memberId);
+      return maya.memberId;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: ghost }),
+    ).rejects.toThrow("Member not found");
+  });
+
+  it("rejects a removed target in this Circle with transfer.targetNotMember", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const removed = await t.run((ctx) =>
+      addMember(ctx, circleId, "r@example.com", "Rex Removed", "removed"),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: removed.memberId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.transferTargetNotMember),
+    });
+  });
+
+  it("rejects self-transfer with transfer.toSelf", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, ownerMemberId, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: ownerMemberId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.transferToSelf),
+    });
+  });
+});
+
+describe("transferOwnership — lifecycle", () => {
+  it("rejects an archived Circle with circle.archived", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: maya.memberId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
+  });
+
+  it("rejects a Personal Circle with transfer.personalCircle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, ownerMemberId, circleId } = await t.run((ctx) =>
+      seedCircle(ctx, { kind: "personal" }),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: ownerMemberId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.transferPersonalCircle),
+    });
+  });
+});
+
+describe("transferOwnership — cross-slice", () => {
+  it("lets the new owner rename and blocks the old owner", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.members.transferOwnership, {
+      circleId,
+      toMemberId: maya.memberId,
+    });
+
+    mockCurrentUser.mockResolvedValue(maya.user);
+    await t.mutation(api.circles.renameCircle, { circleId, name: "Renamed Trip" });
+
+    mockCurrentUser.mockResolvedValue(owner);
+    await expect(
+      t.mutation(api.circles.renameCircle, { circleId, name: "Blocked" }),
+    ).rejects.toThrow("Only the owner can rename this circle");
   });
 });

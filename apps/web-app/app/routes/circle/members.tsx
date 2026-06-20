@@ -1,11 +1,26 @@
 import { inviteEmailSchema } from "@spend-circle/domain";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Avatar } from "~/components/ui/avatar.js";
 import { Button } from "~/components/ui/button.js";
+import {
+  Combobox,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "~/components/ui/combobox.js";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field.js";
 import { Input } from "~/components/ui/input.js";
-import { type Circle, type Member, useCreateInvitation, useMembers } from "~/lib/data.js";
+import {
+  type Circle,
+  type Member,
+  useCreateInvitation,
+  useMembers,
+  useTransferOwnership,
+} from "~/lib/data.js";
 import { MOCKS } from "~/lib/env.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -20,11 +35,24 @@ export default function CircleMembers() {
   const members = useMembers(circle.id);
   const isOwner = members?.some((member) => member.isSelf && member.role === "owner") ?? false;
   const canInvite = circle.kind === "regular" && isOwner;
+  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
 
   return (
     <div className="space-y-4">
       <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
       {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
+      {isOwner && circle.kind === "regular" ? (
+        <TransferOwnershipForm
+          circleId={circle.id}
+          members={members ?? []}
+          onSuccess={(name) => setTransferSuccess(name)}
+        />
+      ) : null}
+      {transferSuccess ? (
+        <p role="status" className="text-sm text-foreground">
+          Ownership transferred to {transferSuccess}.
+        </p>
+      ) : null}
       <MemberList members={members} />
     </div>
   );
@@ -141,6 +169,131 @@ function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
         {submitting ? "Inviting…" : "Invite member"}
       </Button>
     </form>
+  );
+}
+
+function transferTargets(members: Member[]) {
+  return members.filter((member) => member.role === "member" && member.status === "active");
+}
+
+function TransferOwnershipForm({
+  circleId,
+  members,
+  onSuccess,
+}: {
+  circleId: Circle["id"];
+  members: Member[];
+  onSuccess: (targetName: string) => void;
+}) {
+  const transferOwnership = useTransferOwnership();
+  const targets = transferTargets(members);
+  const targetById = useMemo(
+    () => new Map(targets.map((member) => [member.id, member])),
+    [targets],
+  );
+  const [selectedId, setSelectedId] = useState<Member["id"] | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  if (targets.length === 0) {
+    return null;
+  }
+
+  const selected = selectedId ? targetById.get(selectedId) : undefined;
+
+  async function handleConfirm() {
+    if (!selectedId) {
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await transferOwnership({ circleId, toMemberId: selectedId });
+      onSuccess(selected?.displayName ?? "the new owner");
+      setSelectedId(null);
+    } catch (caught) {
+      setSubmitError(
+        mutationErrorMessageForUser(caught, "Couldn't transfer ownership. Please try again."),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section
+      aria-label="Transfer ownership"
+      className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm"
+    >
+      <p className="text-sm text-muted-foreground">
+        Hand over ownership to another active member. You&apos;ll become a regular member.
+      </p>
+
+      <Field>
+        <FieldLabel htmlFor="transfer-member">Transfer ownership to</FieldLabel>
+        <Combobox
+          value={selectedId}
+          onValueChange={(next) => {
+            setSelectedId(next);
+            setSubmitError(null);
+          }}
+          items={targets.map((member) => member.id)}
+          itemToStringLabel={(id) => targetById.get(id)?.displayName ?? ""}
+        >
+          <ComboboxInput
+            id="transfer-member"
+            aria-label="Transfer to member"
+            placeholder="Choose a member"
+            disabled={submitting}
+          />
+          <ComboboxContent>
+            <ComboboxEmpty>No members.</ComboboxEmpty>
+            <ComboboxList>
+              <ComboboxCollection>
+                {(id) => (
+                  <ComboboxItem key={id} value={id}>
+                    {targetById.get(id)?.displayName}
+                  </ComboboxItem>
+                )}
+              </ComboboxCollection>
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
+      </Field>
+
+      {selected ? (
+        <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm font-medium">Transfer ownership to {selected.displayName}?</p>
+          {submitError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {submitError}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={submitting}
+              onClick={() => {
+                setSelectedId(null);
+                setSubmitError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={submitting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              aria-label={`Confirm transfer ownership to ${selected.displayName}`}
+              onClick={() => void handleConfirm()}
+            >
+              {submitting ? "Transferring…" : "Confirm transfer"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
