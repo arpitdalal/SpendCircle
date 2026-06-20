@@ -73,6 +73,26 @@ const mutationErrors = defineMutationErrorCatalog({
     "transfer.targetNotMember",
     "That person isn't an active member of this Circle",
   ),
+  memberRemoveForbidden: defineMutationError(
+    "member.removeForbidden",
+    "Only the Circle owner can remove members",
+  ),
+  inviteResendCapReached: defineMutationError(
+    "invite.resendCapReached",
+    "This invitation has been resent too many times today. Try again tomorrow.",
+  ),
+  inviteDailyCapReached: defineMutationError(
+    "invite.dailyCapReached",
+    "You've sent too many invitation emails today. Try again tomorrow.",
+  ),
+  leavePersonalCircle: defineMutationError(
+    "leave.personalCircle",
+    "You can't leave your Personal Circle",
+  ),
+  ownerMustTransfer: defineMutationError(
+    "member.ownerMustTransfer",
+    "Transfer ownership before leaving",
+  ),
 });
 
 export const MUTATION_ERRORS = mutationErrors.errors;

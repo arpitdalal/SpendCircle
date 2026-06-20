@@ -46,6 +46,36 @@ export async function seedActiveMemberOnCircle(page: Page, email: string, displa
   return invokeScE2E<{ memberId: string }>(page, "seedActiveMember", [email, displayName]);
 }
 
+export type RemoveMemberProbeResult = { ok: true } | { ok: false; message: string; data: unknown };
+
+/** Permission probes: returns mutation outcome without throwing through Playwright. */
+export async function probeRemoveMember(page: Page, memberId: string) {
+  await ensureCircleConvexReady(page);
+  return page.evaluate(async (id) => {
+    const helper = Reflect.get(globalThis, "__scE2E");
+    if (typeof helper !== "object" || helper === null) {
+      throw new Error("missing __scE2E");
+    }
+    const remove = Reflect.get(helper, "removeMember");
+    if (typeof remove !== "function") {
+      throw new Error("missing removeMember");
+    }
+    try {
+      await Reflect.apply(remove, helper, [id]);
+      return { ok: true as const };
+    } catch (err) {
+      return {
+        ok: false as const,
+        message: err instanceof Error ? err.message : String(err),
+        data:
+          err && typeof err === "object" && "data" in err
+            ? (err as { data: unknown }).data
+            : undefined,
+      };
+    }
+  }, memberId);
+}
+
 /** Complete mandatory Circle setup (CS-5); lands on the Circle dashboard. */
 export async function finishCircleSetup(page: Page) {
   await page.getByRole("button", { name: "Finish setup" }).click();
@@ -72,6 +102,58 @@ export async function createRegularCircleAndFinishSetup(
   }
   await page.getByRole("button", { name: "Create circle" }).click();
   await finishCircleSetup(page);
+}
+
+/**
+ * Owner invites `memberEmail`, returns the invite token extracted from the copyable link.
+ * Requires the owner page to already be authenticated on a setup-complete regular Circle.
+ */
+export async function inviteMemberByEmail(page: Page, memberEmail: string): Promise<string> {
+  await clickCircleChromeTab(page, "Members");
+  await page.getByLabel("Email address").fill(memberEmail);
+  await page.getByRole("button", { name: "Invite member" }).click();
+  const link = page.getByLabel("Invitation link");
+  await expect(link).toBeVisible();
+  const href = await link.inputValue();
+  const token = href.split("/invite/")[1];
+  if (!token) {
+    throw new Error("Could not extract invitation token from link");
+  }
+  return token;
+}
+
+/** Signs in a second User and accepts an invitation via the E2E-only backend helper. */
+export async function joinCircleViaInvitation(opts: {
+  browser: Browser;
+  baseURL: string;
+  memberEmail: string;
+  memberName: string;
+  token: string;
+}) {
+  const context = await opts.browser.newContext();
+  const page = await context.newPage();
+  try {
+    await establishE2ESession(page, {
+      baseURL: opts.baseURL,
+      email: opts.memberEmail,
+      name: opts.memberName,
+    });
+    await page.evaluate(async (token) => {
+      const helper = Reflect.get(globalThis, "__scE2E");
+      if (typeof helper !== "object" || helper === null) {
+        throw new Error("missing __scE2E");
+      }
+      const acceptInvitation = Reflect.get(helper, "acceptInvitation");
+      if (typeof acceptInvitation !== "function") {
+        throw new Error("missing acceptInvitation");
+      }
+      await Reflect.apply(acceptInvitation, helper, [token]);
+    }, opts.token);
+    return { context, page };
+  } catch (err) {
+    await context.close();
+    throw err;
+  }
 }
 
 /** Phase-1 route skeleton (issue #121) swaps the outlet; wait for it to clear before interacting. */
@@ -200,9 +282,10 @@ async function ensureAppShellReady(page: Page) {
  */
 export async function establishE2ESession(
   page: Page,
-  opts: { baseURL: string; email: string; password?: string },
+  opts: { baseURL: string; email: string; password?: string; name?: string },
 ) {
   const password = opts.password ?? E2E_PASSWORD;
+  const name = opts.name ?? "E2E Tester";
 
   for (let attempt = 0; ; attempt++) {
     try {
@@ -214,12 +297,12 @@ export async function establishE2ESession(
     }
   }
 
-  await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });
+  await waitForScE2E(page);
 
   let signInResult: string | undefined;
   try {
     signInResult = await page.evaluate(
-      async ([e, p]) => {
+      async ([e, p, n]) => {
         const helper = Reflect.get(globalThis, "__scE2E");
         if (typeof helper !== "object" || helper === null) {
           return "error: missing __scE2E";
@@ -229,13 +312,13 @@ export async function establishE2ESession(
           return "error: bad signIn";
         }
         try {
-          await Reflect.apply(signIn, helper, [e, p]);
+          await Reflect.apply(signIn, helper, [e, p, n]);
           return "ok";
         } catch (err) {
           return `error: ${String(err instanceof Error ? err.message : err)}`;
         }
       },
-      [opts.email, password],
+      [opts.email, password, name],
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

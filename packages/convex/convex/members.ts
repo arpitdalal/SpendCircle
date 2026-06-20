@@ -121,3 +121,83 @@ export const transferOwnership = mutation({
     });
   },
 });
+
+/**
+ * Removes an active non-owner Member from a regular Circle (MEM-5). Status flip
+ * only — the row stays so frozen identity and rejoin (MEM-3) keep working.
+ */
+export const removeMember = mutation({
+  args: {
+    circleId: v.id("circles"),
+    memberId: v.id("members"),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+
+    if (!access.isOwner) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.memberRemoveForbidden));
+    }
+
+    access.assertWritable();
+
+    if (access.circle.kind === "personal") {
+      throw new Error("Circle not found");
+    }
+
+    const target = await ctx.db.get(args.memberId);
+    if (!target || target.circleId !== args.circleId) {
+      throw new Error("Member not found");
+    }
+
+    if (target.role === "owner") {
+      throw new Error("Cannot remove the Circle owner — transfer ownership first (MEM-7)");
+    }
+
+    if (target.status === "removed") {
+      throw new Error("Member is already removed");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.memberId, { status: "removed", removedAt: now });
+
+    await recordEvent(ctx, {
+      entity: circleEntity(access.circle._id),
+      actor: access.membership,
+      action: "member removed",
+      changes: [{ field: "member", from: target.displayName }],
+    });
+  },
+});
+
+/**
+ * A Member removes themselves from a regular Circle (PRD 18, MEM-6). Status flip,
+ * never delete — the same row is reactivated on rejoin (MEM-3). Owners must transfer
+ * first (MEM-7); Personal Circles are always solo and cannot be left.
+ */
+export const leaveCircle = mutation({
+  args: { circleId: v.id("circles") },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+
+    if (access.circle.kind === "personal") {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.leavePersonalCircle));
+    }
+
+    if (access.isOwner) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.ownerMustTransfer));
+    }
+
+    // Leaving is not gated on `assertWritable()` — an archived Circle's members may
+    // still exit; the status flip preserves frozen identity regardless of Circle lifecycle.
+
+    const now = Date.now();
+    await ctx.db.patch(access.membership._id, { status: "removed", removedAt: now });
+
+    await recordEvent(ctx, {
+      entity: circleEntity(access.circle._id),
+      actor: access.membership,
+      action: "member left",
+      changes: [{ field: "member", from: access.membership.displayName }],
+    });
+  },
+});

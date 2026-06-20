@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel.js";
 import type { MutationCtx } from "../_generated/server.js";
+import { generateInvitationToken, hashInvitationToken } from "../invitationToken.js";
 import { createUserWithPersonalCircle, type NewUserProfile } from "../model.js";
 import { syncTransactionSearchDocument } from "../transactionSearchDocuments.js";
 
@@ -252,4 +253,36 @@ export async function seedTransaction(
     categoryIds: opts.categoryIds ?? [f.groceriesId],
   });
   return transactionId;
+}
+
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Inserts an invitation row directly for tests that need arbitrary states. */
+export async function seedInvitation(
+  ctx: MutationCtx,
+  circleId: Id<"circles">,
+  invitedByUserId: Id<"users">,
+  opts: {
+    email: string;
+    status?: "pending" | "accepted" | "revoked" | "expired";
+    expiresAt?: number;
+    resendCount?: number;
+    resendTimestamps?: number[];
+    tokenHash?: string;
+    createdAt?: number;
+  },
+): Promise<Id<"invitations">> {
+  const now = Date.now();
+  const token = generateInvitationToken();
+  return await ctx.db.insert("invitations", {
+    circleId,
+    emailLower: opts.email.toLowerCase(),
+    tokenHash: opts.tokenHash ?? (await hashInvitationToken(token)),
+    status: opts.status ?? "pending",
+    invitedByUserId,
+    resendCount: opts.resendCount ?? 0,
+    resendTimestamps: opts.resendTimestamps ?? [],
+    createdAt: opts.createdAt ?? now,
+    expiresAt: opts.expiresAt ?? now + INVITE_TTL_MS,
+  });
 }

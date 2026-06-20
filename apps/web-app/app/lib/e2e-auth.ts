@@ -2,16 +2,23 @@ import { api } from "@spend-circle/convex";
 import { testId } from "~/test/convex/ids.js";
 import { authClient } from "./auth-client.js";
 import { convex } from "./convex.js";
-import type { Circle } from "./data.js";
+import type { Circle, Member } from "./data.js";
 import { parseCircleRef } from "./refs.js";
 
-function circleIdFromLocation(): Circle["id"] {
+function circleIdFromLocation() {
   const ref = window.location.pathname.match(/\/circles\/([^/]+)/)?.[1];
   const parsed = parseCircleRef(ref);
   if (!parsed) {
     throw new Error("E2E: not on a Circle route");
   }
   return testId<Circle["id"]>(parsed.id);
+}
+
+function memberIdFromString(memberId: string) {
+  if (!/^[a-z0-9]+$/i.test(memberId)) {
+    throw new Error("E2E removeMember: invalid member id");
+  }
+  return testId<Member["id"]>(memberId);
 }
 
 /**
@@ -57,13 +64,37 @@ export function installE2EAuthHelper(): void {
         throw new Error("E2E sign-in: onboarding completion timed out");
       },
 
-      /** Seeds an active Member on the current Circle route (MEM-7 E2E until MEM-3). */
+      /** Seeds an active Member on the current Circle route (MEM-5 E2E until MEM-3). */
       async seedActiveMember(email: string, displayName: string) {
         return convex.mutation(api.e2e.seedActiveMember, {
           circleId: circleIdFromLocation(),
           email,
           displayName,
         });
+      },
+
+      /** Calls removeMember for the current Circle route (permission probes). */
+      async removeMember(memberId: string) {
+        return convex.mutation(api.members.removeMember, {
+          circleId: circleIdFromLocation(),
+          memberId: memberIdFromString(memberId),
+        });
+      },
+      /** Marks a non-owner Member removed (MEM-3 rejoin E2E until MEM-5 ships). */
+      async markMemberRemoved(circleId: Circle["id"], memberId: Member["id"]) {
+        await convex.mutation(api.e2eTesting.markMemberRemovedForE2E, {
+          circleId,
+          memberId,
+        });
+      },
+      async listMembers(circleId: Circle["id"]) {
+        return await convex.query(api.members.listMembers, {
+          circleId,
+        });
+      },
+      /** Accept a pending invitation by token (E2E-only backend; MEM-3 will replace this). */
+      async acceptInvitation(token: string) {
+        await convex.mutation(api.e2e.acceptInvitationForE2E, { token });
       },
     },
   });

@@ -27,3 +27,12 @@ export function useMembers(circleId: Circle["id"]): Member[] | null | undefined 
 export function useTransferOwnership() {
   return useMutation(api.members.transferOwnership);
 }
+
+export function useRemoveMember() {
+  return useMutation(api.members.removeMember);
+}
+
+/** Self-service leave mutation (MEM-6). */
+export function useLeaveCircle() {
+  return useMutation(api.members.leaveCircle);
+}
