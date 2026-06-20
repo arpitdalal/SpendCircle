@@ -1,4 +1,5 @@
 import { vOnCompleteValidator, Workpool } from "@convex-dev/workpool";
+import { invitationEmail, welcomeEmail } from "@spend-circle/domain";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api.js";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server.js";
@@ -10,10 +11,10 @@ import { hashInvitationToken } from "./invitationToken.js";
  *
  * Required deployment env vars (Convex deployment env, like auth.ts):
  * RESEND_API_KEY, RESEND_FROM_EMAIL
+ *
+ * Optional: EMAIL_DEV_LOG=1 logs subject + body to the Convex console even when
+ * Resend creds are configured (also logs when creds are unset).
  */
-
-export const WELCOME_SUBJECT = "Welcome to Spend Circle";
-export const INVITATION_SUBJECT = "You're invited to join a Spend Circle";
 
 // Durable, throttled handoff to Resend — the shared seam EML-2 / FBK-1 reuse.
 // maxParallelism caps concurrent sends so a vendor outage can't stampede Resend.
@@ -25,51 +26,6 @@ export const emailPool = new Workpool(components.emailWorkpool, {
   retryActionsByDefault: true,
   defaultRetryBehavior: { maxAttempts: 5, initialBackoffMs: 30_000, base: 2 },
 });
-
-/** Pure HTML builder — no financial content (PRD 84). */
-export function welcomeHtml(displayName: string) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>${WELCOME_SUBJECT}</title></head>
-<body>
-  <p>Hi ${escapeHtml(displayName)},</p>
-  <p>Welcome to Spend Circle — a simple way to track shared spending with the people you trust.</p>
-  <p>Your Personal Circle is ready. Open the app to finish setting up your profile and start organizing expenses together.</p>
-  <p>— The Spend Circle team</p>
-</body>
-</html>`;
-}
-
-/** Pure HTML builder — no financial content (PRD 84). */
-export function invitationHtml(args: {
-  inviteLink: string;
-  circleName: string;
-  ownerDisplayName: string;
-  ownerImage: string | undefined;
-  recipientEmail: string;
-}) {
-  const { inviteLink, circleName, ownerDisplayName, recipientEmail } = args;
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>${INVITATION_SUBJECT}</title></head>
-<body>
-  <p>Hi ${escapeHtml(recipientEmail)},</p>
-  <p>${escapeHtml(ownerDisplayName)} has invited you to join the <strong>${escapeHtml(circleName)}</strong> Circle on Spend Circle.</p>
-  <p><a href="${escapeHtml(inviteLink)}">Accept the invitation</a></p>
-  <p>This link expires in 7 days and can only be used once.</p>
-  <p>— The Spend Circle team</p>
-</body>
-</html>`;
-}
-
-function escapeHtml(text: string) {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
 /** Resend vendor wiring — single seam for EML-2 / FBK-1. Uses fetch (not SDK).
  *  Returns true on a confirmed 2xx; false when env is unset (no-op). THROWS on
@@ -83,6 +39,11 @@ export async function sendEmail(args: {
 }) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
+  const devLog = process.env.EMAIL_DEV_LOG === "1" || !key || !from;
+  if (devLog) {
+    console.log(`[email] to=${args.to} subject=${JSON.stringify(args.subject)}`);
+    console.log(`[email] body:\n${args.html}`);
+  }
   if (!key || !from) {
     console.error("Resend env not configured; skipping email send");
     return false;
@@ -137,10 +98,11 @@ export const sendWelcomeEmail = internalAction({
     if (!p || p.alreadySent) {
       return;
     }
+    const { subject, html } = welcomeEmail({ displayName: p.displayName });
     const sent = await sendEmail({
       to: p.email,
-      subject: WELCOME_SUBJECT,
-      html: welcomeHtml(p.displayName),
+      subject,
+      html,
       idempotencyKey: `welcome:${userId}`,
     });
     if (sent) {
@@ -186,7 +148,6 @@ export const invitationPayload = internalQuery({
       recipientEmail: invite.emailLower,
       circleName: circle.name,
       ownerDisplayName: owner.displayName,
-      ownerImage: owner.image,
     };
   },
 });
@@ -253,16 +214,16 @@ export const sendInvitationEmail = internalAction({
     });
     const siteUrl = process.env.SITE_URL ?? "http://127.0.0.1:5173";
     const inviteLink = `${siteUrl}/invite/${token}`;
+    const { subject, html } = invitationEmail({
+      inviteLink,
+      circleName: p.circleName,
+      ownerDisplayName: p.ownerDisplayName,
+      recipientEmail: p.recipientEmail,
+    });
     await sendEmail({
       to: p.recipientEmail,
-      subject: INVITATION_SUBJECT,
-      html: invitationHtml({
-        inviteLink,
-        circleName: p.circleName,
-        ownerDisplayName: p.ownerDisplayName,
-        ownerImage: p.ownerImage,
-        recipientEmail: p.recipientEmail,
-      }),
+      subject,
+      html,
       idempotencyKey: `invite:${invitationId}:${resendCount}`,
     });
   },

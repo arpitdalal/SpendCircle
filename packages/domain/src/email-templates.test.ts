@@ -1,0 +1,68 @@
+import { describe, expect, it } from "vitest";
+import {
+  EMAIL_PREVIEWS,
+  INVITATION_SUBJECT,
+  invitationEmail,
+  WELCOME_SUBJECT,
+  welcomeEmail,
+} from "./email-templates.js";
+
+const FINANCIAL_PATTERN = /\$|\bUSD\b|\bEUR\b|\bGBP\b|\bamount\b|\bbalance\b|\d+\.\d{2}/i;
+const IMAGE_PATTERN = /\b(img|avatar|ownerImage|image)\b/i;
+
+describe("welcomeEmail", () => {
+  it("returns the welcome subject and HTML with the display name", () => {
+    const { subject, html } = welcomeEmail({ displayName: "Ada Lovelace" });
+    expect(subject).toBe(WELCOME_SUBJECT);
+    expect(html).toContain("Ada Lovelace");
+    expect(html).toContain("Welcome to Spend Circle");
+    expect(html).toContain("Personal Circle");
+    expect(html).not.toMatch(FINANCIAL_PATTERN);
+  });
+});
+
+describe("invitationEmail", () => {
+  it("returns the invitation subject and interpolated, escaped values with no financial content", () => {
+    const { subject, html } = invitationEmail({
+      inviteLink: "https://app.example.com/invite/abc123",
+      circleName: "Trip",
+      ownerDisplayName: "Olive Owner",
+      recipientEmail: "ada@example.com",
+    });
+    expect(subject).toBe(INVITATION_SUBJECT);
+    expect(html).toContain("ada@example.com");
+    expect(html).toContain("Olive Owner");
+    expect(html).toContain("Trip");
+    expect(html).toContain("https://app.example.com/invite/abc123");
+    expect(html).toContain("expires in 7 days");
+    expect(html).not.toMatch(FINANCIAL_PATTERN);
+    expect(html).not.toMatch(IMAGE_PATTERN);
+  });
+
+  it("escapes HTML-special chars in interpolated values", () => {
+    const { html } = invitationEmail({
+      inviteLink: "https://app.example.com/invite/tok",
+      circleName: "<script>",
+      ownerDisplayName: 'O"wn',
+      recipientEmail: "a&b@example.com",
+    });
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("a&amp;b@example.com");
+    expect(html).toContain("O&quot;wn");
+  });
+});
+
+describe("EMAIL_PREVIEWS", () => {
+  it.each(
+    EMAIL_PREVIEWS,
+  )("$name render(defaults) returns non-empty subject and html", (preview) => {
+    const defaults = Object.fromEntries(preview.fields.map((f) => [f.key, f.default]));
+    const { subject, html } = preview.render(defaults);
+    expect(subject.length).toBeGreaterThan(0);
+    expect(html.length).toBeGreaterThan(0);
+    for (const field of preview.fields) {
+      expect(html).toContain(field.default);
+    }
+  });
+});

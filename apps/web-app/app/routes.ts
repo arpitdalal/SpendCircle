@@ -14,6 +14,7 @@ export default [
     route("privacy", "routes/privacy.tsx"),
     // Opaque, token-only Invitation landing — the ADR 0016 exception.
     route("invite/:token", "routes/invite.tsx"),
+    route("dev/email-preview", "routes/dev/email-preview.tsx"),
   ]),
 
   // Authenticated app. The protected layout shows a splash while auth resolves,

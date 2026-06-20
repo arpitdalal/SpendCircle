@@ -64,7 +64,11 @@ pnpm --filter @spend-circle/convex exec convex env set GOOGLE_CLIENT_SECRET <sec
 pnpm --filter @spend-circle/convex exec convex env set BETTER_AUTH_SECRET <secret>
 pnpm --filter @spend-circle/convex exec convex env set RESEND_API_KEY <resend-api-key>
 pnpm --filter @spend-circle/convex exec convex env set RESEND_FROM_EMAIL <verified-from-address>
+# Optional: log email subject + HTML to the Convex console on every send (also logs when Resend creds are unset)
+pnpm --filter @spend-circle/convex exec convex env set EMAIL_DEV_LOG 1
 ```
+
+Open `/dev/email-preview` while running the web app in dev (or E2E) to render sample transactional emails in the browser.
 
 ## Run App
 

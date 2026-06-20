@@ -1,6 +1,7 @@
 export * from "./color.js";
 export * from "./currency.js";
 export * from "./date.js";
+export * from "./email-templates.js";
 export * from "./initials.js";
 export * from "./money.js";
 export * from "./mutation-errors.js";
