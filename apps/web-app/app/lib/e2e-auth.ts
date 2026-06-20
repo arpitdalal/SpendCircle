@@ -1,22 +1,17 @@
 import { api } from "@spend-circle/convex";
+import { testId } from "~/test/convex/ids.js";
 import { authClient } from "./auth-client.js";
 import { convex } from "./convex.js";
 import type { Circle } from "./data.js";
 import { parseCircleRef } from "./refs.js";
 
-function isConvexId(value: string) {
-  return /^[a-z0-9]+$/i.test(value);
-}
-
 function circleIdFromLocation(): Circle["id"] {
   const ref = window.location.pathname.match(/\/circles\/([^/]+)/)?.[1];
   const parsed = parseCircleRef(ref);
-  const id = parsed?.id;
-  if (!id || !isConvexId(id)) {
+  if (!parsed) {
     throw new Error("E2E: not on a Circle route");
   }
-  // Nominal Id brand — validated URL segment; same boundary as mock fixtures.
-  return id as Circle["id"];
+  return testId<Circle["id"]>(parsed.id);
 }
 
 /**
