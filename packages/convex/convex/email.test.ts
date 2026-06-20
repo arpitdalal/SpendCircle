@@ -3,12 +3,12 @@ import { capturedRequests, HttpResponse, http, resetCapturedRequests } from "@sp
 import { server } from "@spend-circle/mocks/server";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeUser, seedCircle, seedPersonalCircleOwner } from "../test/seed.js";
 import { api, internal } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { sendEmail } from "./email.js";
 import { hashInvitationToken } from "./invitationToken.js";
 import schema from "./schema.js";
-import { makeUser, seedCircle, seedPersonalCircleOwner } from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({

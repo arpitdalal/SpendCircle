@@ -26,7 +26,6 @@ import type * as members from "../members.js";
 import type * as model from "../model.js";
 import type * as monthActivity from "../monthActivity.js";
 import type * as search from "../search.js";
-import type * as test_seed from "../test/seed.js";
 import type * as transactionSearchDocuments from "../transactionSearchDocuments.js";
 import type * as transactions from "../transactions.js";
 import type * as users from "../users.js";
@@ -56,7 +55,6 @@ declare const fullApi: ApiFromModules<{
   model: typeof model;
   monthActivity: typeof monthActivity;
   search: typeof search;
-  "test/seed": typeof test_seed;
   transactionSearchDocuments: typeof transactionSearchDocuments;
   transactions: typeof transactions;
   users: typeof users;

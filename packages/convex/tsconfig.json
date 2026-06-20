@@ -10,6 +10,6 @@
     "moduleResolution": "Bundler",
     "skipLibCheck": true
   },
-  "include": ["convex/**/*.ts", "convex/**/*.tsx"],
+  "include": ["convex/**/*.ts", "convex/**/*.tsx", "test/**/*.ts"],
   "exclude": ["convex/_generated", "convex/**/*.test.ts"]
 }

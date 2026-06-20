@@ -1,6 +1,7 @@
 import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { addMember, makeUser, seedCircle } from "../test/seed.js";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import type { MutationCtx } from "./_generated/server.js";
@@ -8,7 +9,6 @@ import { resolveCircleAccess } from "./guard.js";
 import { circleEntity, listEntityHistory } from "./history.js";
 import { setUserDisplayName } from "./model.js";
 import schema from "./schema.js";
-import { addMember, makeUser, seedCircle } from "./test/seed.js";
 
 // listMembers resolves access through guard.ts, which folds in
 // `getCurrentUserOrNull` — backed by Better Auth and unrunnable under
