@@ -1,30 +1,13 @@
-import type { Page } from "@playwright/test";
 import {
   clickCircleChromeTab,
   createRegularCircleAndFinishSetup,
   establishE2ESession,
   expect,
+  seedActiveMemberOnCircle,
   test,
 } from "./fixtures.js";
 
 const E2E_PASSWORD = "e2e-Password-123";
-
-async function seedMemberOnCurrentCircle(page: Page, email: string, displayName: string) {
-  return page.evaluate(
-    async ([memberEmail, memberName]) => {
-      const helper = Reflect.get(globalThis, "__scE2E");
-      if (typeof helper !== "object" || helper === null) {
-        throw new Error("missing __scE2E");
-      }
-      const seed = Reflect.get(helper, "seedActiveMember");
-      if (typeof seed !== "function") {
-        throw new Error("missing seedActiveMember");
-      }
-      return Reflect.apply(seed, helper, [memberEmail, memberName]);
-    },
-    [email, displayName],
-  ) as Promise<{ memberId: string }>;
-}
 
 /**
  * TRUE-E2E (ADR 0019): open the Member List through the real frontend → Convex
@@ -71,7 +54,7 @@ test("an owner transfers ownership and owner-only actions follow the new owner",
 
   await createRegularCircleAndFinishSetup(page, { name: circleName });
   const circleUrl = page.url();
-  await seedMemberOnCurrentCircle(page, newOwnerEmail, "Maya Member");
+  await seedActiveMemberOnCircle(page, newOwnerEmail, "Maya Member");
 
   await clickCircleChromeTab(page, "Members");
   const transferForm = page.getByRole("region", { name: "Transfer ownership" });
