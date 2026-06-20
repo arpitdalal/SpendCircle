@@ -1,4 +1,4 @@
-import { Link, Navigate, Outlet, useLocation, useNavigation } from "react-router";
+import { href, Link, Navigate, Outlet, useLocation, useNavigation } from "react-router";
 import { AccountMenu } from "~/components/account-menu.js";
 import { CircleBottomNavSkeleton } from "~/components/circle-mobile-bottom-nav.js";
 import { CircleSwitcher } from "~/components/circle-switcher.js";
@@ -6,6 +6,7 @@ import { PageSkeleton } from "~/components/skeleton.js";
 import { Splash } from "~/components/splash.js";
 import { isCircleScopedPath } from "~/lib/circle-path.js";
 import { MOCKS } from "~/lib/env.js";
+import { parseReturnTo, RETURN_TO_PARAM, withReturnTo } from "~/lib/return-to-url.js";
 import { coversShellNavigation, usePendingRouteSkeleton } from "~/lib/route-skeleton.js";
 import { useAppSession } from "~/lib/session.js";
 
@@ -18,6 +19,11 @@ export default function ProtectedLayout() {
   const session = useAppSession();
   const location = useLocation();
   const onOnboarding = location.pathname === "/onboarding";
+  const onboardingRedirect = withReturnTo(href("/onboarding"), location.pathname + location.search);
+  const postOnboardingTarget = parseReturnTo(
+    new URLSearchParams(location.search).get(RETURN_TO_PARAM),
+    { fallback: "/" },
+  );
   // Unconditional so the pending-navigation subscription is stable across the auth
   // guard's state flips; only consulted in the Ready branch below.
   const showSkeleton = usePendingRouteSkeleton(coversShellNavigation);
@@ -36,13 +42,13 @@ export default function ProtectedLayout() {
     return <Navigate to="/signin" replace />;
   }
   if (session.state === "bootstrap") {
-    return onOnboarding ? <Outlet /> : <Navigate to="/onboarding" replace />;
+    return onOnboarding ? <Outlet /> : <Navigate to={onboardingRedirect} replace />;
   }
   if (!session.user.onboardingComplete) {
-    return onOnboarding ? <Outlet /> : <Navigate to="/onboarding" replace />;
+    return onOnboarding ? <Outlet /> : <Navigate to={onboardingRedirect} replace />;
   }
   if (onOnboarding) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={postOnboardingTarget} replace />;
   }
 
   return (

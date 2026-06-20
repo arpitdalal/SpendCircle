@@ -8,6 +8,7 @@ import {
   transactionSearchText,
   transactionTextMatches,
 } from "@spend-circle/domain";
+import type { InvitationPreview } from "./data/invitations.js";
 import type {
   Category,
   CategoryHistoryEvent,
@@ -141,6 +142,13 @@ export const MOCK_MEMBERS: Member[] = [
     isSelf: false,
   },
 ];
+
+export const MOCK_INVITATION_PREVIEW: InvitationPreview = {
+  circleName: "Mock Shared Circle",
+  ownerDisplayName: "Alex",
+  ownerImage: null,
+  invitedEmail: "you@example.com",
+};
 
 /**
  * Mock Transactions, typed against the derived {@link Transaction} contract so a
