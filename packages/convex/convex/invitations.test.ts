@@ -1,3 +1,4 @@
+import { register as registerWorkpool } from "@convex-dev/workpool/test";
 import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { capturedRequests, resetCapturedRequests } from "@spend-circle/mocks";
 import { ConvexError } from "convex/values";
@@ -10,7 +11,6 @@ import { circleEntity, listEntityHistory } from "./history.js";
 import { hashInvitationToken } from "./invitationToken.js";
 import { createUserWithPersonalCircle } from "./model.js";
 import schema from "./schema.js";
-import { registerEmailWorkpool } from "./test/registerComponents.js";
 import { addMember, makeUser, seedCircle, seedPersonalCircleOwner } from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
@@ -54,7 +54,8 @@ async function completeSetup(ctx: MutationCtx, circleId: Id<"circles">) {
 
 function createTestConvex() {
   const t = createConvexTest(schema, modules);
-  registerEmailWorkpool(t);
+  // Workpool test helper uses import.meta — must stay in *.test.ts, not convex/test/.
+  registerWorkpool(t, "emailWorkpool");
   return t;
 }
 
