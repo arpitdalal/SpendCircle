@@ -1,4 +1,6 @@
 import type { Page } from "@playwright/test";
+import type { Circle, Member } from "../apps/web-app/app/lib/data.js";
+import { testId } from "../apps/web-app/app/test/convex/ids.js";
 import {
   clickCircleChromeTab,
   createRegularCircleAndFinishSetup,
@@ -7,13 +9,13 @@ import {
   test,
 } from "./fixtures.js";
 
-function circleIdFromUrl(url: string) {
+function circleIdFromUrl(url: string): Circle["id"] {
   const ref = url.match(/\/circles\/([^/?#]+)/)?.[1];
   if (!ref) {
     throw new Error("could not parse circle ref from url");
   }
   const lastDash = ref.lastIndexOf("-");
-  return lastDash === -1 ? ref : ref.slice(lastDash + 1);
+  return testId<Circle["id"]>(lastDash === -1 ? ref : ref.slice(lastDash + 1));
 }
 
 async function inviteByEmail(page: Page, email: string) {
@@ -37,12 +39,12 @@ async function acceptInviteAs(page: Page, token: string) {
   await page.waitForURL(/\/circles\/[^/]+-[^/]+(?:\/|$)/);
 }
 
-async function listMembers(page: Page, circleId: string) {
+async function listMembers(page: Page, circleId: Circle["id"]) {
   return page.evaluate(async (id) => {
     const helper = Reflect.get(globalThis, "__scE2E") as {
       listMembers?: (
-        circleId: string,
-      ) => Promise<Array<{ id: string; displayName: string; role: string }>>;
+        circleId: Circle["id"],
+      ) => Promise<Array<{ id: Member["id"]; displayName: string; role: string }>>;
     };
     if (!helper?.listMembers) {
       throw new Error("missing __scE2E.listMembers");
@@ -131,7 +133,7 @@ test("a removed member rejoins through a fresh invitation on the same member row
       await ownerPage.evaluate(
         async ([id, memberId]) => {
           const helper = Reflect.get(globalThis, "__scE2E") as {
-            markMemberRemoved?: (circleId: string, memberId: string) => Promise<void>;
+            markMemberRemoved?: (circleId: Circle["id"], memberId: Member["id"]) => Promise<void>;
           };
           if (!helper?.markMemberRemoved) {
             throw new Error("missing __scE2E.markMemberRemoved");

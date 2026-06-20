@@ -46,15 +46,15 @@ export function installE2EAuthHelper(): void {
         throw new Error("E2E sign-in: onboarding completion timed out");
       },
       /** Marks a non-owner Member removed (MEM-3 rejoin E2E until MEM-5 ships). */
-      async markMemberRemoved(circleId: string, memberId: string) {
+      async markMemberRemoved(circleId: Circle["id"], memberId: Member["id"]) {
         await convex.mutation(api.e2eTesting.markMemberRemovedForE2E, {
-          circleId: circleId as Circle["id"],
-          memberId: memberId as Member["id"],
+          circleId,
+          memberId,
         });
       },
-      async listMembers(circleId: string) {
+      async listMembers(circleId: Circle["id"]) {
         return await convex.query(api.members.listMembers, {
-          circleId: circleId as Circle["id"],
+          circleId,
         });
       },
     },
