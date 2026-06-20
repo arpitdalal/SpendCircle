@@ -589,7 +589,7 @@ function MemberList({
 
   return (
     <>
-      <ul className="space-y-2">
+      <ul aria-label="Circle members" className="space-y-2">
         {members.map((member) => {
           const canRemove =
             canRemoveMembers &&

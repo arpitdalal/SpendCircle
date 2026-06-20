@@ -8,6 +8,16 @@ const SM_BREAKPOINT_PX = 640;
 
 export type CircleChromeTab = "Dashboard" | "Transactions" | "Search" | "Categories" | "Members";
 
+/** Member rows only — excludes pending-invitation `<li>`s on the Members page. */
+export function memberListItems(page: Page) {
+  return page.getByRole("list", { name: "Circle members" }).getByRole("listitem");
+}
+
+/** Pending invitation rows on the Members page (owner-only). */
+export function pendingInvitationListItems(page: Page) {
+  return page.getByRole("region", { name: "Pending invitations" }).getByRole("listitem");
+}
+
 /** `installE2EAuthHelper` runs from entry.client after hydration — wait before any in-page API bridge call. */
 export async function waitForScE2E(page: Page) {
   await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });

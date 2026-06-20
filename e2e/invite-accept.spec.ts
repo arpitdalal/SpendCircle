@@ -7,6 +7,8 @@ import {
   establishE2ESession,
   expect,
   inviteMemberByEmail,
+  memberListItems,
+  pendingInvitationListItems,
   test,
 } from "./fixtures.js";
 
@@ -72,7 +74,7 @@ test("an invited user accepts and lands in the Circle member list", async ({
       await acceptInviteAs(inviteePage, token);
 
       await clickCircleChromeTab(ownerPage, "Members");
-      await expect(ownerPage.getByRole("listitem")).toHaveCount(2);
+      await expect(memberListItems(ownerPage)).toHaveCount(2);
       await expect(ownerPage.getByText("E2E Tester")).toHaveCount(2);
     } finally {
       await inviteeContext.close();
@@ -141,7 +143,7 @@ test("a removed member rejoins through a fresh invitation on the same member row
         membersAfterJoin.map((member) => member.id).sort(),
       );
       await clickCircleChromeTab(ownerPage, "Members");
-      await expect(ownerPage.getByRole("listitem")).toHaveCount(2);
+      await expect(memberListItems(ownerPage)).toHaveCount(2);
     } finally {
       await inviteeContext.close();
     }
@@ -180,7 +182,9 @@ test("a signed-in user with the wrong email sees a generic accept error", async 
       await expect(wrongPage.getByRole("alert")).toHaveText("Something went wrong");
 
       await clickCircleChromeTab(ownerPage, "Members");
-      await expect(ownerPage.getByRole("listitem")).toHaveCount(1);
+      await expect(memberListItems(ownerPage)).toHaveCount(1);
+      await expect(pendingInvitationListItems(ownerPage)).toHaveCount(1);
+      await expect(pendingInvitationListItems(ownerPage).first()).toContainText(invitedEmail);
     } finally {
       await wrongContext.close();
     }
