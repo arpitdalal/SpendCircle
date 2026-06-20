@@ -1,11 +1,19 @@
 import { inviteEmailSchema } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
+import { href, useNavigate } from "react-router";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Avatar } from "~/components/ui/avatar.js";
 import { Button } from "~/components/ui/button.js";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field.js";
 import { Input } from "~/components/ui/input.js";
-import { type Circle, type Member, useCreateInvitation, useMembers } from "~/lib/data.js";
+import {
+  type Circle,
+  type Member,
+  useCreateInvitation,
+  useLeaveCircle,
+  useMembers,
+} from "~/lib/data.js";
+import { MOCKS } from "~/lib/env.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -17,6 +25,7 @@ export default function CircleMembers() {
   const circle = useCircle();
   const members = useMembers(circle.id);
   const isOwner = members?.some((member) => member.isSelf && member.role === "owner") ?? false;
+  const isSelfMember = members?.some((member) => member.isSelf) ?? false;
   const canInvite = circle.kind === "regular" && isOwner;
 
   return (
@@ -24,6 +33,9 @@ export default function CircleMembers() {
       <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
       {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
       <MemberList members={members} />
+      {circle.kind !== "personal" && isSelfMember ? (
+        <LeaveCircle circleId={circle.id} isOwner={isOwner} />
+      ) : null}
     </div>
   );
 }
@@ -160,5 +172,91 @@ function MemberList({ members }: { members: Member[] | null | undefined }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function LeaveCircle({ circleId, isOwner }: { circleId: Circle["id"]; isOwner: boolean }) {
+  const leaveCircle = useLeaveCircle();
+  const navigate = useNavigate();
+  const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  if (isOwner) {
+    return (
+      <section
+        aria-label="Leave circle"
+        className="rounded-xl border border-border bg-card p-4 shadow-sm"
+      >
+        <p className="text-sm text-muted-foreground">
+          Transfer ownership before leaving this Circle.
+        </p>
+      </section>
+    );
+  }
+
+  async function onConfirmLeave() {
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      await leaveCircle({ circleId });
+      navigate(href("/"));
+    } catch (caught) {
+      setSubmitError(mutationErrorMessageForUser(caught, "Couldn't leave. Please try again."));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section
+      aria-label="Leave circle"
+      className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm"
+    >
+      {confirming ? (
+        <fieldset className="space-y-3 border-0 p-0">
+          <legend className="text-sm font-medium">
+            Are you sure you want to leave this Circle?
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={submitting}
+              onClick={() => {
+                setConfirming(false);
+                setSubmitError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10"
+              disabled={submitting}
+              onClick={() => void onConfirmLeave()}
+            >
+              {submitting ? "Leaving…" : "Confirm Leave"}
+            </Button>
+          </div>
+        </fieldset>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          className="border-destructive/40 text-destructive hover:bg-destructive/10"
+          onClick={() => setConfirming(true)}
+        >
+          Leave Circle
+        </Button>
+      )}
+
+      {submitError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {submitError}
+        </p>
+      ) : null}
+    </section>
   );
 }

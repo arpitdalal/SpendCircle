@@ -44,6 +44,10 @@ export function installE2EAuthHelper(): void {
         }
         throw new Error("E2E sign-in: onboarding completion timed out");
       },
+      /** Accept a pending invitation by token (E2E-only backend; MEM-3 will replace this). */
+      async acceptInvitation(token: string) {
+        await convex.mutation(api.e2e.acceptInvitationForE2E, { token });
+      },
     },
   });
 }
