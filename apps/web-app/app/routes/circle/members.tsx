@@ -1,5 +1,6 @@
 import { inviteEmailSchema } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
+import { href, useNavigate } from "react-router";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Avatar } from "~/components/ui/avatar.js";
 import { Button } from "~/components/ui/button.js";
@@ -10,6 +11,7 @@ import {
   type Member,
   type PendingInvitation,
   useCreateInvitation,
+  useLeaveCircle,
   useMembers,
   usePendingInvitations,
   useResendInvitation,
@@ -32,13 +34,13 @@ function formatExpiresIn(expiresAt: number): string {
 
 /**
  * Circle-scoped Member List (CONTEXT: Member List; PRD story 43). Read-only list
- * plus an Owner-only invite form (MEM-2) that surfaces a copyable Invitation
- * Link until EML-2 automates email delivery.
+ * plus an Owner-only invite form (MEM-2) that sends an invitation email (EML-2).
  */
 export default function CircleMembers() {
   const circle = useCircle();
   const members = useMembers(circle.id);
   const isOwner = members?.some((member) => member.isSelf && member.role === "owner") ?? false;
+  const isSelfMember = members?.some((member) => member.isSelf) ?? false;
   const canInvite = circle.kind === "regular" && isOwner;
 
   return (
@@ -47,6 +49,9 @@ export default function CircleMembers() {
       {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
       {canInvite ? <PendingInvitationsList circleId={circle.id} /> : null}
       <MemberList members={members} />
+      {circle.kind !== "personal" && isSelfMember ? (
+        <LeaveCircle circleId={circle.id} isOwner={isOwner} />
+      ) : null}
     </div>
   );
 }
@@ -57,13 +62,13 @@ function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [successEmail, setSuccessEmail] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFieldError(null);
     setSubmitError(null);
-    setInviteLink(null);
+    setSuccessEmail(null);
 
     const parsed = inviteEmailSchema.safeParse({ email });
     if (!parsed.success) {
@@ -73,11 +78,8 @@ function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
 
     setSubmitting(true);
     try {
-      const { token } = MOCKS
-        ? { token: "mock-invite-token" }
-        : await createInvitation({ circleId, email: parsed.data.email });
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
-      setInviteLink(`${origin}/invite/${token}`);
+      await createInvitation({ circleId, email: parsed.data.email });
+      setSuccessEmail(parsed.data.email);
       setEmail("");
     } catch (caught) {
       setSubmitError(
@@ -133,29 +135,10 @@ function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
         </p>
       ) : null}
 
-      {inviteLink ? (
-        <div
-          role="status"
-          className="space-y-2 rounded-lg border border-primary/30 bg-primary-soft/40 p-3"
-        >
-          <p className="text-sm font-medium">Invitation created — share this link:</p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Input
-              readOnly
-              value={inviteLink}
-              aria-label="Invitation link"
-              className="font-mono text-xs"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => void navigator.clipboard.writeText(inviteLink)}
-            >
-              Copy link
-            </Button>
-          </div>
-        </div>
+      {successEmail ? (
+        <p role="status" className="text-sm text-green-700">
+          Invitation sent to {successEmail}.
+        </p>
       ) : null}
 
       <Button type="submit" disabled={submitting || email.trim() === ""}>
@@ -395,5 +378,91 @@ function MemberList({ members }: { members: Member[] | null | undefined }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function LeaveCircle({ circleId, isOwner }: { circleId: Circle["id"]; isOwner: boolean }) {
+  const leaveCircle = useLeaveCircle();
+  const navigate = useNavigate();
+  const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  if (isOwner) {
+    return (
+      <section
+        aria-label="Leave circle"
+        className="rounded-xl border border-border bg-card p-4 shadow-sm"
+      >
+        <p className="text-sm text-muted-foreground">
+          Transfer ownership before leaving this Circle.
+        </p>
+      </section>
+    );
+  }
+
+  async function onConfirmLeave() {
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      await leaveCircle({ circleId });
+      navigate(href("/"));
+    } catch (caught) {
+      setSubmitError(mutationErrorMessageForUser(caught, "Couldn't leave. Please try again."));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section
+      aria-label="Leave circle"
+      className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm"
+    >
+      {confirming ? (
+        <fieldset className="space-y-3 border-0 p-0">
+          <legend className="text-sm font-medium">
+            Are you sure you want to leave this Circle?
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={submitting}
+              onClick={() => {
+                setConfirming(false);
+                setSubmitError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10"
+              disabled={submitting}
+              onClick={() => void onConfirmLeave()}
+            >
+              {submitting ? "Leaving…" : "Confirm Leave"}
+            </Button>
+          </div>
+        </fieldset>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          className="border-destructive/40 text-destructive hover:bg-destructive/10"
+          onClick={() => setConfirming(true)}
+        >
+          Leave Circle
+        </Button>
+      )}
+
+      {submitError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {submitError}
+        </p>
+      ) : null}
+    </section>
   );
 }

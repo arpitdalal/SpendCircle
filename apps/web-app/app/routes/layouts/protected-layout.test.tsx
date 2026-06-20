@@ -127,6 +127,110 @@ describe("ProtectedLayout shell skeleton", () => {
 });
 
 describe("ProtectedLayout onboarding gate", () => {
+  it("redirects not-onboarded Users on a deep link to onboarding instead of the destination", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ onboardingComplete: false }),
+      circles: [],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [
+            { index: true, Component: () => <h2>Home stub</h2> },
+            { path: "onboarding", Component: OnboardingRoute },
+            { path: "circles/:circleRef", Component: () => <h2>Circle stub</h2> },
+          ],
+        },
+      ],
+      ["/circles/abc"],
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Welcome" })).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Circle stub")).not.toBeInTheDocument();
+  });
+
+  it("returns to a deep-linked Circle after onboarding when returnTo was captured", async () => {
+    let currentUser = makeCurrentUserView({
+      onboardingComplete: false,
+      displayName: "Ada Lovelace",
+    });
+    const completeOnboarding = vi.fn(async () => {
+      currentUser = makeCurrentUserView({
+        onboardingComplete: true,
+        displayName: "Ada King",
+      });
+    });
+    configureConvex({
+      currentUser: () => currentUser,
+      circles: [],
+      completeOnboarding,
+    });
+
+    const routes = [
+      {
+        path: "/",
+        Component: ProtectedLayout,
+        children: [
+          { index: true, Component: () => <h2>Home stub</h2> },
+          { path: "onboarding", Component: OnboardingRoute },
+          { path: "circles/:circleRef", Component: () => <h2>Circle stub</h2> },
+        ],
+      },
+    ];
+    const Stub = createRoutesStub(routes);
+    const view = render(
+      <SnackbarProvider>
+        <Stub initialEntries={["/circles/abc"]} />
+      </SnackbarProvider>,
+    );
+
+    const user = userEvent.setup();
+    const input = await screen.findByLabelText("Display name");
+    await user.clear(input);
+    await user.type(input, "  Ada King  ");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(completeOnboarding).toHaveBeenCalledWith({ displayName: "Ada King" });
+    });
+
+    view.rerender(
+      <SnackbarProvider>
+        <Stub key="session-updated" initialEntries={["/onboarding?returnTo=/circles/abc"]} />
+      </SnackbarProvider>,
+    );
+
+    expect(await screen.findByText("Circle stub")).toBeInTheDocument();
+    expect(screen.queryByText("Home stub")).not.toBeInTheDocument();
+  });
+
+  it("redirects onboarded Users on /onboarding without returnTo back to Home", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ onboardingComplete: true }),
+      circles: [],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [
+            { index: true, Component: () => <h2>Home stub</h2> },
+            { path: "onboarding", Component: OnboardingRoute },
+          ],
+        },
+      ],
+      ["/onboarding"],
+    );
+
+    expect(await screen.findByText("Home stub")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Welcome" })).not.toBeInTheDocument();
+  });
+
   it("redirects not-onboarded Users to onboarding, but not when already there", async () => {
     configureConvex({
       currentUser: makeCurrentUserView({ onboardingComplete: false }),
