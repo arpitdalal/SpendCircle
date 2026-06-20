@@ -26,7 +26,7 @@ export async function ensureCircleConvexReady(page: Page) {
 
 export async function invokeScE2E<T>(page: Page, method: string, args: unknown[] = []) {
   await ensureCircleConvexReady(page);
-  return page.evaluate(
+  return page.evaluate<T>(
     async ([name, methodArgs]) => {
       const helper = Reflect.get(globalThis, "__scE2E");
       if (typeof helper !== "object" || helper === null) {
@@ -39,7 +39,7 @@ export async function invokeScE2E<T>(page: Page, method: string, args: unknown[]
       return Reflect.apply(fn, helper, methodArgs);
     },
     [method, args],
-  ) as Promise<T>;
+  );
 }
 
 export async function seedActiveMemberOnCircle(page: Page, email: string, displayName: string) {
@@ -80,6 +80,9 @@ export async function probeRemoveMember(page: Page, memberId: string) {
 export async function finishCircleSetup(page: Page) {
   await page.getByRole("button", { name: "Finish setup" }).click();
   await page.waitForURL(/\/circles\/[^/]+-[^/]+$/);
+  const setupToast = page.getByText("Circle setup complete.");
+  await expect(setupToast).toBeVisible();
+  await expect(setupToast).toBeHidden({ timeout: 10_000 });
 }
 
 /**

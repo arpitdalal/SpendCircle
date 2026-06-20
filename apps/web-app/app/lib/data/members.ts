@@ -24,6 +24,10 @@ export function useMembers(circleId: Circle["id"]): Member[] | null | undefined 
   return MOCKS ? MOCK_MEMBERS : queried;
 }
 
+export function useTransferOwnership() {
+  return useMutation(api.members.transferOwnership);
+}
+
 export function useRemoveMember() {
   return useMutation(api.members.removeMember);
 }

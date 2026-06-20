@@ -69,6 +69,60 @@ export const listMembers = query({
 });
 
 /**
+ * Transfers Circle ownership to an active Member (MEM-7). Updates both
+ * `members.role` and `circles.ownerUserId` atomically — they must stay in lockstep.
+ */
+export const transferOwnership = mutation({
+  args: {
+    circleId: v.id("circles"),
+    toMemberId: v.id("members"),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+
+    if (!access.isOwner) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.transferForbidden));
+    }
+
+    access.assertWritable();
+
+    if (access.circle.kind === "personal") {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.transferPersonalCircle));
+    }
+
+    const targetMember = await ctx.db.get(args.toMemberId);
+    if (!targetMember || targetMember.circleId !== args.circleId) {
+      throw new Error("Member not found");
+    }
+
+    if (targetMember.status !== "active") {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.transferTargetNotMember));
+    }
+
+    if (targetMember.role === "owner") {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.transferToSelf));
+    }
+
+    await ctx.db.patch(args.toMemberId, { role: "owner" });
+    await ctx.db.patch(access.membership._id, { role: "member" });
+    await ctx.db.patch(args.circleId, { ownerUserId: targetMember.userId });
+
+    await recordEvent(ctx, {
+      entity: circleEntity(access.circle._id),
+      actor: access.membership,
+      action: "ownership transferred",
+      changes: [
+        {
+          field: "owner",
+          from: access.membership.displayName,
+          to: targetMember.displayName,
+        },
+      ],
+    });
+  },
+});
+
+/**
  * Removes an active non-owner Member from a regular Circle (MEM-5). Status flip
  * only — the row stays so frozen identity and rejoin (MEM-3) keep working.
  */

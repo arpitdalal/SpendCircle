@@ -1,11 +1,20 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { inviteEmailSchema } from "@spend-circle/domain";
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, useId, useMemo, useState } from "react";
 import { href, useNavigate } from "react-router";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Avatar } from "~/components/ui/avatar.js";
 import { Button } from "~/components/ui/button.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
+import {
+  Combobox,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "~/components/ui/combobox.js";
 import { Field, FieldError, FieldLabel } from "~/components/ui/field.js";
 import { Input } from "~/components/ui/input.js";
 import { mobileSheetBackdropClassName } from "~/components/ui/mobile-sheet-primitives.js";
@@ -20,6 +29,7 @@ import {
   useRemoveMember,
   useResendInvitation,
   useRevokeInvitation,
+  useTransferOwnership,
 } from "~/lib/data.js";
 import { MOCKS } from "~/lib/env.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
@@ -38,9 +48,9 @@ function formatExpiresIn(expiresAt: number): string {
 }
 
 /**
- * Circle-scoped Member List (CONTEXT: Member List; PRD story 43). Read-only list
- * plus an Owner-only invite form (MEM-2). Owners can manage pending invitations
- * (MEM-4) and remove members (MEM-5); non-owner members can leave (MEM-6).
+ * Circle-scoped Member List (CONTEXT: Member List; PRD story 43). Owner-only
+ * invite form (MEM-2), pending-invitation management (MEM-4), ownership transfer
+ * (MEM-7), and member removal (MEM-5); non-owner members can leave (MEM-6).
  */
 export default function CircleMembers() {
   const circle = useCircle();
@@ -49,12 +59,25 @@ export default function CircleMembers() {
   const canWrite = circle.kind === "regular" && circle.status === "active";
   const isSelfMember = members?.some((member) => member.isSelf) ?? false;
   const canInvite = canWrite && isOwner;
+  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
 
   return (
     <div className="space-y-4">
       <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
       {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
       {canInvite ? <PendingInvitationsList circleId={circle.id} /> : null}
+      {isOwner && circle.kind === "regular" ? (
+        <TransferOwnershipForm
+          circleId={circle.id}
+          members={members ?? []}
+          onSuccess={(name) => setTransferSuccess(name)}
+        />
+      ) : null}
+      {transferSuccess ? (
+        <p role="status" aria-label="Ownership transfer result" className="text-sm text-foreground">
+          Ownership transferred to {transferSuccess}.
+        </p>
+      ) : null}
       <MemberList circleId={circle.id} members={members} canRemoveMembers={canWrite && isOwner} />
       {circle.kind !== "personal" && isSelfMember ? (
         <LeaveCircle circleId={circle.id} isOwner={isOwner} />
@@ -341,6 +364,131 @@ function PendingInvitationsList({ circleId }: { circleId: Circle["id"] }) {
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+function transferTargets(members: Member[]) {
+  return members.filter((member) => member.role === "member" && member.status === "active");
+}
+
+function TransferOwnershipForm({
+  circleId,
+  members,
+  onSuccess,
+}: {
+  circleId: Circle["id"];
+  members: Member[];
+  onSuccess: (targetName: string) => void;
+}) {
+  const transferOwnership = useTransferOwnership();
+  const targets = transferTargets(members);
+  const targetById = useMemo(
+    () => new Map(targets.map((member) => [member.id, member])),
+    [targets],
+  );
+  const [selectedId, setSelectedId] = useState<Member["id"] | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  if (targets.length === 0) {
+    return null;
+  }
+
+  const selected = selectedId ? targetById.get(selectedId) : undefined;
+
+  async function handleConfirm() {
+    if (!selectedId) {
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await transferOwnership({ circleId, toMemberId: selectedId });
+      onSuccess(selected?.displayName ?? "the new owner");
+      setSelectedId(null);
+    } catch (caught) {
+      setSubmitError(
+        mutationErrorMessageForUser(caught, "Couldn't transfer ownership. Please try again."),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section
+      aria-label="Transfer ownership"
+      className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm"
+    >
+      <p className="text-sm text-muted-foreground">
+        Hand over ownership to another active member. You&apos;ll become a regular member.
+      </p>
+
+      <Field>
+        <FieldLabel htmlFor="transfer-member">Transfer ownership to</FieldLabel>
+        <Combobox
+          value={selectedId}
+          onValueChange={(next) => {
+            setSelectedId(next);
+            setSubmitError(null);
+          }}
+          items={targets.map((member) => member.id)}
+          itemToStringLabel={(id) => targetById.get(id)?.displayName ?? ""}
+        >
+          <ComboboxInput
+            id="transfer-member"
+            aria-label="Transfer to member"
+            placeholder="Choose a member"
+            disabled={submitting}
+          />
+          <ComboboxContent>
+            <ComboboxEmpty>No members.</ComboboxEmpty>
+            <ComboboxList>
+              <ComboboxCollection>
+                {(id) => (
+                  <ComboboxItem key={id} value={id}>
+                    {targetById.get(id)?.displayName}
+                  </ComboboxItem>
+                )}
+              </ComboboxCollection>
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
+      </Field>
+
+      {selected ? (
+        <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm font-medium">Transfer ownership to {selected.displayName}?</p>
+          {submitError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {submitError}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={submitting}
+              onClick={() => {
+                setSelectedId(null);
+                setSubmitError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={submitting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              aria-label={`Confirm transfer ownership to ${selected.displayName}`}
+              onClick={() => void handleConfirm()}
+            >
+              {submitting ? "Transferring…" : "Confirm transfer"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

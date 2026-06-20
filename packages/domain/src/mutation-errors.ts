@@ -60,6 +60,19 @@ const mutationErrors = defineMutationErrorCatalog({
     "invite.alreadyPending",
     "There's already a pending invitation for that email",
   ),
+  transferForbidden: defineMutationError(
+    "transfer.forbidden",
+    "Only the Circle owner can transfer ownership",
+  ),
+  transferPersonalCircle: defineMutationError(
+    "transfer.personalCircle",
+    "Ownership of a Personal Circle can't be transferred",
+  ),
+  transferToSelf: defineMutationError("transfer.toSelf", "You're already the owner of this Circle"),
+  transferTargetNotMember: defineMutationError(
+    "transfer.targetNotMember",
+    "That person isn't an active member of this Circle",
+  ),
   memberRemoveForbidden: defineMutationError(
     "member.removeForbidden",
     "Only the Circle owner can remove members",
