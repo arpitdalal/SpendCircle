@@ -196,10 +196,11 @@ export const acceptInvitation = mutation({
         image: user.image ?? undefined,
         removedAt: undefined,
       });
-      membership = await ctx.db.get(existingMembership._id);
-      if (!membership) {
+      const reactivated = await ctx.db.get(existingMembership._id);
+      if (!reactivated) {
         throw new Error(INVITATION_INVALID);
       }
+      membership = reactivated;
     } else {
       const memberId = await ctx.db.insert("members", {
         circleId: circle._id,
@@ -210,10 +211,11 @@ export const acceptInvitation = mutation({
         image: user.image ?? undefined,
         joinedAt: Date.now(),
       });
-      membership = await ctx.db.get(memberId);
-      if (!membership) {
+      const inserted = await ctx.db.get(memberId);
+      if (!inserted) {
         throw new Error(INVITATION_INVALID);
       }
+      membership = inserted;
     }
 
     await ctx.db.patch(invitation._id, { status: "accepted" });
