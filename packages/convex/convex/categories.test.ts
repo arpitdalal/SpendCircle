@@ -946,6 +946,33 @@ describe("archiveCategory / restoreCategory — moderation", () => {
     );
   });
 
+  it("denies archive after removeMember flips the creator (MEM-5)", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, creator, circleId, categoryId } = await seedCategoryScenario(t);
+    const creatorMember = await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_user", (q) =>
+          q.eq("circleId", circleId).eq("userId", creator._id),
+        )
+        .unique();
+      if (!row) {
+        throw new Error("seed failed");
+      }
+      return row;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+    await t.mutation(api.members.removeMember, {
+      circleId,
+      memberId: creatorMember._id,
+    });
+
+    mockCurrentUser.mockResolvedValue(creator);
+    await expect(t.mutation(api.categories.archiveCategory, { categoryId })).rejects.toThrow(
+      "Category not found",
+    );
+  });
+
   it("rejects a redundant archive and a redundant restore (no silent no-op)", async () => {
     const t = convexTest(schema, modules);
     const { creator, categoryId } = await seedCategoryScenario(t);

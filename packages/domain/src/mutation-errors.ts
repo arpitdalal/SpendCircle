@@ -60,6 +60,10 @@ const mutationErrors = defineMutationErrorCatalog({
     "invite.alreadyPending",
     "There's already a pending invitation for that email",
   ),
+  memberRemoveForbidden: defineMutationError(
+    "member.removeForbidden",
+    "Only the Circle owner can remove members",
+  ),
   inviteResendCapReached: defineMutationError(
     "invite.resendCapReached",
     "This invitation has been resent too many times today. Try again tomorrow.",

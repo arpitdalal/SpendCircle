@@ -34,6 +34,7 @@ function setup(
   opts: {
     members?: Member[] | null;
     createInvitation?: Mock;
+    removeMember?: Mock;
     pendingInvitations?: PendingInvitation[] | null;
     resendInvitation?: Mock;
     revokeInvitation?: Mock;
@@ -44,6 +45,7 @@ function setup(
   configureConvex({
     members: opts.members,
     createInvitation: opts.createInvitation,
+    removeMember: opts.removeMember,
     pendingInvitations: "pendingInvitations" in opts ? opts.pendingInvitations : [],
     resendInvitation: opts.resendInvitation,
     revokeInvitation: opts.revokeInvitation,
@@ -154,6 +156,14 @@ describe("CircleMembers — invite form", () => {
     expect(screen.queryByRole("form", { name: "Invite member" })).not.toBeInTheDocument();
   });
 
+  it("hides the invite form on an archived Circle", () => {
+    setup({
+      circle: makeCircleView({ status: "archived" }),
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+    });
+    expect(screen.queryByRole("form", { name: "Invite member" })).not.toBeInTheDocument();
+  });
+
   it("shows a field error for an invalid email without calling the mutation", async () => {
     const createInvitation = vi.fn();
     const user = userEvent.setup();
@@ -215,6 +225,146 @@ describe("CircleMembers — invite form", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       MUTATION_ERRORS.inviteAlreadyPending.message,
     );
+  });
+});
+
+describe("CircleMembers — remove member", () => {
+  it("shows Remove on non-owner rows for the Owner only", () => {
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+    });
+    expect(screen.getByRole("button", { name: "Remove Maya Member" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Remove Olive Owner/ })).not.toBeInTheDocument();
+  });
+
+  it("does not show Remove on the Owner's own row", () => {
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true })],
+    });
+    expect(screen.queryByRole("button", { name: /Remove / })).not.toBeInTheDocument();
+  });
+
+  it("hides Remove buttons for a non-owner Member", () => {
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+    });
+    expect(screen.queryByRole("button", { name: /Remove / })).not.toBeInTheDocument();
+  });
+
+  it("hides Remove buttons on a Personal Circle", () => {
+    setup({
+      circle: makeCircleView({ kind: "personal" }),
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+    });
+    expect(screen.queryByRole("button", { name: /Remove / })).not.toBeInTheDocument();
+  });
+
+  it("hides Remove buttons on an archived Circle", () => {
+    setup({
+      circle: makeCircleView({ status: "archived" }),
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+    });
+    expect(screen.queryByRole("button", { name: /Remove / })).not.toBeInTheDocument();
+  });
+
+  it("opens a confirmation dialog with the member's name", async () => {
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Remove Maya Member" }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Maya Member");
+    expect(within(dialog).getByRole("button", { name: "Remove member" })).toBeInTheDocument();
+  });
+
+  it("closes the dialog on Cancel without calling the mutation", async () => {
+    const removeMember = vi.fn();
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+      removeMember,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Remove Maya Member" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(removeMember).not.toHaveBeenCalled();
+  });
+
+  it("calls removeMember and disables Confirm while in-flight", async () => {
+    const removeMember = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(resolve, 50);
+        }),
+    );
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+      removeMember,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Remove Maya Member" }));
+    const confirm = within(screen.getByRole("alertdialog")).getByRole("button", {
+      name: "Remove member",
+    });
+    await user.click(confirm);
+
+    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveTextContent("Removing…");
+    expect(removeMember).toHaveBeenCalledWith({
+      circleId: makeCircleView().id,
+      memberId: maya.id,
+    });
+  });
+
+  it("maps a coded mutation error inside the dialog", async () => {
+    const removeMember = vi
+      .fn()
+      .mockRejectedValue(new ConvexError(mutationErrorData(MUTATION_ERRORS.memberRemoveForbidden)));
+    const user = userEvent.setup();
+    setup({
+      members: [makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }), maya],
+      removeMember,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Remove Maya Member" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove member" }),
+    );
+
+    expect(await within(screen.getByRole("alertdialog")).findByRole("alert")).toHaveTextContent(
+      MUTATION_ERRORS.memberRemoveForbidden.message,
+    );
+  });
+
+  it("drops the row after a successful removal", async () => {
+    const liveMembers = [
+      makeMemberView({ displayName: "Olive Owner", role: "owner", isSelf: true }),
+      maya,
+    ];
+    const removeMember = vi.fn().mockImplementation(async () => {
+      liveMembers.pop();
+    });
+    const user = userEvent.setup();
+    setup({ members: liveMembers, removeMember });
+
+    await user.click(screen.getByRole("button", { name: "Remove Maya Member" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove member" }),
+    );
+
+    await expect(screen.findByRole("listitem")).resolves.toHaveTextContent("Olive Owner");
+    expect(screen.queryByText("Maya Member")).not.toBeInTheDocument();
   });
 });
 

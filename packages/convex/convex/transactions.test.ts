@@ -1332,6 +1332,22 @@ describe("updateTransaction — permission matrix", () => {
     ).resolves.toBeTruthy();
   });
 
+  it("forbids edits after removeMember flips the Recorded By Member (MEM-5)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const member = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
+    const id = await t.run((ctx) =>
+      seedTransaction(ctx, f, { recordedByMemberId: member.memberId }),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.mutation(api.members.removeMember, { circleId: f.circleId, memberId: member.memberId });
+
+    mockCurrentUser.mockResolvedValue(member.user);
+    await expect(
+      t.mutation(api.transactions.updateTransaction, { transactionId: id, title: "While removed" }),
+    ).rejects.toThrow("Transaction not found");
+  });
+
   it("hides existence from a non-member and an unauthenticated caller (anti-enumeration)", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));

@@ -8,6 +8,74 @@ const SM_BREAKPOINT_PX = 640;
 
 export type CircleChromeTab = "Dashboard" | "Transactions" | "Search" | "Categories" | "Members";
 
+/** `installE2EAuthHelper` runs from entry.client after hydration — wait before any in-page API bridge call. */
+export async function waitForScE2E(page: Page) {
+  await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });
+}
+
+/** Circle route mounted + Better Auth session wired into the Convex client (after navigation). */
+export async function ensureCircleConvexReady(page: Page) {
+  await page.waitForURL(/\/circles\/[^/]+/);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Circle tabs" })
+      .or(page.getByRole("navigation", { name: "Circle" })),
+  ).toBeVisible({ timeout: 30_000 });
+  await waitForScE2E(page);
+}
+
+export async function invokeScE2E<T>(page: Page, method: string, args: unknown[] = []) {
+  await ensureCircleConvexReady(page);
+  return page.evaluate(
+    async ([name, methodArgs]) => {
+      const helper = Reflect.get(globalThis, "__scE2E");
+      if (typeof helper !== "object" || helper === null) {
+        throw new Error("missing __scE2E");
+      }
+      const fn = Reflect.get(helper, name);
+      if (typeof fn !== "function") {
+        throw new Error(`missing ${name}`);
+      }
+      return Reflect.apply(fn, helper, methodArgs);
+    },
+    [method, args],
+  ) as Promise<T>;
+}
+
+export async function seedActiveMemberOnCircle(page: Page, email: string, displayName: string) {
+  return invokeScE2E<{ memberId: string }>(page, "seedActiveMember", [email, displayName]);
+}
+
+export type RemoveMemberProbeResult = { ok: true } | { ok: false; message: string; data: unknown };
+
+/** Permission probes: returns mutation outcome without throwing through Playwright. */
+export async function probeRemoveMember(page: Page, memberId: string) {
+  await ensureCircleConvexReady(page);
+  return page.evaluate(async (id) => {
+    const helper = Reflect.get(globalThis, "__scE2E");
+    if (typeof helper !== "object" || helper === null) {
+      throw new Error("missing __scE2E");
+    }
+    const remove = Reflect.get(helper, "removeMember");
+    if (typeof remove !== "function") {
+      throw new Error("missing removeMember");
+    }
+    try {
+      await Reflect.apply(remove, helper, [id]);
+      return { ok: true as const };
+    } catch (err) {
+      return {
+        ok: false as const,
+        message: err instanceof Error ? err.message : String(err),
+        data:
+          err && typeof err === "object" && "data" in err
+            ? (err as { data: unknown }).data
+            : undefined,
+      };
+    }
+  }, memberId);
+}
+
 /** Complete mandatory Circle setup (CS-5); lands on the Circle dashboard. */
 export async function finishCircleSetup(page: Page) {
   await page.getByRole("button", { name: "Finish setup" }).click();
@@ -226,7 +294,7 @@ export async function establishE2ESession(
     }
   }
 
-  await page.waitForFunction(() => "__scE2E" in globalThis, { timeout: 30_000 });
+  await waitForScE2E(page);
 
   let signInResult: string | undefined;
   try {
