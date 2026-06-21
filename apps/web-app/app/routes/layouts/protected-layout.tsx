@@ -2,6 +2,7 @@ import { href, Link, Navigate, Outlet, useLocation, useNavigation } from "react-
 import { AccountMenu } from "~/components/account-menu.js";
 import { CircleBottomNavSkeleton } from "~/components/circle-mobile-bottom-nav.js";
 import { CircleSwitcher } from "~/components/circle-switcher.js";
+import { NotificationCenter } from "~/components/notification-center.js";
 import { PageSkeleton } from "~/components/skeleton.js";
 import { Splash } from "~/components/splash.js";
 import { isCircleScopedPath } from "~/lib/circle-path.js";
@@ -65,7 +66,10 @@ export default function ProtectedLayout() {
           </Link>
           <CircleSwitcher />
         </div>
-        <AccountMenu user={session.user} showSignOut={!MOCKS} />
+        <div className="flex items-center gap-1">
+          <NotificationCenter />
+          <AccountMenu user={session.user} showSignOut={!MOCKS} />
+        </div>
       </header>
       <main className="flex-1 px-4 pb-24 pt-6 sm:pb-6">
         {showSkeleton ? <PageSkeleton /> : <Outlet />}

@@ -16,6 +16,7 @@ export { configureConvex, convexHelpersReactMock, convexReactMock } from "./conv
 export { makeHistoryEventView } from "./convex/history.js";
 export { testId } from "./convex/ids.js";
 export { makeMemberView } from "./convex/members.js";
+export { makeNotificationView } from "./convex/notifications.js";
 export {
   circleLayoutHeadingChrome,
   renderCircleRoutes,

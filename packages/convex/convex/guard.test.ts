@@ -13,8 +13,13 @@ import schema from "./schema.js";
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({ getCurrentUserOrNull: mockCurrentUser }));
 
-const { getActiveMembership, requireCircleAccess, requireTransactionAccess, resolveCircleAccess } =
-  await import("./guard.js");
+const {
+  getActiveMembership,
+  requireCircleAccess,
+  requireTransactionAccess,
+  resolveCircleAccess,
+  resolveCircleAccessForUser,
+} = await import("./guard.js");
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -180,6 +185,35 @@ describe("resolveCircleAccess", () => {
     });
     expect(result.isWritable).toBe(false);
     expect(result.data).toEqual(mutationErrorData(MUTATION_ERRORS.circleArchived));
+  });
+});
+
+describe("resolveCircleAccessForUser", () => {
+  it("returns authorized access for an active member", async () => {
+    const t = convexTest(schema, modules);
+    const result = await t.run(async (ctx) => {
+      const { user, circleId } = await seed(ctx);
+      const access = await resolveCircleAccessForUser(ctx, circleId, user);
+      return {
+        found: access !== null,
+        circleId: access?.circle._id,
+        isOwner: access?.isOwner,
+        isWritable: access?.isWritable,
+      };
+    });
+    expect(result.found).toBe(true);
+    expect(result.isOwner).toBe(true);
+    expect(result.isWritable).toBe(true);
+    expect(result.circleId).toBeTruthy();
+  });
+
+  it("returns null when the caller is not an active member", async () => {
+    const t = convexTest(schema, modules);
+    const access = await t.run(async (ctx) => {
+      const { user, circleId } = await seed(ctx, { status: "removed" });
+      return resolveCircleAccessForUser(ctx, circleId, user);
+    });
+    expect(access).toBeNull();
   });
 });
 
