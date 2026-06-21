@@ -55,8 +55,9 @@ tests where they're currently missing.
 ### Convex (`circles.ts`)
 
 - **`archiveCircle`** mutation — copy the `archiveCategory` shape:
-  - `requireCircleAccess` → reject non-Owner → reject `kind === "personal"` → reject an
-    already-archived Circle (`circle.status !== "active"` ⇒ throw, no silent no-op).
+  - `requireCircleAccess` → reject non-Owner → reject `kind === "personal"` → reject
+    setup-incomplete (`setupCompletedAt === null`) → reject an already-archived Circle
+    (`circle.status !== "active"` ⇒ throw, no silent no-op).
   - Patch `{ status: "archived", archivedAt: Date.now() }`.
   - **Revoke pending Invitations inline.** Do **not** call `revokeInvitation` — it is a public
     mutation that itself owner-checks and `assertWritable()`s (and Convex can't call a mutation
@@ -84,7 +85,8 @@ tests where they're currently missing.
 ### Web
 
 - **Archive/Restore action (new):** Owner-only control in `routes/circle/settings.tsx`. Show
-  **Archive** when `circle.status === "active"`, **Restore** when `"archived"`. Wire through a
+  **Archive** when `circle.status === "active"` and setup is complete, **Restore** when
+  `"archived"`. Wire through a
   `useArchiveCircle` / `useRestoreCircle` seam in `lib/data/circles.ts` (mirror the existing
   `useRenameCircle` etc.). Archiving is reversible but disruptive — gate it behind a confirm
   step. Surface the coded `circleArchived` rejection inline like the other Circle forms.
@@ -115,8 +117,8 @@ tests where they're currently missing.
 
 ## How to test
 
-- **Permissions:** Owner archives/restores ✓; non-owner ✗; Personal Circle ✗; archiving an
-  already-archived Circle ✗; restoring an active Circle ✗.
+- **Permissions:** Owner archives/restores ✓; non-owner ✗; Personal Circle ✗; setup-incomplete
+  Circle ✗; archiving an already-archived Circle ✗; restoring an active Circle ✗.
 - **Read-only cascade:** against an archived Circle, assert every mutation type is rejected with
   the coded `circleArchived` error — `createTransaction`, `updateTransaction`,
   `archiveTransaction`/`restoreTransaction`, `createCategory`, `updateCategory`,

@@ -341,6 +341,9 @@ export const archiveCircle = mutation({
     if (access.circle.status !== "active") {
       throw new Error("Circle is already archived");
     }
+    if (access.circle.setupCompletedAt === null) {
+      throw new Error("Complete circle setup before archiving this circle");
+    }
 
     const now = Date.now();
     await ctx.db.patch(access.circle._id, { status: "archived", archivedAt: now });

@@ -770,6 +770,16 @@ describe("archiveCircle", () => {
       /already archived/,
     );
   });
+
+  it("rejects a setup-incomplete circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(t.mutation(api.circles.archiveCircle, { circleId })).rejects.toThrow(
+      /Complete circle setup before archiving/,
+    );
+  });
 });
 
 describe("restoreCircle", () => {

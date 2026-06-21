@@ -272,6 +272,14 @@ describe("Circle archive and restore", () => {
     expect(screen.queryByRole("button", { name: "Restore circle" })).not.toBeInTheDocument();
   });
 
+  it("hides archive controls before setup is complete", () => {
+    renderSettings(
+      makeCircleView({ ref: "trip-c1", kind: "regular", setupComplete: false, status: "active" }),
+    );
+    expect(screen.queryByRole("button", { name: "Archive circle" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restore circle" })).not.toBeInTheDocument();
+  });
+
   it("flips to read-only when the live circle query archives mid-view", () => {
     const active = makeCircleView({ ref: "trip-c1", kind: "regular", status: "active" });
     configureConvex({ members: [ownerMember] });

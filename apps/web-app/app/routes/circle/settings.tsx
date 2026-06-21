@@ -407,7 +407,7 @@ export default function CircleSettings() {
         </fieldset>
       </form>
 
-      {circle.kind === "regular" ? (
+      {circle.kind === "regular" && (circle.setupComplete || !writable) ? (
         <ArchiveRestoreSection
           writable={writable}
           archiving={archiving}
