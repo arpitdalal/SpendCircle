@@ -9,7 +9,7 @@ import {
   RESIDENCE_TYPES,
 } from "@spend-circle/domain";
 import { type FormEvent, useId, useRef, useState } from "react";
-import { href, Navigate } from "react-router";
+import { href, Navigate, useNavigate } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Button } from "~/components/ui/button.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
@@ -17,6 +17,8 @@ import { mobileSheetBackdropClassName } from "~/components/ui/mobile-sheet-primi
 import {
   type Member,
   useArchiveCircle,
+  useCircleHasTransactions,
+  useDeleteCircle,
   useMembers,
   useRenameCircle,
   useRestoreCircle,
@@ -53,10 +55,13 @@ type ResidenceChoice = NonNullable<CircleSetupAnswers["residenceType"]> | "";
  */
 export default function CircleSettings() {
   const circle = useCircle();
+  const navigate = useNavigate();
   const members = useMembers(circle.id);
+  const hasTransactions = useCircleHasTransactions(circle.id);
   const renameCircle = useRenameCircle();
   const archiveCircle = useArchiveCircle();
   const restoreCircle = useRestoreCircle();
+  const deleteCircle = useDeleteCircle();
   const setPersonalCircleNameAutoSync = useSetPersonalCircleNameAutoSync();
   const updateSettings = useUpdateCircleSettings();
   const { show } = useSnackbar();
@@ -80,6 +85,9 @@ export default function CircleSettings() {
   const [archiving, setArchiving] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const dashboardPath = href("/circles/:circleRef", { circleRef: circle.ref });
 
@@ -92,7 +100,7 @@ export default function CircleSettings() {
     setResidenceType(circle.setupAnswers?.residenceType ?? "");
   }
 
-  if (members === undefined) {
+  if (members === undefined || hasTransactions === undefined) {
     return <p className="text-sm text-muted-foreground">Loading settings…</p>;
   }
 
@@ -102,6 +110,31 @@ export default function CircleSettings() {
 
   const nameDirty = name.trim() !== circle.name;
   const setupDirty = setupAnswersChanged(circle.setupAnswers, setupAnswers(purpose, residenceType));
+  const deletableEmpty =
+    circle.kind === "regular" &&
+    members !== null &&
+    members.length === 1 &&
+    hasTransactions === false;
+  const showArchiveGuidance =
+    circle.kind === "regular" && !deletableEmpty && (circle.setupComplete || !writable);
+
+  async function onConfirmDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteCircle({ circleId: circle.id });
+      setDeleteDialogOpen(false);
+      show("Circle deleted.");
+      navigate("/");
+    } catch (caught) {
+      console.error("deleteCircle failed", caught);
+      setDeleteError(
+        mutationErrorMessageForUser(caught, "Couldn't delete this circle. Please try again."),
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function onToggleNameAutoSync() {
     setSyncingName(true);
@@ -426,7 +459,149 @@ export default function CircleSettings() {
           onRestore={() => void onRestore()}
         />
       ) : null}
+
+      {circle.kind === "regular" ? (
+        <DeleteCircleSection
+          deletable={deletableEmpty}
+          showArchiveGuidance={showArchiveGuidance}
+          deleting={deleting}
+          deleteDialogOpen={deleteDialogOpen}
+          onDeleteDialogOpenChange={(open) => {
+            setDeleteDialogOpen(open);
+            if (!open) {
+              setDeleteError(null);
+            }
+          }}
+          deleteError={deleteError}
+          onOpenDeleteDialog={() => setDeleteDialogOpen(true)}
+          onConfirmDelete={() => void onConfirmDelete()}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function DeleteCircleSection({
+  deletable,
+  showArchiveGuidance,
+  deleting,
+  deleteDialogOpen,
+  onDeleteDialogOpenChange,
+  deleteError,
+  onOpenDeleteDialog,
+  onConfirmDelete,
+}: {
+  deletable: boolean;
+  showArchiveGuidance: boolean;
+  deleting: boolean;
+  deleteDialogOpen: boolean;
+  onDeleteDialogOpenChange: (open: boolean) => void;
+  deleteError: string | null;
+  onOpenDeleteDialog: () => void;
+  onConfirmDelete: () => void;
+}) {
+  return (
+    <section className="space-y-3 rounded-xl border border-destructive/30 bg-card p-5 shadow-sm">
+      <h3 className="text-sm font-medium text-destructive">Delete circle</h3>
+      {deletable ? (
+        <>
+          <p className="text-sm text-muted-foreground">
+            Permanently remove this circle. Only available when you are the sole member and no
+            transactions exist. Pending invitations are revoked and this cannot be undone.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="border-destructive/40 text-destructive hover:bg-destructive/10"
+            onClick={onOpenDeleteDialog}
+          >
+            Delete circle
+          </Button>
+          <DeleteCircleDialog
+            open={deleteDialogOpen}
+            onOpenChange={onDeleteDialogOpenChange}
+            onConfirm={onConfirmDelete}
+            confirming={deleting}
+            error={deleteError}
+          />
+        </>
+      ) : showArchiveGuidance ? (
+        <p className="text-sm text-muted-foreground">
+          This circle has members or transaction history, so it cannot be deleted. Archive it
+          instead to hide it while keeping the record.
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Delete is only available for a circle with no other members and no transactions.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function DeleteCircleDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  confirming,
+  error,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  confirming: boolean;
+  error: string | null;
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={mobileSheetBackdropClassName} />
+        <Dialog.Popup
+          role="alertdialog"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          className={cn(
+            "fixed top-1/2 left-1/2 z-50 w-[min(100%-2rem,24rem)] -translate-x-1/2 -translate-y-1/2",
+            "space-y-4 rounded-xl border border-border bg-card p-5 shadow-xl outline-none",
+            "data-open:animate-fade-in",
+          )}
+        >
+          <Dialog.Title id={titleId} className="font-display text-lg font-semibold tracking-tight">
+            Delete circle permanently?
+          </Dialog.Title>
+          <Dialog.Description id={descriptionId} className="text-sm text-muted-foreground">
+            This removes the circle, its categories, invitations, and history. It cannot be undone.
+          </Dialog.Description>
+
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Dialog.Close
+              type="button"
+              disabled={confirming}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Cancel
+            </Dialog.Close>
+            <Button
+              type="button"
+              disabled={confirming}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onConfirm}
+            >
+              {confirming ? "Deleting…" : "Delete circle"}
+            </Button>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

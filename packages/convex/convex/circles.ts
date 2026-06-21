@@ -5,11 +5,14 @@ import {
   colorLabel,
   DEFAULT_COLOR_ID,
   initials,
+  MUTATION_ERRORS,
+  mutationErrorData,
   parseCircleSettingsUpdate,
   starterCategories,
 } from "@spend-circle/domain";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
+import type { MutationCtx } from "./_generated/server.js";
 import { mutation, query } from "./_generated/server.js";
 import { requireCurrentUser } from "./auth.js";
 import { createCategoryForMember } from "./categories.js";
@@ -360,6 +363,58 @@ export const archiveCircle = mutation({
   },
 });
 
+/** Whether a Circle has any Transaction row, of any status (MEM-9 UI gate). */
+export const circleHasTransactions = query({
+  args: { circleId: v.id("circles") },
+  handler: async (ctx, args) => {
+    const access = await resolveCircleAccess(ctx, args.circleId);
+    if (!access) {
+      return null;
+    }
+    const transaction = await ctx.db
+      .query("transactions")
+      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+      .first();
+    return transaction !== null;
+  },
+});
+
+/** Deletes a strictly-empty regular Circle and cascades dependent rows (MEM-9). */
+export const deleteCircle = mutation({
+  args: { circleId: v.id("circles") },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+    if (!access.isOwner) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeleteForbidden));
+    }
+    if (access.circle.kind === "personal") {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeletePersonal));
+    }
+
+    const members = await ctx.db
+      .query("members")
+      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+      .collect();
+    if (members.length !== 1) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeleteHasMembers));
+    }
+    const soleMember = members[0];
+    if (!soleMember) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeleteHasMembers));
+    }
+
+    const hasTransaction = await ctx.db
+      .query("transactions")
+      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+      .first();
+    if (hasTransaction) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeleteNotEmpty));
+    }
+
+    await deleteCircleCascade(ctx, args.circleId, soleMember._id);
+  },
+});
+
 /** Restores an archived regular Circle the caller owns (MEM-8). */
 export const restoreCircle = mutation({
   args: { circleId: v.id("circles") },
@@ -384,6 +439,51 @@ export const restoreCircle = mutation({
     return args.circleId;
   },
 });
+
+async function deleteHistoriesForEntity(ctx: MutationCtx, entityId: string) {
+  const rows = await ctx.db
+    .query("histories")
+    .withIndex("by_entity", (q) => q.eq("entityId", entityId))
+    .collect();
+  for (const row of rows) {
+    await ctx.db.delete(row._id);
+  }
+}
+
+async function deleteCircleCascade(
+  ctx: MutationCtx,
+  circleId: Id<"circles">,
+  soleMemberId: Id<"members">,
+) {
+  const categories = await ctx.db
+    .query("categories")
+    .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+    .collect();
+  for (const category of categories) {
+    await deleteHistoriesForEntity(ctx, category._id);
+    await ctx.db.delete(category._id);
+  }
+
+  const invitations = await ctx.db
+    .query("invitations")
+    .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+    .collect();
+  for (const invitation of invitations) {
+    await ctx.db.delete(invitation._id);
+  }
+
+  const e2eTokens = await ctx.db
+    .query("e2eInvitationTokens")
+    .withIndex("by_circle_and_email", (q) => q.eq("circleId", circleId))
+    .collect();
+  for (const token of e2eTokens) {
+    await ctx.db.delete(token._id);
+  }
+
+  await deleteHistoriesForEntity(ctx, circleId);
+  await ctx.db.delete(soleMemberId);
+  await ctx.db.delete(circleId);
+}
 
 function setupAnswerChanges(
   before: Doc<"circles">["setupAnswers"],

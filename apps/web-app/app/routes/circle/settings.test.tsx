@@ -1,6 +1,7 @@
-import { colorHex } from "@spend-circle/domain";
+import { colorHex, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ConvexError } from "convex/values";
 import { Route } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import type { Member } from "~/lib/data.js";
@@ -295,5 +296,92 @@ describe("Circle archive and restore", () => {
 
     expect(screen.getByRole("button", { name: "Restore circle" })).toBeInTheDocument();
     expect(screen.getByLabelText("Circle name")).toBeDisabled();
+  });
+});
+
+describe("Circle delete", () => {
+  it("deletes an empty regular circle after confirmation and navigates home", async () => {
+    const user = userEvent.setup();
+    const deleteCircle = vi.fn().mockResolvedValue(undefined);
+    const circle = makeCircleView({
+      ref: "trip-c1",
+      kind: "regular",
+      setupComplete: false,
+      status: "active",
+    });
+    configureConvex({
+      members: [ownerMember],
+      circleHasTransactions: false,
+      deleteCircle,
+    });
+    const view = renderCircleRoutes(
+      circle,
+      <>
+        <Route path="/" element={<div>home</div>} />
+        <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />
+      </>,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Delete circle" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete circle" }),
+    );
+
+    expect(deleteCircle).toHaveBeenCalledWith({ circleId: circle.id });
+    await waitFor(() => {
+      expect(view.location()).toBe("/");
+    });
+    expect(screen.getByText("home")).toBeInTheDocument();
+  });
+
+  it("surfaces coded server rejection in the delete dialog", async () => {
+    const user = userEvent.setup();
+    const deleteCircle = vi
+      .fn()
+      .mockRejectedValue(new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeleteNotEmpty)));
+    const circle = makeCircleView({ ref: "trip-c1", kind: "regular", setupComplete: false });
+    configureConvex({
+      members: [ownerMember],
+      circleHasTransactions: false,
+      deleteCircle,
+    });
+    renderCircleRoutes(
+      circle,
+      <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Delete circle" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete circle" }),
+    );
+
+    expect(
+      await screen.findByText(MUTATION_ERRORS.circleDeleteNotEmpty.message),
+    ).toBeInTheDocument();
+  });
+
+  it("points owners with history toward archive instead of delete", () => {
+    const circle = makeCircleView({ ref: "trip-c1", kind: "regular", setupComplete: true });
+    configureConvex({
+      members: [ownerMember, makeMemberView({ id: makeMemberView().id, displayName: "Guest" })],
+      circleHasTransactions: false,
+    });
+    renderCircleRoutes(
+      circle,
+      <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    expect(screen.queryByRole("button", { name: "Delete circle" })).not.toBeInTheDocument();
+    expect(screen.getByText(/cannot be deleted/i)).toBeInTheDocument();
+    expect(screen.getByText(/Archive it instead/i)).toBeInTheDocument();
+  });
+
+  it("hides delete controls on a Personal Circle", () => {
+    renderSettings(makeCircleView({ ref: "personal-c0", kind: "personal" }), [ownerMember]);
+    expect(screen.queryByRole("button", { name: "Delete circle" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Delete circle/)).not.toBeInTheDocument();
   });
 });

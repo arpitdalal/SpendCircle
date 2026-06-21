@@ -65,6 +65,19 @@ export function useRestoreCircle() {
   return useMutation(api.circles.restoreCircle);
 }
 
+/** Whether the Circle has any Transaction (MEM-9 UI gate). `null` when inaccessible. */
+export function useCircleHasTransactions(circleId: Circle["id"] | undefined) {
+  return useQuery(
+    api.circles.circleHasTransactions,
+    circleId === undefined || MOCKS ? "skip" : { circleId },
+  );
+}
+
+/** Deletes a strictly-empty regular Circle (MEM-9). */
+export function useDeleteCircle() {
+  return useMutation(api.circles.deleteCircle);
+}
+
 /** Splits a Personal-first circle list into active vs archived for switcher/home grouping. */
 export function partitionCirclesByStatus(circles: Circle[]) {
   const active: Circle[] = [];

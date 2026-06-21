@@ -22,6 +22,8 @@ export interface CirclesState {
   setPersonalCircleNameAutoSync?: Mock;
   archiveCircle?: Mock;
   restoreCircle?: Mock;
+  circleHasTransactions?: boolean | null;
+  deleteCircle?: Mock;
 }
 
 export function circlesDouble(state: CirclesState): EntityDouble {
@@ -35,11 +37,14 @@ export function circlesDouble(state: CirclesState): EntityDouble {
     setPersonalCircleNameAutoSync,
     archiveCircle,
     restoreCircle,
+    circleHasTransactions,
+    deleteCircle,
   } = state;
   return {
     queries: {
       [getFunctionName(api.circles.listMyCircles)]: () => circles,
       [getFunctionName(api.circles.getCircle)]: () => circle,
+      [getFunctionName(api.circles.circleHasTransactions)]: () => circleHasTransactions ?? false,
     },
     mutations: {
       [getFunctionName(api.circles.createCircle)]: createCircle,
@@ -49,6 +54,7 @@ export function circlesDouble(state: CirclesState): EntityDouble {
       [getFunctionName(api.circles.setPersonalCircleNameAutoSync)]: setPersonalCircleNameAutoSync,
       [getFunctionName(api.circles.archiveCircle)]: archiveCircle,
       [getFunctionName(api.circles.restoreCircle)]: restoreCircle,
+      [getFunctionName(api.circles.deleteCircle)]: deleteCircle,
     },
   };
 }
