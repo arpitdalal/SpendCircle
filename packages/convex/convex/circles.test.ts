@@ -1,3 +1,4 @@
+import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -5,6 +6,7 @@ import {
   makeCategory,
   seedCircle,
   seedFixture,
+  seedInvitation,
   seedPersonalCircleOwner,
   seedTransaction,
 } from "../test/seed.js";
@@ -676,5 +678,191 @@ describe("setPersonalCircleNameAutoSync", () => {
 
     const view = await t.query(api.circles.getCircle, { circleId });
     expect(view?.nameCustomized).toBe(false);
+  });
+});
+
+describe("renameCircle — archived circle", () => {
+  it("rejects an archived circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.circles.renameCircle, { circleId, name: "Blocked" }),
+    ).rejects.toThrow(/archived/);
+  });
+});
+
+describe("archiveCircle", () => {
+  it("archives a regular circle, revokes pending invites, and records history", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      await ctx.db.patch(seed.circleId, { setupCompletedAt: Date.now() });
+      await seedInvitation(ctx, seed.circleId, seed.owner._id, {
+        email: "pending@example.com",
+        status: "pending",
+      });
+      await seedInvitation(ctx, seed.circleId, seed.owner._id, {
+        email: "accepted@example.com",
+        status: "accepted",
+      });
+      return seed;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.archiveCircle, { circleId });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.status).toBe("archived");
+      expect(circle?.archivedAt).toBeTypeOf("number");
+
+      const invitations = await ctx.db
+        .query("invitations")
+        .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+        .collect();
+      expect(invitations.find((row) => row.emailLower === "pending@example.com")?.status).toBe(
+        "revoked",
+      );
+      expect(invitations.find((row) => row.emailLower === "accepted@example.com")?.status).toBe(
+        "accepted",
+      );
+
+      const events = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+        .collect();
+      expect(events.at(-1)?.action).toBe("archived");
+      expect(events.at(-1)?.changes).toEqual([]);
+    });
+  });
+
+  it("rejects a non-owner member", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    const member = await t.run((ctx) =>
+      addMember(ctx, circleId, "member@example.com", "Maya Member"),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+
+    await expect(t.mutation(api.circles.archiveCircle, { circleId })).rejects.toThrow(
+      /Only the owner/,
+    );
+  });
+
+  it("rejects a Personal Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { kind: "personal" }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(t.mutation(api.circles.archiveCircle, { circleId })).rejects.toThrow(
+      /Personal Circles can't be archived/,
+    );
+  });
+
+  it("rejects an already-archived circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(t.mutation(api.circles.archiveCircle, { circleId })).rejects.toThrow(
+      /already archived/,
+    );
+  });
+});
+
+describe("restoreCircle", () => {
+  it("restores an archived circle, clears archivedAt, and leaves revoked invites revoked", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx, { archived: true });
+      await ctx.db.patch(seed.circleId, { archivedAt: Date.now() });
+      await seedInvitation(ctx, seed.circleId, seed.owner._id, {
+        email: "revoked@example.com",
+        status: "revoked",
+      });
+      return seed;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.restoreCircle, { circleId });
+
+    await t.run(async (ctx) => {
+      const circle = await ctx.db.get(circleId);
+      expect(circle?.status).toBe("active");
+      expect(circle?.archivedAt).toBeUndefined();
+
+      const invite = await ctx.db
+        .query("invitations")
+        .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+        .first();
+      expect(invite?.status).toBe("revoked");
+
+      const events = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+        .collect();
+      expect(events.at(-1)?.action).toBe("restored");
+      expect(events.at(-1)?.changes).toEqual([]);
+    });
+  });
+
+  it("rejects a non-owner member", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    const member = await t.run((ctx) =>
+      addMember(ctx, circleId, "member@example.com", "Maya Member"),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+
+    await expect(t.mutation(api.circles.restoreCircle, { circleId })).rejects.toThrow(
+      /Only the owner/,
+    );
+  });
+
+  it("rejects an active circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(t.mutation(api.circles.restoreCircle, { circleId })).rejects.toThrow(
+      /not archived/,
+    );
+  });
+});
+
+describe("archiveCircle — read-only cascade", () => {
+  it("blocks circle mutations after archive with circle.archived", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      await ctx.db.patch(seed.circleId, { setupCompletedAt: Date.now() });
+      return seed;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.archiveCircle, { circleId });
+
+    await expect(
+      t.mutation(api.circles.renameCircle, { circleId, name: "Blocked" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
+
+    await expect(
+      t.mutation(api.circles.updateCircleSettings, { circleId, color: "green" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
+
+    await expect(
+      t.mutation(api.circles.completeCircleSetup, {
+        circleId,
+        answers: { purpose: "trip" },
+      }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleArchived),
+    });
   });
 });

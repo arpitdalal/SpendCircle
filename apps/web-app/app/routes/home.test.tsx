@@ -65,4 +65,34 @@ describe("Home (render smoke)", () => {
     expect(screen.getByText(/Loading your circles/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Your circles" })).not.toBeInTheDocument();
   });
+
+  it("groups archived circles in a separate section below active ones", () => {
+    configureConvex({
+      circles: [
+        makeCircleView({
+          id: testId<Circle["id"]>("c0"),
+          ref: "personal-c0",
+          kind: "personal",
+          name: "Personal",
+        }),
+        makeCircleView({ id: testId<Circle["id"]>("c1"), ref: "trip-c1", name: "Trip" }),
+        makeCircleView({
+          id: testId<Circle["id"]>("c2"),
+          ref: "old-trip-c2",
+          name: "Old Trip",
+          status: "archived",
+        }),
+      ],
+    });
+    renderWithRouter(<Home />);
+
+    expect(screen.getByRole("heading", { name: "Archived" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "TripCircle · USD · Blue" })).toHaveAttribute(
+      "href",
+      "/circles/trip-c1",
+    );
+    expect(
+      screen.getByRole("link", { name: /Old TripCircle · USD · Blue · Archived/ }),
+    ).toHaveAttribute("href", "/circles/old-trip-c2");
+  });
 });

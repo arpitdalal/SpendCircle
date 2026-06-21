@@ -47,6 +47,14 @@ const TRIP = makeCircleView({
   mark: "T",
   color: "teal",
 });
+const ARCHIVED_TRIP = makeCircleView({
+  id: testId<Circle["id"]>("c2"),
+  ref: "old-trip-c2",
+  name: "Old Trip",
+  mark: "OT",
+  color: "gray",
+  status: "archived",
+});
 
 describe("CircleSwitcher", () => {
   it("lists only the User's own circles, Personal first, as canonical-ref links", async () => {
@@ -145,6 +153,24 @@ describe("CircleSwitcher", () => {
     await user.click(screen.getByRole("button", { name: /circles/i }));
     expect(screen.getByText(/Loading circles/)).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Create circle" })).toBeInTheDocument();
+  });
+
+  it("groups archived circles below an Archived section", async () => {
+    const user = userEvent.setup();
+    configureConvex({ circles: [PERSONAL, TRIP, ARCHIVED_TRIP] });
+    renderSwitcher();
+
+    await user.click(screen.getByRole("button", { name: /circles/i }));
+
+    const menu = screen.getByRole("menu", { name: "Your circles" });
+    expect(within(menu).getByText("Archived")).toBeInTheDocument();
+    const circleLinks = within(menu)
+      .getAllByRole("menuitem")
+      .filter((item) => item.getAttribute("href") !== "/circles/new");
+    expect(circleLinks[0]).toHaveTextContent("Personal");
+    expect(circleLinks[1]).toHaveTextContent("Trip");
+    expect(circleLinks[2]).toHaveTextContent("Old Trip");
+    expect(circleLinks[2]).toHaveTextContent("Archived");
   });
 
   it("is a labelled disclosure that closes on Escape", async () => {

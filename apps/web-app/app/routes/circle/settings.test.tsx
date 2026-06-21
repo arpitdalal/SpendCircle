@@ -1,5 +1,5 @@
 import { colorHex } from "@spend-circle/domain";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -223,5 +223,69 @@ describe("Personal Circle name auto-sync toggle", () => {
   it("is hidden for regular circles", () => {
     renderSettings(makeCircleView({ ref: "trip-c1", kind: "regular" }));
     expect(screen.queryByRole("switch", { name: "Match my display name" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Circle archive and restore", () => {
+  it("archives a regular circle after confirmation", async () => {
+    const user = userEvent.setup();
+    const archiveCircle = vi.fn().mockResolvedValue(undefined);
+    const circle = makeCircleView({ ref: "trip-c1", kind: "regular", status: "active" });
+    configureConvex({ members: [ownerMember], archiveCircle });
+    renderCircleRoutes(
+      circle,
+      <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Archive circle" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Archive circle" }),
+    );
+
+    expect(archiveCircle).toHaveBeenCalledWith({ circleId: circle.id });
+  });
+
+  it("disables settings forms when archived and offers restore", async () => {
+    const user = userEvent.setup();
+    const restoreCircle = vi.fn().mockResolvedValue(undefined);
+    const circle = makeCircleView({ ref: "trip-c1", kind: "regular", status: "archived" });
+    configureConvex({ members: [ownerMember], restoreCircle });
+    renderCircleRoutes(
+      circle,
+      <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    expect(screen.getByText(/This circle is archived/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Circle name")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Archive circle" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Restore circle" }));
+    expect(restoreCircle).toHaveBeenCalledWith({ circleId: circle.id });
+  });
+
+  it("hides archive controls on a Personal Circle", () => {
+    renderSettings(makeCircleView({ ref: "personal-c0", kind: "personal" }));
+    expect(screen.queryByRole("button", { name: "Archive circle" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restore circle" })).not.toBeInTheDocument();
+  });
+
+  it("flips to read-only when the live circle query archives mid-view", () => {
+    const active = makeCircleView({ ref: "trip-c1", kind: "regular", status: "active" });
+    configureConvex({ members: [ownerMember] });
+    const view = renderCircleRoutes(
+      active,
+      <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />,
+      { initialEntries: [`/circles/${active.ref}/settings`] },
+    );
+
+    expect(screen.getByRole("button", { name: "Archive circle" })).toBeInTheDocument();
+
+    view.rerender(makeCircleView({ ref: "trip-c1", kind: "regular", status: "archived" }));
+
+    expect(screen.getByRole("button", { name: "Restore circle" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Circle name")).toBeDisabled();
   });
 });
