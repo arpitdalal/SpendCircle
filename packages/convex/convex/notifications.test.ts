@@ -1,0 +1,327 @@
+import { buildRef } from "@spend-circle/domain";
+import { convexTest } from "convex-test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { addMember, firstPage, seedFixture, seedTransaction } from "../test/seed.js";
+import { api } from "./_generated/api.js";
+import type { Id } from "./_generated/dataModel.js";
+import schema from "./schema.js";
+
+const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
+vi.mock("./auth.js", () => ({
+  getCurrentUserOrNull: mockCurrentUser,
+  requireCurrentUser: async (ctx: unknown) => {
+    const user = await mockCurrentUser(ctx);
+    if (!user) {
+      throw new Error("Not authenticated");
+    }
+    return user;
+  },
+}));
+
+const modules = import.meta.glob("./**/*.ts");
+
+beforeEach(() => {
+  mockCurrentUser.mockReset();
+});
+
+async function insertNotification(
+  ctx: Parameters<Parameters<ReturnType<typeof convexTest>["run"]>[0]>[0],
+  opts: {
+    userId: Id<"users">;
+    type?: string;
+    title: string;
+    body?: string;
+    link?: string;
+    read?: boolean;
+    createdAt?: number;
+  },
+) {
+  return await ctx.db.insert("notifications", {
+    userId: opts.userId,
+    type: opts.type ?? "test",
+    title: opts.title,
+    body: opts.body,
+    link: opts.link,
+    read: opts.read ?? false,
+    createdAt: opts.createdAt ?? Date.now(),
+  });
+}
+
+describe("notifications", () => {
+  it("lists only the current User's notifications newest-first", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { user: member } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "member@example.com", "Member"),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.run(async (ctx) => {
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Older",
+        createdAt: 1000,
+      });
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Newer",
+        createdAt: 2000,
+      });
+      await insertNotification(ctx, {
+        userId: member._id,
+        title: "Someone else",
+        createdAt: 3000,
+      });
+    });
+
+    const page = await t.query(api.notifications.listNotifications, firstPage(10));
+    expect(page.page.map((n) => n.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("marks one notification read and updates the unread count", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const notificationId = await t.run(async (ctx) =>
+      insertNotification(ctx, { userId: f.owner._id, title: "Ping" }),
+    );
+
+    expect(await t.query(api.notifications.getUnreadCount, {})).toEqual({
+      count: 1,
+      hasMore: false,
+    });
+
+    await t.mutation(api.notifications.markNotificationRead, { notificationId });
+
+    const row = await t.run(async (ctx) => ctx.db.get(notificationId));
+    expect(row?.read).toBe(true);
+    expect(await t.query(api.notifications.getUnreadCount, {})).toEqual({
+      count: 0,
+      hasMore: false,
+    });
+  });
+
+  it("markNotificationRead is a no-op when already read", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const notificationId = await t.run(async (ctx) =>
+      insertNotification(ctx, { userId: f.owner._id, title: "Done", read: true }),
+    );
+
+    await t.mutation(api.notifications.markNotificationRead, { notificationId });
+    expect(await t.query(api.notifications.getUnreadCount, {})).toEqual({
+      count: 0,
+      hasMore: false,
+    });
+  });
+
+  it("markAllRead clears every unread notification for the User", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.run(async (ctx) => {
+      await insertNotification(ctx, { userId: f.owner._id, title: "One" });
+      await insertNotification(ctx, { userId: f.owner._id, title: "Two", read: true });
+      await insertNotification(ctx, { userId: f.owner._id, title: "Three" });
+    });
+
+    await t.mutation(api.notifications.markAllRead, {});
+
+    expect(await t.query(api.notifications.getUnreadCount, {})).toEqual({
+      count: 0,
+      hasMore: false,
+    });
+    await t.run(async (ctx) => {
+      const rows = await ctx.db
+        .query("notifications")
+        .withIndex("by_user", (q) => q.eq("userId", f.owner._id))
+        .collect();
+      expect(rows.every((row) => row.read)).toBe(true);
+    });
+  });
+
+  it("rejects marking another User's notification", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { user: member } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "member@example.com", "Member"),
+    );
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const notificationId = await t.run(async (ctx) =>
+      insertNotification(ctx, { userId: member._id, title: "Private" }),
+    );
+
+    await expect(
+      t.mutation(api.notifications.markNotificationRead, { notificationId }),
+    ).rejects.toThrow("Notification not found");
+  });
+
+  it("caps unread count at 99 with hasMore", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 100; i++) {
+        await insertNotification(ctx, {
+          userId: f.owner._id,
+          title: `Unread ${i}`,
+          createdAt: i,
+        });
+      }
+    });
+
+    expect(await t.query(api.notifications.getUnreadCount, {})).toEqual({
+      count: 99,
+      hasMore: true,
+    });
+  });
+});
+
+describe("notification link resolution", () => {
+  it("keeps accessible circle, transaction, and category links", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const circle = await t.run(async (ctx) => ctx.db.get(f.circleId));
+    const circleRef = buildRef(circle?.name ?? "Trip", f.circleId);
+    const txnId = await t.run((ctx) => seedTransaction(ctx, f));
+    const txn = await t.run(async (ctx) => ctx.db.get(txnId));
+    const txnRef = buildRef(txn?.title ?? "Weekly shop", txnId);
+    const category = await t.run(async (ctx) => ctx.db.get(f.groceriesId));
+    const categoryRef = buildRef(category?.name ?? "Groceries", f.groceriesId);
+
+    await t.run(async (ctx) => {
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Circle",
+        link: `/circles/${circleRef}`,
+      });
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Transaction",
+        link: `/circles/${circleRef}/transactions/${txnRef}`,
+      });
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Category",
+        link: `/circles/${circleRef}/categories/${categoryRef}`,
+      });
+    });
+
+    const page = await t.query(api.notifications.listNotifications, firstPage(10));
+    const byTitle = Object.fromEntries(page.page.map((n) => [n.title, n.link]));
+    expect(byTitle.Circle).toBe(`/circles/${circleRef}`);
+    expect(byTitle.Transaction).toBe(`/circles/${circleRef}/transactions/${txnRef}`);
+    expect(byTitle.Category).toBe(`/circles/${circleRef}/categories/${categoryRef}`);
+  });
+
+  it("drops links after the User loses Circle access", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const { user: member, memberId } = await t.run((ctx) =>
+      addMember(ctx, f.circleId, "member@example.com", "Member"),
+    );
+    mockCurrentUser.mockResolvedValue(member);
+
+    const circle = await t.run(async (ctx) => ctx.db.get(f.circleId));
+    const circleRef = buildRef(circle?.name ?? "Trip", f.circleId);
+    const notificationId = await t.run(async (ctx) =>
+      insertNotification(ctx, {
+        userId: member._id,
+        title: "Invite",
+        link: `/circles/${circleRef}`,
+      }),
+    );
+
+    let page = await t.query(api.notifications.listNotifications, firstPage(10));
+    expect(page.page[0]?.link).toBe(`/circles/${circleRef}`);
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(memberId, { status: "removed", removedAt: Date.now() });
+    });
+
+    page = await t.query(api.notifications.listNotifications, firstPage(10));
+    expect(page.page[0]?.link).toBeUndefined();
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(notificationId, { read: true });
+    });
+  });
+
+  it("keeps links for archived-but-accessible Circles and objects", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run(async (ctx) => seedFixture(ctx, { archived: true }));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const circle = await t.run(async (ctx) => ctx.db.get(f.circleId));
+    const circleRef = buildRef(circle?.name ?? "Trip", f.circleId);
+    const txnId = await t.run(async (ctx) => seedTransaction(ctx, f, { status: "archived" }));
+    const txn = await t.run(async (ctx) => ctx.db.get(txnId));
+    const txnRef = buildRef(txn?.title ?? "Weekly shop", txnId);
+
+    await t.run(async (ctx) => {
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Archived txn",
+        link: `/circles/${circleRef}/transactions/${txnRef}`,
+      });
+    });
+
+    const page = await t.query(api.notifications.listNotifications, firstPage(10));
+    expect(page.page[0]?.link).toBe(`/circles/${circleRef}/transactions/${txnRef}`);
+  });
+
+  it("drops links when the object belongs to a different Circle than the URL", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    const other = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const otherCircle = await t.run(async (ctx) => ctx.db.get(other.circleId));
+    const otherCircleRef = buildRef(otherCircle?.name ?? "Trip", other.circleId);
+    const txnId = await t.run(async (ctx) => seedTransaction(ctx, f));
+    const txn = await t.run(async (ctx) => ctx.db.get(txnId));
+    const txnRef = buildRef(txn?.title ?? "Weekly shop", txnId);
+
+    await t.run(async (ctx) => {
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Tampered",
+        link: `/circles/${otherCircleRef}/transactions/${txnRef}`,
+      });
+    });
+
+    const page = await t.query(api.notifications.listNotifications, firstPage(10));
+    expect(page.page[0]?.link).toBeUndefined();
+  });
+
+  it("drops malformed links to text-only", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    await t.run(async (ctx) => {
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Bad link",
+        link: "/settings",
+      });
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "No link",
+      });
+    });
+
+    const page = await t.query(api.notifications.listNotifications, firstPage(10));
+    const byTitle = Object.fromEntries(page.page.map((n) => [n.title, n.link]));
+    expect(byTitle["Bad link"]).toBeUndefined();
+    expect(byTitle["No link"]).toBeUndefined();
+  });
+});

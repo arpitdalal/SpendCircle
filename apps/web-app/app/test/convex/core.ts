@@ -9,6 +9,7 @@ import { type HistoryState, historyDouble } from "./history.js";
 import { type InvitationsState, invitationsDouble } from "./invitations.js";
 import { type LedgerState, ledgerDouble } from "./ledger.js";
 import { type MembersState, membersDouble } from "./members.js";
+import { type NotificationsState, notificationsDouble } from "./notifications.js";
 import { type TransactionsState, transactionsDouble } from "./transactions.js";
 import { type UsersState, usersDouble } from "./users.js";
 
@@ -20,7 +21,8 @@ export type ConvexState = CirclesState &
   LedgerState &
   DashboardState &
   HistoryState &
-  UsersState;
+  UsersState &
+  NotificationsState;
 
 const ENTITY_DOUBLES = [
   circlesDouble,
@@ -31,6 +33,7 @@ const ENTITY_DOUBLES = [
   ledgerDouble,
   dashboardDouble,
   historyDouble,
+  notificationsDouble,
   usersDouble,
 ];
 

@@ -5,6 +5,7 @@ export * from "./email-templates.js";
 export * from "./initials.js";
 export * from "./money.js";
 export * from "./mutation-errors.js";
+export * from "./notification-links.js";
 export * from "./personal-circle-name.js";
 export * from "./ref.js";
 export * from "./setup.js";

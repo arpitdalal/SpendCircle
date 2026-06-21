@@ -17,6 +17,7 @@ import type {
   Member,
   MonthlyComparison,
   MonthlySummary,
+  Notification,
   PendingInvitation,
   Transaction,
   TransactionDetail,
@@ -477,5 +478,28 @@ export const MOCK_TRANSACTION_HISTORY: TransactionHistoryEvent[] = [
       { field: "paidBy", to: "You" },
       { field: "categories", to: "Groceries" },
     ],
+  },
+];
+
+/** Mock notifications for offline/E2E shell (NTF-1). Typed against the derived
+ * {@link Notification} contract so a view-shape change fails typecheck here. */
+export const MOCK_NOTIFICATIONS: Notification[] = [
+  {
+    id: "mock-notif-linked" as Notification["id"],
+    type: "transaction.paid_by",
+    title: "Paid By updated",
+    body: "Alex set you as Paid By on Weekly shop.",
+    link: "/circles/trip-mock-personal/transactions/weekly-shop-mock-txn",
+    read: false,
+    createdAt: Date.UTC(2026, 5, 18, 10, 0),
+  },
+  {
+    id: "mock-notif-text" as Notification["id"],
+    type: "member.removed",
+    title: "Removed from Circle",
+    body: "You were removed from Shared Apartment.",
+    link: undefined,
+    read: true,
+    createdAt: Date.UTC(2026, 5, 17, 8, 30),
   },
 ];

@@ -25,6 +25,7 @@ import type * as ledger from "../ledger.js";
 import type * as members from "../members.js";
 import type * as model from "../model.js";
 import type * as monthActivity from "../monthActivity.js";
+import type * as notifications from "../notifications.js";
 import type * as search from "../search.js";
 import type * as transactionSearchDocuments from "../transactionSearchDocuments.js";
 import type * as transactions from "../transactions.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   members: typeof members;
   model: typeof model;
   monthActivity: typeof monthActivity;
+  notifications: typeof notifications;
   search: typeof search;
   transactionSearchDocuments: typeof transactionSearchDocuments;
   transactions: typeof transactions;
