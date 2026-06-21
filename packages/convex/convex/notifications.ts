@@ -1,34 +1,56 @@
 import { parseNotificationLinkPath } from "@spend-circle/domain";
-import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel.js";
+import type { Doc, Id } from "./_generated/dataModel.js";
 import { mutation, type QueryCtx, query } from "./_generated/server.js";
-import { requireCurrentUser } from "./auth.js";
-import { resolveCircleAccess } from "./guard.js";
+import { getCurrentUserOrNull, requireCurrentUser } from "./auth.js";
+import { type AuthorizedCircle, resolveCircleAccessForUser } from "./guard.js";
 
 /** Badge cap — scan at most CAP+1 unread rows so the UI can render `99+`. */
 export const UNREAD_COUNT_CAP = 99;
 
-function isConvexIdSegment(candidate: string) {
-  return /^[a-z0-9]+$/i.test(candidate);
-}
+/** Unread rows shown per open / cleared per mark-all-read batch. */
+export const NOTIFICATION_BATCH_SIZE = 20;
 
 const NOT_FOUND = "Notification not found";
 
+/** Ref id segments are shape-parsed here; `ctx.db.normalizeId` is the authoritative gate. */
+const acceptRefIdSegment = () => true;
+
+type CircleAccessLookup = (circleId: Id<"circles">) => Promise<AuthorizedCircle | null>;
+
 /**
- * Re-resolves a stored notification link at read time (NTF-1). Returns the link
- * when the caller still has Circle access and the referenced object exists in that
- * Circle; otherwise `undefined` (text-only, indistinguishable from never-linked).
+ * Batched link resolver for a single notification list page. Memoizes circle
+ * access (and in-flight lookups) so rows sharing a Circle reuse one membership read.
  */
-export async function resolveNotificationLink(
+export function createNotificationLinkResolver(ctx: QueryCtx, user: Doc<"users">) {
+  const circleAccessById = new Map<Id<"circles">, Promise<AuthorizedCircle | null>>();
+
+  const circleAccess: CircleAccessLookup = (circleId) => {
+    let pending = circleAccessById.get(circleId);
+    if (!pending) {
+      pending = resolveCircleAccessForUser(ctx, circleId, user);
+      circleAccessById.set(circleId, pending);
+    }
+    return pending;
+  };
+
+  return {
+    resolve(link: string | undefined) {
+      return resolveNotificationLinkWithAccess(ctx, link, circleAccess);
+    },
+  };
+}
+
+async function resolveNotificationLinkWithAccess(
   ctx: QueryCtx,
   link: string | undefined,
+  circleAccess: CircleAccessLookup,
 ): Promise<string | undefined> {
   if (!link) {
     return undefined;
   }
 
-  const parsed = parseNotificationLinkPath(link, isConvexIdSegment);
+  const parsed = parseNotificationLinkPath(link, acceptRefIdSegment);
   if (!parsed) {
     return undefined;
   }
@@ -38,7 +60,7 @@ export async function resolveNotificationLink(
     return undefined;
   }
 
-  const access = await resolveCircleAccess(ctx, circleId);
+  const access = await circleAccess(circleId);
   if (!access) {
     return undefined;
   }
@@ -70,8 +92,30 @@ export async function resolveNotificationLink(
   return link;
 }
 
-async function toNotificationView(ctx: QueryCtx, row: Doc<"notifications">) {
-  const link = await resolveNotificationLink(ctx, row.link);
+/**
+ * Re-resolves a stored notification link at read time (NTF-1). Returns the link
+ * when the caller still has Circle access and the referenced object exists in that
+ * Circle; otherwise `undefined` (text-only, indistinguishable from never-linked).
+ */
+export async function resolveNotificationLink(
+  ctx: QueryCtx,
+  link: string | undefined,
+): Promise<string | undefined> {
+  if (!link) {
+    return undefined;
+  }
+  const user = await getCurrentUserOrNull(ctx);
+  if (!user) {
+    return undefined;
+  }
+  return createNotificationLinkResolver(ctx, user).resolve(link);
+}
+
+async function toNotificationView(
+  row: Doc<"notifications">,
+  linkResolver: ReturnType<typeof createNotificationLinkResolver>,
+) {
+  const link = await linkResolver.resolve(row.link);
   return {
     id: row._id,
     type: row.type,
@@ -83,21 +127,19 @@ async function toNotificationView(ctx: QueryCtx, row: Doc<"notifications">) {
   };
 }
 
-/** The caller's notifications, newest first, with links re-resolved for access. */
+/** Up to {@link NOTIFICATION_BATCH_SIZE} unread notifications, newest first. */
 export const listNotifications = query({
-  args: {
-    paginationOpts: paginationOptsValidator,
-  },
-  handler: async (ctx, args) => {
+  args: {},
+  handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
-    const result = await ctx.db
+    const rows = await ctx.db
       .query("notifications")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_and_read", (q) => q.eq("userId", user._id).eq("read", false))
       .order("desc")
-      .paginate(args.paginationOpts);
+      .take(NOTIFICATION_BATCH_SIZE);
 
-    const page = await Promise.all(result.page.map((row) => toNotificationView(ctx, row)));
-    return { ...result, page };
+    const linkResolver = createNotificationLinkResolver(ctx, user);
+    return Promise.all(rows.map((row) => toNotificationView(row, linkResolver)));
   },
 });
 
@@ -134,7 +176,7 @@ export const markNotificationRead = mutation({
   },
 });
 
-/** Marks every unread notification read for the current User. */
+/** Marks the current unread batch read (same slice as {@link listNotifications}). */
 export const markAllRead = mutation({
   args: {},
   handler: async (ctx) => {
@@ -142,7 +184,8 @@ export const markAllRead = mutation({
     const unread = await ctx.db
       .query("notifications")
       .withIndex("by_user_and_read", (q) => q.eq("userId", user._id).eq("read", false))
-      .collect();
+      .order("desc")
+      .take(NOTIFICATION_BATCH_SIZE);
     for (const row of unread) {
       await ctx.db.patch(row._id, { read: true });
     }

@@ -1,42 +1,27 @@
 import { api } from "@spend-circle/convex";
-import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "../env.js";
 import { MOCK_NOTIFICATIONS } from "../fixtures.js";
-import type { PaginationStatus } from "./transactions.js";
 
-/** How many notifications to fetch per page (initial load and each "load more"). */
-export const NOTIFICATIONS_PAGE_SIZE = 20;
+/** How many unread notifications the center shows and clears per batch. */
+export const NOTIFICATION_BATCH_SIZE = 20;
 
 /**
  * One notification view row, derived from `listNotifications` so the client
  * contract cannot drift from the backend (ADR 0003).
  */
-export type Notification = FunctionReturnType<
-  typeof api.notifications.listNotifications
->["page"][number];
+export type Notification = FunctionReturnType<typeof api.notifications.listNotifications>[number];
 
 export type UnreadCount = FunctionReturnType<typeof api.notifications.getUnreadCount>;
 
-export interface PaginatedNotifications {
-  notifications: Notification[];
-  status: PaginationStatus;
-  loadMore: () => void;
-}
-
-/** The caller's notifications, newest first, paginated at the source. */
-export function useNotifications(): PaginatedNotifications {
-  const paginated = usePaginatedQuery(api.notifications.listNotifications, MOCKS ? "skip" : {}, {
-    initialNumItems: NOTIFICATIONS_PAGE_SIZE,
-  });
+/** Unread notifications for the current batch (newest first, max {@link NOTIFICATION_BATCH_SIZE}). */
+export function useNotifications() {
+  const live = useQuery(api.notifications.listNotifications, MOCKS ? "skip" : {});
   if (MOCKS) {
-    return { notifications: MOCK_NOTIFICATIONS, status: "Exhausted", loadMore: () => {} };
+    return MOCK_NOTIFICATIONS.filter((n) => !n.read);
   }
-  return {
-    notifications: paginated.results,
-    status: paginated.status,
-    loadMore: () => paginated.loadMore(NOTIFICATIONS_PAGE_SIZE),
-  };
+  return live;
 }
 
 /** Unread count for the header badge (`99+` when capped). */

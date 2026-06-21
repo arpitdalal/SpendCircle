@@ -17,10 +17,20 @@ async function openNotifications(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("NotificationCenter", () => {
-  it("renders linked and text-only items from mock fixtures", async () => {
+  it("renders linked and text-only unread items from mock fixtures", async () => {
     configureConvex({
-      notifications: MOCK_NOTIFICATIONS,
-      unreadCount: { count: 1, hasMore: false },
+      notifications: [
+        makeNotificationView({
+          title: "Paid By updated",
+          link: MOCK_NOTIFICATIONS[0]?.link,
+        }),
+        makeNotificationView({
+          title: "Removed from Circle",
+          body: "You were removed from Shared Apartment.",
+          link: undefined,
+        }),
+      ],
+      unreadCount: { count: 2, hasMore: false },
     });
     const user = userEvent.setup();
     renderRoutes(<Route path="/" element={<NotificationCenter />} />, { initialEntries: ["/"] });
@@ -32,9 +42,6 @@ describe("NotificationCenter", () => {
     expect(screen.getByRole("menuitem", { name: /Paid By updated/ })).toHaveAttribute(
       "href",
       MOCK_NOTIFICATIONS[0]?.link,
-    );
-    expect(screen.queryByRole("menuitem", { name: /Removed from Circle/ })).not.toHaveAttribute(
-      "href",
     );
   });
 

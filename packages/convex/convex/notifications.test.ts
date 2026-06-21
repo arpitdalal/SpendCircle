@@ -1,9 +1,11 @@
 import { buildCategoryNotificationLink, buildRef } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { addMember, firstPage, seedFixture, seedTransaction } from "../test/seed.js";
+import { addMember, seedFixture, seedTransaction } from "../test/seed.js";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
+import * as guard from "./guard.js";
+import { NOTIFICATION_BATCH_SIZE } from "./notifications.js";
 import schema from "./schema.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
@@ -48,7 +50,7 @@ async function insertNotification(
 }
 
 describe("notifications", () => {
-  it("lists only the current User's notifications newest-first", async () => {
+  it("lists unread notifications for the current User newest-first", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     const { user: member } = await t.run((ctx) =>
@@ -59,23 +61,29 @@ describe("notifications", () => {
     await t.run(async (ctx) => {
       await insertNotification(ctx, {
         userId: f.owner._id,
-        title: "Older",
+        title: "Older unread",
         createdAt: 1000,
       });
       await insertNotification(ctx, {
         userId: f.owner._id,
-        title: "Newer",
+        title: "Newer unread",
         createdAt: 2000,
+      });
+      await insertNotification(ctx, {
+        userId: f.owner._id,
+        title: "Already read",
+        read: true,
+        createdAt: 3000,
       });
       await insertNotification(ctx, {
         userId: member._id,
         title: "Someone else",
-        createdAt: 3000,
+        createdAt: 4000,
       });
     });
 
-    const page = await t.query(api.notifications.listNotifications, firstPage(10));
-    expect(page.page.map((n) => n.title)).toEqual(["Newer", "Older"]);
+    const page = await t.query(api.notifications.listNotifications, {});
+    expect(page.map((n) => n.title)).toEqual(["Newer unread", "Older unread"]);
   });
 
   it("marks one notification read and updates the unread count", async () => {
@@ -118,7 +126,7 @@ describe("notifications", () => {
     });
   });
 
-  it("markAllRead clears every unread notification for the User", async () => {
+  it("markAllRead marks only the current unread batch", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
@@ -140,8 +148,42 @@ describe("notifications", () => {
         .query("notifications")
         .withIndex("by_user", (q) => q.eq("userId", f.owner._id))
         .collect();
-      expect(rows.every((row) => row.read)).toBe(true);
+      expect(rows.filter((row) => !row.read).map((row) => row.title)).toEqual([]);
+      expect(rows.find((row) => row.title === "Two")?.read).toBe(true);
     });
+  });
+
+  it("markAllRead leaves unread rows beyond the batch limit", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const totalUnread = NOTIFICATION_BATCH_SIZE + 5;
+    await t.run(async (ctx) => {
+      for (let i = 0; i < totalUnread; i++) {
+        await insertNotification(ctx, {
+          userId: f.owner._id,
+          title: `Unread ${i}`,
+          createdAt: i,
+        });
+      }
+    });
+
+    await t.mutation(api.notifications.markAllRead, {});
+
+    expect(await t.query(api.notifications.getUnreadCount, {})).toEqual({
+      count: 5,
+      hasMore: false,
+    });
+    const visible = await t.query(api.notifications.listNotifications, {});
+    expect(visible).toHaveLength(5);
+    expect(visible.map((n) => n.title)).toEqual([
+      "Unread 4",
+      "Unread 3",
+      "Unread 2",
+      "Unread 1",
+      "Unread 0",
+    ]);
   });
 
   it("rejects marking another User's notification", async () => {
@@ -159,6 +201,31 @@ describe("notifications", () => {
     await expect(
       t.mutation(api.notifications.markNotificationRead, { notificationId }),
     ).rejects.toThrow("Notification not found");
+  });
+
+  it("memoizes circle access across a notification batch", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+
+    const circle = await t.run(async (ctx) => ctx.db.get(f.circleId));
+    const circleRef = buildRef(circle?.name ?? "Trip", f.circleId);
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < NOTIFICATION_BATCH_SIZE; i++) {
+        await insertNotification(ctx, {
+          userId: f.owner._id,
+          title: `Ping ${i}`,
+          link: `/circles/${circleRef}`,
+          createdAt: i,
+        });
+      }
+    });
+
+    const accessSpy = vi.spyOn(guard, "resolveCircleAccessForUser");
+    await t.query(api.notifications.listNotifications, {});
+    expect(accessSpy).toHaveBeenCalledTimes(1);
+    accessSpy.mockRestore();
   });
 
   it("caps unread count at 99 with hasMore", async () => {
@@ -215,8 +282,8 @@ describe("notification link resolution", () => {
       });
     });
 
-    const page = await t.query(api.notifications.listNotifications, firstPage(10));
-    const byTitle = Object.fromEntries(page.page.map((n) => [n.title, n.link]));
+    const page = await t.query(api.notifications.listNotifications, {});
+    const byTitle = Object.fromEntries(page.map((n) => [n.title, n.link]));
     expect(byTitle.Circle).toBe(`/circles/${circleRef}`);
     expect(byTitle.Transaction).toBe(`/circles/${circleRef}/transactions/${txnRef}`);
     expect(byTitle.Category).toBe(buildCategoryNotificationLink(circleRef, categoryRef));
@@ -240,15 +307,15 @@ describe("notification link resolution", () => {
       }),
     );
 
-    let page = await t.query(api.notifications.listNotifications, firstPage(10));
-    expect(page.page[0]?.link).toBe(`/circles/${circleRef}`);
+    let page = await t.query(api.notifications.listNotifications, {});
+    expect(page[0]?.link).toBe(`/circles/${circleRef}`);
 
     await t.run(async (ctx) => {
       await ctx.db.patch(memberId, { status: "removed", removedAt: Date.now() });
     });
 
-    page = await t.query(api.notifications.listNotifications, firstPage(10));
-    expect(page.page[0]?.link).toBeUndefined();
+    page = await t.query(api.notifications.listNotifications, {});
+    expect(page[0]?.link).toBeUndefined();
 
     await t.run(async (ctx) => {
       await ctx.db.patch(notificationId, { read: true });
@@ -274,8 +341,8 @@ describe("notification link resolution", () => {
       });
     });
 
-    const page = await t.query(api.notifications.listNotifications, firstPage(10));
-    expect(page.page[0]?.link).toBe(`/circles/${circleRef}/transactions/${txnRef}`);
+    const page = await t.query(api.notifications.listNotifications, {});
+    expect(page[0]?.link).toBe(`/circles/${circleRef}/transactions/${txnRef}`);
   });
 
   it("drops links when the object belongs to a different Circle than the URL", async () => {
@@ -298,8 +365,8 @@ describe("notification link resolution", () => {
       });
     });
 
-    const page = await t.query(api.notifications.listNotifications, firstPage(10));
-    expect(page.page[0]?.link).toBeUndefined();
+    const page = await t.query(api.notifications.listNotifications, {});
+    expect(page[0]?.link).toBeUndefined();
   });
 
   it("drops malformed links to text-only", async () => {
@@ -319,8 +386,8 @@ describe("notification link resolution", () => {
       });
     });
 
-    const page = await t.query(api.notifications.listNotifications, firstPage(10));
-    const byTitle = Object.fromEntries(page.page.map((n) => [n.title, n.link]));
+    const page = await t.query(api.notifications.listNotifications, {});
+    const byTitle = Object.fromEntries(page.map((n) => [n.title, n.link]));
     expect(byTitle["Bad link"]).toBeUndefined();
     expect(byTitle["No link"]).toBeUndefined();
   });

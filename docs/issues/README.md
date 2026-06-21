@@ -195,13 +195,14 @@ explicitly in the PR and flag it — never skip it silently.
   placeholder routes.
 - **Queries are scalable and paginated from day one.** v1 ships to real test users, not a
   personal dataset — every query must stay bounded under load. Any query over an
-  unbounded-growth set (Transactions, Categories, Members, History, Notifications, search
-  results) MUST paginate **at the source** via Convex `paginate` over an appropriate index —
-  never `.collect()` a whole table/range and slice in memory, and never lean on "v1 volume is
-  small." Reads are index-backed (add the index in `schema.ts` if missing); aggregates
-  (totals, counts, analytics) are computed over bounded/indexed ranges, not by scanning every
-  row. "Good enough for v1" is not a reason to ship an unbounded query — if a slice genuinely
-  cannot paginate, say why in the PR, don't skip it silently.
+  unbounded-growth set (Transactions, Categories, Members, History, search results) MUST paginate
+  **at the source** via Convex `paginate` over an appropriate index — never `.collect()` a whole
+  table/range and slice in memory, and never lean on "v1 volume is small." **Notifications** are
+  the exception: the center is an unread inbox cleared in **bounded batches** (`.take(20)` on
+  `by_user_and_read`, not cursor pagination) — see NTF-1. Reads are index-backed (add the index in
+  `schema.ts` if missing); aggregates (totals, counts, analytics) are computed over bounded/indexed
+  ranges, not by scanning every row. "Good enough for v1" is not a reason to ship an unbounded
+  query — if a slice genuinely cannot paginate, say why in the PR, don't skip it silently.
 - **Reads are index-backed and batch-aware.** Query via `.withIndex(...)`; never `.filter()`
   over an unbounded range (it scans every row). Resolve related data (a Transaction's
   Categories and Paid By, a Member's User, etc.) by batching over an index, **not** a `.get()`

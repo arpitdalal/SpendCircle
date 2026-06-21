@@ -87,27 +87,11 @@ export async function getActiveMembership(
   return membership;
 }
 
-/**
- * Resolves Circle access without ever throwing. The single home of the
- * missing≡inaccessible rule (ADR 0016): an unauthenticated caller, a missing
- * Circle, a non-member, and a removed Member are all indistinguishable `null`.
- */
-export async function resolveCircleAccess(
-  ctx: QueryCtx | MutationCtx,
-  circleId: Id<"circles">,
-): Promise<AuthorizedCircle | null> {
-  const user = await getCurrentUserOrNull(ctx);
-  if (!user) {
-    return null;
-  }
-  const circle = await ctx.db.get(circleId);
-  if (!circle) {
-    return null;
-  }
-  const membership = await getActiveMembership(ctx, circleId, user._id);
-  if (!membership) {
-    return null;
-  }
+function toAuthorizedCircle(
+  user: Doc<"users">,
+  membership: Doc<"members">,
+  circle: Doc<"circles">,
+): AuthorizedCircle {
   const isOwner = membership.role === "owner";
   const isWritable = circle.status === "active";
   return {
@@ -122,6 +106,43 @@ export async function resolveCircleAccess(
       }
     },
   };
+}
+
+/**
+ * Resolves Circle access for a known User without re-reading auth. Callers that
+ * already hold the current User (e.g. a batched notification page) use this so
+ * membership/circle lookups can be memoized per `circleId`.
+ */
+export async function resolveCircleAccessForUser(
+  ctx: QueryCtx | MutationCtx,
+  circleId: Id<"circles">,
+  user: Doc<"users">,
+): Promise<AuthorizedCircle | null> {
+  const circle = await ctx.db.get(circleId);
+  if (!circle) {
+    return null;
+  }
+  const membership = await getActiveMembership(ctx, circleId, user._id);
+  if (!membership) {
+    return null;
+  }
+  return toAuthorizedCircle(user, membership, circle);
+}
+
+/**
+ * Resolves Circle access without ever throwing. The single home of the
+ * missing≡inaccessible rule (ADR 0016): an unauthenticated caller, a missing
+ * Circle, a non-member, and a removed Member are all indistinguishable `null`.
+ */
+export async function resolveCircleAccess(
+  ctx: QueryCtx | MutationCtx,
+  circleId: Id<"circles">,
+): Promise<AuthorizedCircle | null> {
+  const user = await getCurrentUserOrNull(ctx);
+  if (!user) {
+    return null;
+  }
+  return resolveCircleAccessForUser(ctx, circleId, user);
 }
 
 /**

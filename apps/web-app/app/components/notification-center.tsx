@@ -77,7 +77,7 @@ function NotificationRow({
  * dropdown list with access-resolved links (text-only when `link` is absent).
  */
 export function NotificationCenter() {
-  const { notifications, status, loadMore } = useNotifications();
+  const notifications = useNotifications() ?? [];
   const unread = useUnreadCount();
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllRead();
@@ -85,9 +85,14 @@ export function NotificationCenter() {
 
   const unreadCount = unread?.count ?? 0;
   const showBadge = unreadCount > 0 || unread?.hasMore;
+  const showMarkAllRead = notifications.length > 0;
 
   const handleMarkRead = async (notificationId: Notification["id"]) => {
-    await markRead({ notificationId });
+    try {
+      await markRead({ notificationId });
+    } catch {
+      // Own notifications only; swallow so a mid-navigation failure cannot reject.
+    }
   };
 
   const handleMarkAllRead = async () => {
@@ -129,25 +134,13 @@ export function NotificationCenter() {
               "flex max-h-[min(24rem,70dvh)] w-[min(22rem,calc(100vw-2rem))] origin-(--transform-origin) animate-pop-in flex-col rounded-lg border border-border bg-popover text-popover-foreground shadow-xl outline-none",
             )}
           >
-            <div className="flex items-center justify-between border-b border-border px-3 py-2">
+            <div className="border-b border-border px-3 py-2">
               <p className="text-sm font-medium">Notifications</p>
-              {showBadge ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={markingAll}
-                  aria-busy={markingAll}
-                  onClick={() => void handleMarkAllRead()}
-                >
-                  Mark all read
-                </Button>
-              ) : null}
             </div>
             <ul className="overflow-y-auto py-1">
               {notifications.length === 0 ? (
                 <li className="list-none px-3 py-6 text-center text-sm text-muted-foreground">
-                  No notifications yet
+                  You're all caught up
                 </li>
               ) : (
                 notifications.map((notification) => (
@@ -157,16 +150,18 @@ export function NotificationCenter() {
                 ))
               )}
             </ul>
-            {status === "CanLoadMore" ? (
+            {showMarkAllRead ? (
               <div className="border-t border-border px-3 py-2">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   className="w-full"
-                  onClick={loadMore}
+                  disabled={markingAll}
+                  aria-busy={markingAll}
+                  onClick={() => void handleMarkAllRead()}
                 >
-                  Load more
+                  Mark all read
                 </Button>
               </div>
             ) : null}
