@@ -1,10 +1,10 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { seedCircle, seedInvitation } from "../test/seed.js";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { generateInvitationToken, hashInvitationToken } from "./invitationToken.js";
 import schema from "./schema.js";
-import { seedCircle, seedInvitation } from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({

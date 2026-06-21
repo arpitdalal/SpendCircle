@@ -1,10 +1,10 @@
 import { currentMonth } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { addMember, makeUser, seedFixture, seedTransaction } from "../test/seed.js";
 import { api } from "./_generated/api.js";
 import { RECENT_TRANSACTIONS_LIMIT } from "./dashboard.js";
 import schema from "./schema.js";
-import { addMember, makeUser, seedFixture, seedTransaction } from "./test/seed.js";
 
 // getDashboard / getPaidByFilterOptions resolve access through guard.ts, which folds
 // in `getCurrentUserOrNull` — backed by Better Auth and unrunnable under convex-test.

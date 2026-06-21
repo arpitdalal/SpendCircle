@@ -1,8 +1,8 @@
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { addMember, firstPage, makeUser, seedFixture, seedTransaction } from "../test/seed.js";
 import { api } from "./_generated/api.js";
 import schema from "./schema.js";
-import { addMember, firstPage, makeUser, seedFixture, seedTransaction } from "./test/seed.js";
 
 // getMonthlyLedger / listTransactions resolve access through guard.ts, which folds
 // in `getCurrentUserOrNull` — backed by Better Auth and unrunnable under

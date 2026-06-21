@@ -16,6 +16,10 @@ Tests must not redefine the same scaffolding per file (doubles, fixtures, render
 
 No bespoke hand written alternatives to do the same thing that a helper already does, look for helpers. If not present and other part of the app already does something similar, then create a scalable and flexible abstraction to reuse everywhere. Refactor to make it clean code.
 
+### Convex test helpers
+
+Test-only helpers (shared seed builders, `@convex-dev/workpool/test` registration, anything using `import.meta` or other deploy-analyzer-unsupported deps) must live in `packages/convex/test/`, **never** under `packages/convex/convex/`. `convex deploy` analyzes every non-`*.test.ts` module in the functions dir — only the `.test.` suffix is excluded, not directory names. `deployGraph.test.ts` guards this.
+
 ## Agent skills
 
 ### Issue tracker

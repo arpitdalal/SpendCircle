@@ -1,8 +1,8 @@
-import type { Doc, Id } from "../_generated/dataModel.js";
-import type { MutationCtx } from "../_generated/server.js";
-import { generateInvitationToken, hashInvitationToken } from "../invitationToken.js";
-import { createUserWithPersonalCircle, type NewUserProfile } from "../model.js";
-import { syncTransactionSearchDocument } from "../transactionSearchDocuments.js";
+import type { Doc, Id } from "../convex/_generated/dataModel.js";
+import type { MutationCtx } from "../convex/_generated/server.js";
+import { generateInvitationToken, hashInvitationToken } from "../convex/invitationToken.js";
+import { createUserWithPersonalCircle, type NewUserProfile } from "../convex/model.js";
+import { syncTransactionSearchDocument } from "../convex/transactionSearchDocuments.js";
 
 /**
  * Shared convex-test seeding (CLAUDE.md: one helper, not copy-pasted scaffolding
@@ -12,9 +12,9 @@ import { syncTransactionSearchDocument } from "../transactionSearchDocuments.js"
  * auth mock), so each test file still declares its own `vi.mock("./auth.js")` and
  * `import.meta.glob` (both must be hoisted/local) and shares only the row builders.
  *
- * This lives under `convex/test/` rather than a `.test.ts` file so Vitest does not
- * treat it as a suite; it registers no Convex `query`/`mutation`, so it is inert in
- * the deployed app.
+ * Lives in `packages/convex/test/` (outside the deployed functions dir) so
+ * `convex deploy` never analyzes test-only deps. Vitest does not treat this as a
+ * suite (Vitest include for convex `*.test.ts` files only); it registers no Convex `query`/`mutation`.
  */
 
 /** First-page pagination opts for a `paginate`d query (cursor reset). */

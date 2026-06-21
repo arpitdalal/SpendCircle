@@ -6,10 +6,6 @@ import {
 } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "./_generated/api.js";
-import type { Doc, Id } from "./_generated/dataModel.js";
-import type { MutationCtx } from "./_generated/server.js";
-import schema from "./schema.js";
 import {
   addMember,
   firstPage,
@@ -18,7 +14,11 @@ import {
   seedCircle,
   seedFixture,
   seedTransaction,
-} from "./test/seed.js";
+} from "../test/seed.js";
+import { api } from "./_generated/api.js";
+import type { Doc, Id } from "./_generated/dataModel.js";
+import type { MutationCtx } from "./_generated/server.js";
+import schema from "./schema.js";
 
 // createTransaction/listTransactions resolve access through guard.ts, which folds
 // in `getCurrentUserOrNull` — backed by Better Auth and unrunnable under

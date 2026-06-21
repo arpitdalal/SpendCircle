@@ -1,10 +1,10 @@
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { seedPersonalCircleOwner } from "../test/seed.js";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { createUserWithPersonalCircle, setUserDisplayName, syncUserEmail } from "./model.js";
 import schema from "./schema.js";
-import { seedPersonalCircleOwner } from "./test/seed.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
 vi.mock("./auth.js", () => ({
