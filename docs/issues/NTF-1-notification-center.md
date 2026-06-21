@@ -83,7 +83,7 @@ Stored links are canonical in-app paths in exactly these shapes (the contract NT
 
 - Circle: `/circles/<circleRef>`
 - Transaction: `/circles/<circleRef>/transactions/<txnRef>`
-- Category: `/circles/<circleRef>/categories/<categoryRef>`
+- Category: `/circles/<circleRef>/categories?categoryRef=<categoryRef>` (list route; no category detail page yet)
 
 Resolution (single deep helper, e.g. `resolveNotificationLink(ctx, link): Promise<string | undefined>`):
 

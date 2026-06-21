@@ -1,4 +1,4 @@
-import { buildRef } from "@spend-circle/domain";
+import { buildCategoryNotificationLink, buildRef } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { addMember, firstPage, seedFixture, seedTransaction } from "../test/seed.js";
@@ -211,7 +211,7 @@ describe("notification link resolution", () => {
       await insertNotification(ctx, {
         userId: f.owner._id,
         title: "Category",
-        link: `/circles/${circleRef}/categories/${categoryRef}`,
+        link: buildCategoryNotificationLink(circleRef, categoryRef),
       });
     });
 
@@ -219,7 +219,7 @@ describe("notification link resolution", () => {
     const byTitle = Object.fromEntries(page.page.map((n) => [n.title, n.link]));
     expect(byTitle.Circle).toBe(`/circles/${circleRef}`);
     expect(byTitle.Transaction).toBe(`/circles/${circleRef}/transactions/${txnRef}`);
-    expect(byTitle.Category).toBe(`/circles/${circleRef}/categories/${categoryRef}`);
+    expect(byTitle.Category).toBe(buildCategoryNotificationLink(circleRef, categoryRef));
   });
 
   it("drops links after the User loses Circle access", async () => {
