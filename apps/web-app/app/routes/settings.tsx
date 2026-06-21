@@ -1,16 +1,21 @@
 import { LIMITS, parseProfileUpdate } from "@spend-circle/domain";
 import { type FormEvent, useState } from "react";
 import { Button } from "~/components/ui/button.js";
-import { Field, FieldError, FieldLabel } from "~/components/ui/field.js";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "~/components/ui/field.js";
 import { Input } from "~/components/ui/input.js";
-import { useUpdateProfile } from "~/lib/data.js";
+import { Switch } from "~/components/ui/switch.js";
+import { useSetAnalyticsOptOut, useUpdateProfile } from "~/lib/data.js";
 import { type SessionUser, useAppSession } from "~/lib/session.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 
-/** Settings shell. App Version aids support diagnosis (PRD story 90); the
- * Privacy section will host the product-analytics opt-out (ADR 0013). */
-const APP_VERSION = "0.0.0";
-
+/** Settings shell. App Version aids support diagnosis (PRD story 90); Privacy hosts
+ * the product-analytics opt-out (ADR 0013). */
 export default function Settings() {
   const session = useAppSession();
 
@@ -27,16 +32,17 @@ export default function Settings() {
         <ProfileSettingsForm key={session.user.id} user={session.user} />
       </section>
 
-      <section className="space-y-2">
+      <section className="space-y-4">
         <h2 className="text-sm font-medium text-muted-foreground">Privacy</h2>
-        <p className="text-sm text-muted-foreground">
-          Product analytics opt-out lives here. Operational error monitoring stays on regardless.
-        </p>
+        <PrivacySettingsForm
+          key={`privacy-${session.user.id}-${String(session.user.analyticsOptOut)}`}
+          user={session.user}
+        />
       </section>
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium text-muted-foreground">About</h2>
-        <p className="text-sm text-muted-foreground">App version {APP_VERSION}</p>
+        <p className="text-sm text-muted-foreground">App version {__APP_VERSION__}</p>
       </section>
     </div>
   );
@@ -102,5 +108,58 @@ function ProfileSettingsForm({ user }: { user: SessionUser }) {
         {submitting ? "Saving…" : "Save profile"}
       </Button>
     </form>
+  );
+}
+
+function PrivacySettingsForm({ user }: { user: SessionUser }) {
+  const setAnalyticsOptOut = useSetAnalyticsOptOut();
+  const { show } = useSnackbar();
+  const [optOut, setOptOut] = useState(user.analyticsOptOut);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onToggle(nextOptOut: boolean) {
+    if (submitting) {
+      return;
+    }
+
+    setError(null);
+    setOptOut(nextOptOut);
+    setSubmitting(true);
+    try {
+      await setAnalyticsOptOut({ optOut: nextOptOut });
+      show("Privacy preference updated.");
+    } catch (caught) {
+      console.error("setAnalyticsOptOut failed", caught);
+      setOptOut(user.analyticsOptOut);
+      setError("Couldn't update your privacy preference. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm">
+      <Field orientation="horizontal">
+        <Switch
+          id="settings-analytics-opt-out"
+          checked={optOut}
+          disabled={submitting}
+          aria-labelledby="settings-analytics-opt-out-label"
+          onClick={() => void onToggle(!optOut)}
+        />
+        <FieldContent>
+          <FieldLabel id="settings-analytics-opt-out-label" htmlFor="settings-analytics-opt-out">
+            Opt out of product analytics
+          </FieldLabel>
+          <FieldDescription>
+            When enabled, Spend Circle stops collecting product analytics (PostHog). Operational
+            error monitoring (Sentry) stays on regardless.
+          </FieldDescription>
+        </FieldContent>
+      </Field>
+
+      {error ? <FieldError>{error}</FieldError> : null}
+    </div>
   );
 }

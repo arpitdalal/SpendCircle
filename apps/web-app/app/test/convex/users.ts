@@ -20,10 +20,11 @@ export interface UsersState {
     | ((args: Record<string, unknown>) => CurrentUserView | null | undefined);
   completeOnboarding?: Mock;
   updateProfile?: Mock;
+  setAnalyticsOptOut?: Mock;
 }
 
 export function usersDouble(state: UsersState): EntityDouble {
-  const { currentUser, completeOnboarding, updateProfile } = state;
+  const { currentUser, completeOnboarding, updateProfile, setAnalyticsOptOut } = state;
   return {
     queries: {
       [getFunctionName(api.users.getCurrentUser)]: (args) => resolveWith(currentUser, args),
@@ -33,6 +34,9 @@ export function usersDouble(state: UsersState): EntityDouble {
         ? { [getFunctionName(api.users.completeOnboarding)]: completeOnboarding }
         : {}),
       ...(updateProfile ? { [getFunctionName(api.users.updateProfile)]: updateProfile } : {}),
+      ...(setAnalyticsOptOut
+        ? { [getFunctionName(api.users.setAnalyticsOptOut)]: setAnalyticsOptOut }
+        : {}),
     },
   };
 }
@@ -45,6 +49,7 @@ export function makeCurrentUserView(over: Partial<CurrentUserView> = {}): Curren
     displayName: "You",
     image: undefined,
     onboardingComplete: true,
+    analyticsOptOut: false,
     ...over,
   };
 }
