@@ -2,7 +2,7 @@ import { api } from "@spend-circle/convex";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "../env.js";
-import { MOCK_CIRCLES } from "../fixtures.js";
+import { MOCK_CIRCLES, MOCK_TRANSACTIONS } from "../fixtures.js";
 
 /**
  * The single Circle view contract, derived from the Convex function's return
@@ -67,10 +67,14 @@ export function useRestoreCircle() {
 
 /** Whether the Circle has any Transaction (MEM-9 UI gate). `null` when inaccessible. */
 export function useCircleHasTransactions(circleId: Circle["id"] | undefined) {
-  return useQuery(
+  const queried = useQuery(
     api.circles.circleHasTransactions,
     circleId === undefined || MOCKS ? "skip" : { circleId },
   );
+  if (MOCKS) {
+    return circleId === undefined ? undefined : MOCK_TRANSACTIONS.length > 0;
+  }
+  return queried;
 }
 
 /** Deletes a strictly-empty regular Circle (MEM-9). */
