@@ -21,6 +21,7 @@ export interface SessionUser {
   displayName: string;
   image?: string;
   onboardingComplete: boolean;
+  analyticsOptOut: boolean;
 }
 
 function useRealSession(): AppSession {
@@ -49,6 +50,7 @@ function useRealSession(): AppSession {
       displayName: user.displayName,
       image: user.image,
       onboardingComplete: user.onboardingComplete,
+      analyticsOptOut: user.analyticsOptOut,
     },
   };
 }
@@ -65,6 +67,7 @@ function useMockSession(): AppSession {
       email: "mock@spend-circle.test",
       displayName: "Mock Member",
       onboardingComplete: true,
+      analyticsOptOut: false,
     },
   };
 }

@@ -106,3 +106,77 @@ describe("Settings profile form", () => {
     expect(screen.getByText("Profile updated.")).toBeInTheDocument();
   });
 });
+
+describe("Settings privacy opt-out", () => {
+  it("reflects analyticsOptOut false as switch off", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ analyticsOptOut: false }),
+      setAnalyticsOptOut: vi.fn(),
+    });
+    renderSettings();
+
+    expect(
+      await screen.findByRole("switch", { name: /opt out of product analytics/i }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("reflects analyticsOptOut true as switch on", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ analyticsOptOut: true }),
+      setAnalyticsOptOut: vi.fn(),
+    });
+    renderSettings();
+
+    expect(
+      await screen.findByRole("switch", { name: /opt out of product analytics/i }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("calls setAnalyticsOptOut and shows confirmation when toggled", async () => {
+    const setAnalyticsOptOut = vi.fn().mockResolvedValue(undefined);
+    configureConvex({
+      currentUser: makeCurrentUserView({ analyticsOptOut: false }),
+      setAnalyticsOptOut,
+    });
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(await screen.findByRole("switch", { name: /opt out of product analytics/i }));
+
+    await waitFor(() => {
+      expect(setAnalyticsOptOut).toHaveBeenCalledWith({ optOut: true });
+    });
+    expect(screen.getByText("Privacy preference updated.")).toBeInTheDocument();
+  });
+
+  it("shows an error when setAnalyticsOptOut fails", async () => {
+    const setAnalyticsOptOut = vi.fn().mockRejectedValue(new Error("network"));
+    configureConvex({
+      currentUser: makeCurrentUserView({ analyticsOptOut: false }),
+      setAnalyticsOptOut,
+    });
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(await screen.findByRole("switch", { name: /opt out of product analytics/i }));
+
+    expect(
+      await screen.findByText("Couldn't update your privacy preference. Please try again."),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("switch", { name: /opt out of product analytics/i }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+});
+
+describe("Settings app version", () => {
+  it("renders the build-injected app version", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView(),
+      setAnalyticsOptOut: vi.fn(),
+    });
+    renderSettings();
+
+    expect(await screen.findByText(`App version ${__APP_VERSION__}`)).toBeInTheDocument();
+  });
+});

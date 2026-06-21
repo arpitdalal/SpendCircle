@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Injected at build time from `apps/web-app/package.json` `version` (SET-1). */
+declare const __APP_VERSION__: string;
+
 interface ImportMetaEnv {
   readonly VITE_CONVEX_URL: string;
   readonly VITE_CONVEX_SITE_URL: string;

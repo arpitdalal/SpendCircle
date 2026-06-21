@@ -473,3 +473,89 @@ describe("updateProfile", () => {
     });
   });
 });
+
+describe("setAnalyticsOptOut", () => {
+  it("defaults analyticsOptOut to false for a freshly bootstrapped User", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await t.run((ctx) =>
+      createUserWithPersonalCircle(ctx, {
+        email: "ada@example.com",
+        displayName: "Ada Lovelace",
+      }),
+    );
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      expect(user?.analyticsOptOut).toBe(false);
+    });
+  });
+
+  it("persists opt-out true and false", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t, {
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
+      onboarded: true,
+    });
+
+    await t.mutation(api.users.setAnalyticsOptOut, { optOut: true });
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      expect(user?.analyticsOptOut).toBe(true);
+    });
+
+    await signInOwner(t, userId);
+    await t.mutation(api.users.setAnalyticsOptOut, { optOut: false });
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.get(userId);
+      expect(user?.analyticsOptOut).toBe(false);
+    });
+  });
+
+  it("exposes analyticsOptOut via getCurrentUser", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t, {
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
+      onboarded: true,
+    });
+
+    await t.mutation(api.users.setAnalyticsOptOut, { optOut: true });
+    await signInOwner(t, userId);
+
+    const view = await t.query(api.users.getCurrentUser, {});
+    expect(view?.analyticsOptOut).toBe(true);
+  });
+
+  it("only patches analyticsOptOut", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedOwner(t, {
+      email: "ada@example.com",
+      displayName: "Ada Lovelace",
+      onboarded: true,
+    });
+
+    const before = await t.run(async (ctx) => ctx.db.get(userId));
+
+    await t.mutation(api.users.setAnalyticsOptOut, { optOut: true });
+
+    await t.run(async (ctx) => {
+      const after = await ctx.db.get(userId);
+      expect(after?.analyticsOptOut).toBe(true);
+      expect(after?.email).toBe(before?.email);
+      expect(after?.displayName).toBe(before?.displayName);
+      expect(after?.onboardingCompletedAt).toBe(before?.onboardingCompletedAt);
+    });
+  });
+
+  it("rejects unauthenticated callers", async () => {
+    const t = convexTest(schema, modules);
+    mockCurrentUser.mockResolvedValue(null);
+
+    await expect(t.mutation(api.users.setAnalyticsOptOut, { optOut: true })).rejects.toThrow(
+      /Not authenticated/i,
+    );
+  });
+});

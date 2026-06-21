@@ -2,7 +2,12 @@ import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
+const appVersion = process.env.npm_package_version ?? "0.0.0";
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   // The shared .env.local lives at the monorepo root, so load env from there for
   // both dev and the SPA prerender build (which instantiates the Convex client).
   envDir: "../..",

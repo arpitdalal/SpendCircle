@@ -16,6 +16,7 @@ export function toCurrentUserView(user: Doc<"users">) {
     displayName: user.displayName,
     image: user.image,
     onboardingComplete: user.onboardingCompletedAt !== null,
+    analyticsOptOut: user.analyticsOptOut,
   };
 }
 
@@ -81,10 +82,7 @@ export const updateProfile = mutation({
 export const setAnalyticsOptOut = mutation({
   args: { optOut: v.boolean() },
   handler: async (ctx, args) => {
-    const user = await getCurrentUserOrNull(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
+    const user = await requireCurrentUser(ctx);
     await ctx.db.patch(user._id, { analyticsOptOut: args.optOut });
   },
 });
