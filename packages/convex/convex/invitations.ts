@@ -415,6 +415,19 @@ export const resendInvitation = mutation({
   },
 });
 
+/** Revokes every pending invitation for a Circle — no per-invite history (MEM-8). */
+export async function revokePendingInvitationsForCircle(ctx: MutationCtx, circleId: Id<"circles">) {
+  const invitations = await ctx.db
+    .query("invitations")
+    .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+    .collect();
+  for (const invitation of invitations) {
+    if (invitation.status === "pending") {
+      await ctx.db.patch(invitation._id, { status: "revoked" });
+    }
+  }
+}
+
 /** Revokes a pending invitation (MEM-4). */
 export const revokeInvitation = mutation({
   args: { invitationId: v.id("invitations") },

@@ -16,6 +16,7 @@ import { createCategoryForMember } from "./categories.js";
 import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import type { HistoryChange } from "./history.js";
 import { circleEntity, recordEvent } from "./history.js";
+import { revokePendingInvitationsForCircle } from "./invitations.js";
 import { getPersonalCircleForOwner, reconcilePersonalCircleFromDisplayName } from "./model.js";
 
 const circleSetupAnswers = v.object({
@@ -323,6 +324,64 @@ export const completeCircleSetup = mutation({
     }
 
     return { createdCategoryIds };
+  },
+});
+
+/** Archives a regular Circle the caller owns (MEM-8; PRD 20–22). */
+export const archiveCircle = mutation({
+  args: { circleId: v.id("circles") },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+    if (!access.isOwner) {
+      throw new Error("Only the owner can archive this circle");
+    }
+    if (access.circle.kind === "personal") {
+      throw new Error("Personal Circles can't be archived");
+    }
+    if (access.circle.status !== "active") {
+      throw new Error("Circle is already archived");
+    }
+    if (access.circle.setupCompletedAt === null) {
+      throw new Error("Complete circle setup before archiving this circle");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(access.circle._id, { status: "archived", archivedAt: now });
+    await revokePendingInvitationsForCircle(ctx, access.circle._id);
+
+    await recordEvent(ctx, {
+      entity: circleEntity(access.circle._id),
+      actor: access.membership,
+      action: "archived",
+      changes: [],
+    });
+
+    return args.circleId;
+  },
+});
+
+/** Restores an archived regular Circle the caller owns (MEM-8). */
+export const restoreCircle = mutation({
+  args: { circleId: v.id("circles") },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+    if (!access.isOwner) {
+      throw new Error("Only the owner can restore this circle");
+    }
+    if (access.circle.status !== "archived") {
+      throw new Error("Circle is not archived");
+    }
+
+    await ctx.db.patch(access.circle._id, { status: "active", archivedAt: undefined });
+
+    await recordEvent(ctx, {
+      entity: circleEntity(access.circle._id),
+      actor: access.membership,
+      action: "restored",
+      changes: [],
+    });
+
+    return args.circleId;
   },
 });
 

@@ -20,6 +20,8 @@ export interface CirclesState {
   renameCircle?: Mock;
   updateCircleSettings?: Mock;
   setPersonalCircleNameAutoSync?: Mock;
+  archiveCircle?: Mock;
+  restoreCircle?: Mock;
 }
 
 export function circlesDouble(state: CirclesState): EntityDouble {
@@ -31,6 +33,8 @@ export function circlesDouble(state: CirclesState): EntityDouble {
     renameCircle,
     updateCircleSettings,
     setPersonalCircleNameAutoSync,
+    archiveCircle,
+    restoreCircle,
   } = state;
   return {
     queries: {
@@ -43,6 +47,8 @@ export function circlesDouble(state: CirclesState): EntityDouble {
       [getFunctionName(api.circles.renameCircle)]: renameCircle,
       [getFunctionName(api.circles.updateCircleSettings)]: updateCircleSettings,
       [getFunctionName(api.circles.setPersonalCircleNameAutoSync)]: setPersonalCircleNameAutoSync,
+      [getFunctionName(api.circles.archiveCircle)]: archiveCircle,
+      [getFunctionName(api.circles.restoreCircle)]: restoreCircle,
     },
   };
 }

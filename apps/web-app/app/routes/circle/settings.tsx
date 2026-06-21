@@ -1,3 +1,4 @@
+import { Dialog } from "@base-ui/react/dialog";
 import {
   CIRCLE_PURPOSES,
   type CircleSetupAnswers,
@@ -7,17 +8,22 @@ import {
   LIMITS,
   RESIDENCE_TYPES,
 } from "@spend-circle/domain";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useId, useRef, useState } from "react";
 import { href, Navigate } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Button } from "~/components/ui/button.js";
+import { buttonVariants } from "~/components/ui/button-variants.js";
+import { mobileSheetBackdropClassName } from "~/components/ui/mobile-sheet-primitives.js";
 import {
   type Member,
+  useArchiveCircle,
   useMembers,
   useRenameCircle,
+  useRestoreCircle,
   useSetPersonalCircleNameAutoSync,
   useUpdateCircleSettings,
 } from "~/lib/data.js";
+import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -49,9 +55,13 @@ export default function CircleSettings() {
   const circle = useCircle();
   const members = useMembers(circle.id);
   const renameCircle = useRenameCircle();
+  const archiveCircle = useArchiveCircle();
+  const restoreCircle = useRestoreCircle();
   const setPersonalCircleNameAutoSync = useSetPersonalCircleNameAutoSync();
   const updateSettings = useUpdateCircleSettings();
   const { show } = useSnackbar();
+
+  const writable = circle.status === "active";
 
   const [name, setName] = useState(circle.name);
   const [color, setColor] = useState(circle.color);
@@ -65,6 +75,11 @@ export default function CircleSettings() {
   const [syncingName, setSyncingName] = useState(false);
   const [savingColor, setSavingColor] = useState(false);
   const [savingSetup, setSavingSetup] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const dashboardPath = href("/circles/:circleRef", { circleRef: circle.ref });
 
@@ -167,6 +182,39 @@ export default function CircleSettings() {
     }
   }
 
+  async function onConfirmArchive() {
+    setArchiving(true);
+    setArchiveError(null);
+    try {
+      await archiveCircle({ circleId: circle.id });
+      setArchiveDialogOpen(false);
+      show("Circle archived.");
+    } catch (caught) {
+      console.error("archiveCircle failed", caught);
+      setArchiveError(
+        mutationErrorMessageForUser(caught, "Couldn't archive this circle. Please try again."),
+      );
+    } finally {
+      setArchiving(false);
+    }
+  }
+
+  async function onRestore() {
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      await restoreCircle({ circleId: circle.id });
+      show("Circle restored.");
+    } catch (caught) {
+      console.error("restoreCircle failed", caught);
+      setRestoreError(
+        mutationErrorMessageForUser(caught, "Couldn't restore this circle. Please try again."),
+      );
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   const colorChoices = circleSettingsColorChoices(circle.kind);
 
   return (
@@ -174,7 +222,9 @@ export default function CircleSettings() {
       <div>
         <h2 className="font-display text-lg font-semibold tracking-tight">Circle settings</h2>
         <p className="text-sm text-muted-foreground">
-          Change how this circle looks and the setup context you picked.
+          {writable
+            ? "Change how this circle looks and the setup context you picked."
+            : "This circle is archived. Restore it to change settings."}
         </p>
       </div>
 
@@ -200,63 +250,65 @@ export default function CircleSettings() {
         className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
       >
         <h3 className="text-sm font-medium">Name</h3>
-        <div className="space-y-1.5">
-          <label htmlFor="circle-settings-name" className="block text-sm text-muted-foreground">
-            Circle name
-          </label>
-          <input
-            id="circle-settings-name"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              if (nameError) {
-                setNameError(null);
-              }
-            }}
-            maxLength={LIMITS.circleNameMax}
-            autoComplete="off"
-            aria-invalid={nameError != null}
-            aria-describedby={nameError ? "circle-settings-name-error" : undefined}
-            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
-          />
-        </div>
-        {nameError ? (
-          <p id="circle-settings-name-error" role="alert" className="text-sm text-destructive">
-            {nameError}
-          </p>
-        ) : null}
-        {circle.kind === "personal" ? (
-          <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/30 p-3">
-            <div className="flex items-start gap-3">
-              <input
-                id="circle-settings-name-auto-sync"
-                type="checkbox"
-                role="switch"
-                aria-checked={!circle.nameCustomized}
-                checked={!circle.nameCustomized}
-                disabled={syncingName}
-                onChange={() => void onToggleNameAutoSync()}
-                className="mt-0.5 size-4 shrink-0 rounded border border-input accent-primary"
-              />
-              <div className="space-y-1">
-                <label htmlFor="circle-settings-name-auto-sync" className="text-sm font-medium">
-                  Match my display name
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  When on, your Personal Circle&apos;s name and icon update automatically whenever
-                  you change your display name. Renaming it yourself turns this off.
-                </p>
+        <fieldset disabled={!writable || savingName} className="space-y-4">
+          <div className="space-y-1.5">
+            <label htmlFor="circle-settings-name" className="block text-sm text-muted-foreground">
+              Circle name
+            </label>
+            <input
+              id="circle-settings-name"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (nameError) {
+                  setNameError(null);
+                }
+              }}
+              maxLength={LIMITS.circleNameMax}
+              autoComplete="off"
+              aria-invalid={nameError != null}
+              aria-describedby={nameError ? "circle-settings-name-error" : undefined}
+              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
+            />
+          </div>
+          {nameError ? (
+            <p id="circle-settings-name-error" role="alert" className="text-sm text-destructive">
+              {nameError}
+            </p>
+          ) : null}
+          {circle.kind === "personal" ? (
+            <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/30 p-3">
+              <div className="flex items-start gap-3">
+                <input
+                  id="circle-settings-name-auto-sync"
+                  type="checkbox"
+                  role="switch"
+                  aria-checked={!circle.nameCustomized}
+                  checked={!circle.nameCustomized}
+                  disabled={syncingName}
+                  onChange={() => void onToggleNameAutoSync()}
+                  className="mt-0.5 size-4 shrink-0 rounded border border-input accent-primary"
+                />
+                <div className="space-y-1">
+                  <label htmlFor="circle-settings-name-auto-sync" className="text-sm font-medium">
+                    Match my display name
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    When on, your Personal Circle&apos;s name and icon update automatically whenever
+                    you change your display name. Renaming it yourself turns this off.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        ) : null}
-        <Button type="submit" disabled={!nameDirty || savingName}>
-          {savingName ? "Saving…" : "Save name"}
-        </Button>
+          ) : null}
+          <Button type="submit" disabled={!writable || !nameDirty || savingName}>
+            {savingName ? "Saving…" : "Save name"}
+          </Button>
+        </fieldset>
       </form>
 
       <fieldset
-        disabled={savingColor}
+        disabled={!writable || savingColor}
         className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
       >
         <legend className="text-sm font-medium">Color</legend>
@@ -284,48 +336,24 @@ export default function CircleSettings() {
         className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
       >
         <h3 className="text-sm font-medium">Setup answers</h3>
-        <p className="text-xs text-muted-foreground">
-          Changing these does not add or remove existing categories.
-        </p>
+        <fieldset disabled={!writable || savingSetup} className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Changing these does not add or remove existing categories.
+          </p>
 
-        <div className="space-y-1.5">
-          <label htmlFor="settings-purpose" className="block text-sm font-medium">
-            Circle use
-          </label>
-          <select
-            id="settings-purpose"
-            value={purpose}
-            onChange={(event) => {
-              const next = normalizePurpose(event.target.value);
-              setPurpose(next);
-              if (next !== "residence") {
-                setResidenceType("");
-              }
-              if (setupError) {
-                setSetupError(null);
-              }
-            }}
-            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
-          >
-            <option value="">Not set</option>
-            {CIRCLE_PURPOSES.map((option) => (
-              <option key={option} value={option}>
-                {PURPOSE_LABELS[option]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {purpose === "residence" ? (
           <div className="space-y-1.5">
-            <label htmlFor="settings-residence-type" className="block text-sm font-medium">
-              Residence type
+            <label htmlFor="settings-purpose" className="block text-sm font-medium">
+              Circle use
             </label>
             <select
-              id="settings-residence-type"
-              value={residenceType}
+              id="settings-purpose"
+              value={purpose}
               onChange={(event) => {
-                setResidenceType(normalizeResidenceType(event.target.value));
+                const next = normalizePurpose(event.target.value);
+                setPurpose(next);
+                if (next !== "residence") {
+                  setResidenceType("");
+                }
                 if (setupError) {
                   setSetupError(null);
                 }
@@ -333,26 +361,207 @@ export default function CircleSettings() {
               className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
             >
               <option value="">Not set</option>
-              {RESIDENCE_TYPES.map((option) => (
+              {CIRCLE_PURPOSES.map((option) => (
                 <option key={option} value={option}>
-                  {RESIDENCE_LABELS[option]}
+                  {PURPOSE_LABELS[option]}
                 </option>
               ))}
             </select>
           </div>
-        ) : null}
 
-        {setupError ? (
-          <p role="alert" className="text-sm text-destructive">
-            {setupError}
-          </p>
-        ) : null}
+          {purpose === "residence" ? (
+            <div className="space-y-1.5">
+              <label htmlFor="settings-residence-type" className="block text-sm font-medium">
+                Residence type
+              </label>
+              <select
+                id="settings-residence-type"
+                value={residenceType}
+                onChange={(event) => {
+                  setResidenceType(normalizeResidenceType(event.target.value));
+                  if (setupError) {
+                    setSetupError(null);
+                  }
+                }}
+                className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
+              >
+                <option value="">Not set</option>
+                {RESIDENCE_TYPES.map((option) => (
+                  <option key={option} value={option}>
+                    {RESIDENCE_LABELS[option]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
-        <Button type="submit" disabled={!setupDirty || savingSetup}>
-          {savingSetup ? "Saving…" : "Save setup answers"}
-        </Button>
+          {setupError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {setupError}
+            </p>
+          ) : null}
+
+          <Button type="submit" disabled={!writable || !setupDirty || savingSetup}>
+            {savingSetup ? "Saving…" : "Save setup answers"}
+          </Button>
+        </fieldset>
       </form>
+
+      {circle.kind === "regular" && (circle.setupComplete || !writable) ? (
+        <ArchiveRestoreSection
+          writable={writable}
+          archiving={archiving}
+          restoring={restoring}
+          archiveDialogOpen={archiveDialogOpen}
+          onArchiveDialogOpenChange={(open) => {
+            setArchiveDialogOpen(open);
+            if (!open) {
+              setArchiveError(null);
+            }
+          }}
+          archiveError={archiveError}
+          restoreError={restoreError}
+          onOpenArchiveDialog={() => setArchiveDialogOpen(true)}
+          onConfirmArchive={() => void onConfirmArchive()}
+          onRestore={() => void onRestore()}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function ArchiveRestoreSection({
+  writable,
+  archiving,
+  restoring,
+  archiveDialogOpen,
+  onArchiveDialogOpenChange,
+  archiveError,
+  restoreError,
+  onOpenArchiveDialog,
+  onConfirmArchive,
+  onRestore,
+}: {
+  writable: boolean;
+  archiving: boolean;
+  restoring: boolean;
+  archiveDialogOpen: boolean;
+  onArchiveDialogOpenChange: (open: boolean) => void;
+  archiveError: string | null;
+  restoreError: string | null;
+  onOpenArchiveDialog: () => void;
+  onConfirmArchive: () => void;
+  onRestore: () => void;
+}) {
+  return (
+    <section className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm">
+      <h3 className="text-sm font-medium">{writable ? "Archive circle" : "Restore circle"}</h3>
+      {writable ? (
+        <>
+          <p className="text-sm text-muted-foreground">
+            Archive a finished circle to hide it from active views. Members can still read history,
+            but nothing can be edited until you restore it. Pending invitations are revoked.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="border-destructive/40 text-destructive hover:bg-destructive/10"
+            onClick={onOpenArchiveDialog}
+          >
+            Archive circle
+          </Button>
+          <ArchiveCircleDialog
+            open={archiveDialogOpen}
+            onOpenChange={onArchiveDialogOpenChange}
+            onConfirm={onConfirmArchive}
+            confirming={archiving}
+            error={archiveError}
+          />
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">
+            Restore this circle to make it active again. Revoked invitations stay revoked —
+            re-invite members if needed.
+          </p>
+          {restoreError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {restoreError}
+            </p>
+          ) : null}
+          <Button type="button" disabled={restoring} onClick={onRestore}>
+            {restoring ? "Restoring…" : "Restore circle"}
+          </Button>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ArchiveCircleDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  confirming,
+  error,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  confirming: boolean;
+  error: string | null;
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={mobileSheetBackdropClassName} />
+        <Dialog.Popup
+          role="alertdialog"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          className={cn(
+            "fixed top-1/2 left-1/2 z-50 w-[min(100%-2rem,24rem)] -translate-x-1/2 -translate-y-1/2",
+            "space-y-4 rounded-xl border border-border bg-card p-5 shadow-xl outline-none",
+            "data-open:animate-fade-in",
+          )}
+        >
+          <Dialog.Title id={titleId} className="font-display text-lg font-semibold tracking-tight">
+            Archive circle?
+          </Dialog.Title>
+          <Dialog.Description id={descriptionId} className="text-sm text-muted-foreground">
+            This circle becomes read-only for everyone. Pending invitations are revoked. You can
+            restore it later from settings.
+          </Dialog.Description>
+
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Dialog.Close
+              type="button"
+              disabled={confirming}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Cancel
+            </Dialog.Close>
+            <Button
+              type="button"
+              disabled={confirming}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onConfirm}
+            >
+              {confirming ? "Archiving…" : "Archive circle"}
+            </Button>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

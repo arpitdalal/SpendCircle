@@ -54,3 +54,27 @@ export function useSetPersonalCircleNameAutoSync() {
 export function useUpdateCircleSettings() {
   return useMutation(api.circles.updateCircleSettings);
 }
+
+/** Archives a regular Circle (MEM-8). */
+export function useArchiveCircle() {
+  return useMutation(api.circles.archiveCircle);
+}
+
+/** Restores an archived Circle (MEM-8). */
+export function useRestoreCircle() {
+  return useMutation(api.circles.restoreCircle);
+}
+
+/** Splits a Personal-first circle list into active vs archived for switcher/home grouping. */
+export function partitionCirclesByStatus(circles: Circle[]) {
+  const active: Circle[] = [];
+  const archived: Circle[] = [];
+  for (const circle of circles) {
+    if (circle.status === "archived") {
+      archived.push(circle);
+    } else {
+      active.push(circle);
+    }
+  }
+  return { active, archived };
+}

@@ -2,7 +2,7 @@ import { colorLabel } from "@spend-circle/domain";
 import { useEffect, useId, useRef, useState } from "react";
 import { href, Link } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
-import { type Circle, useMyCircles } from "~/lib/data.js";
+import { type Circle, partitionCirclesByStatus, useMyCircles } from "~/lib/data.js";
 import { cn } from "~/lib/utils.js";
 
 /**
@@ -131,32 +131,57 @@ function CircleItems({
     );
   }
 
+  const { active, archived } = partitionCirclesByStatus(circles);
+
   return (
     <>
-      {circles.map((circle) => (
-        <Link
-          key={circle.id}
-          role="menuitem"
-          to={href("/circles/:circleRef", { circleRef: circle.ref })}
-          prefetch="intent"
-          onClick={onSelect}
-          className="flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-muted/60"
-        >
-          <CircleMark mark={circle.mark} color={circle.color} />
-          <span className="min-w-0">
-            <span className="block truncate font-medium">{circle.name}</span>
-            {/* The Color label is real text (not just the aria-hidden chip): names
-                duplicate by design (PRD 10) and the only visual disambiguator is the
-                Circle Color, so color-as-text is what lets screen-reader AND
-                color-blind users tell two same-named rows apart — Circle Color must
-                never be the sole identifier (CONTEXT: Circle Color). */}
-            <span className="block truncate text-xs text-muted-foreground">
-              {circle.kind === "personal" ? "Your Circle" : "Circle"} · {circle.currency} ·{" "}
-              {colorLabel(circle.color)}
-            </span>
-          </span>
-        </Link>
+      {active.map((circle) => (
+        <CircleMenuItem key={circle.id} circle={circle} onSelect={onSelect} />
       ))}
+      {archived.length > 0 ? (
+        <>
+          <div className="my-1 border-t border-border" />
+          <p className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Archived
+          </p>
+          {archived.map((circle) => (
+            <CircleMenuItem key={circle.id} circle={circle} onSelect={onSelect} muted />
+          ))}
+        </>
+      ) : null}
     </>
+  );
+}
+
+function CircleMenuItem({
+  circle,
+  onSelect,
+  muted = false,
+}: {
+  circle: Circle;
+  onSelect: () => void;
+  muted?: boolean;
+}) {
+  return (
+    <Link
+      role="menuitem"
+      to={href("/circles/:circleRef", { circleRef: circle.ref })}
+      prefetch="intent"
+      onClick={onSelect}
+      className={cn(
+        "flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-muted/60",
+        muted && "text-muted-foreground",
+      )}
+    >
+      <CircleMark mark={circle.mark} color={circle.color} />
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{circle.name}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {circle.kind === "personal" ? "Your Circle" : "Circle"} · {circle.currency} ·{" "}
+          {colorLabel(circle.color)}
+          {muted ? " · Archived" : ""}
+        </span>
+      </span>
+    </Link>
   );
 }
