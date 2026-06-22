@@ -1,5 +1,6 @@
 import { formatMoney, getCurrency, money, toCurrencyCode } from "@spend-circle/domain";
 import { useMemo } from "react";
+import { Link, useNavigate } from "react-router";
 import {
   Bar,
   CartesianGrid,
@@ -13,9 +14,17 @@ import {
 } from "recharts";
 import type { MonthlyComparison } from "~/lib/data.js";
 import { formatMonthLabel, formatMonthTick } from "~/lib/datetime.js";
+import { ledgerDrilldownHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 
-export function DashboardComparisonChart({ comparison }: { comparison: MonthlyComparison }) {
+export function DashboardComparisonChart({
+  comparison,
+  circleRef,
+}: {
+  comparison: MonthlyComparison;
+  circleRef: string;
+}) {
+  const navigate = useNavigate();
   const currency = toCurrencyCode(comparison.currency);
   const locale = viewerLocale();
   const formatMinor = (minorUnits: number) => formatMoney(money(minorUnits, currency), locale);
@@ -30,6 +39,19 @@ export function DashboardComparisonChart({ comparison }: { comparison: MonthlyCo
   );
   const formatTick = (minorUnits: number) =>
     compactTick.format(minorUnits / 10 ** getCurrency(currency).decimals);
+
+  const monthHref = (month: string) => ledgerDrilldownHref({ ref: circleRef }, { month });
+
+  const navigateToMonth = (payload: unknown) => {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "month" in payload &&
+      typeof payload.month === "string"
+    ) {
+      navigate(monthHref(payload.month));
+    }
+  };
 
   return (
     <>
@@ -75,12 +97,21 @@ export function DashboardComparisonChart({ comparison }: { comparison: MonthlyCo
               }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="incomeMinor" name="Income" fill="var(--positive)" radius={[3, 3, 0, 0]} />
+            <Bar
+              dataKey="incomeMinor"
+              name="Income"
+              fill="var(--positive)"
+              radius={[3, 3, 0, 0]}
+              className="cursor-pointer"
+              onClick={(bar) => navigateToMonth(bar?.payload)}
+            />
             <Bar
               dataKey="expenseMinor"
               name="Expense"
               fill="var(--destructive)"
               radius={[3, 3, 0, 0]}
+              className="cursor-pointer"
+              onClick={(bar) => navigateToMonth(bar?.payload)}
             />
             <Line
               type="monotone"
@@ -93,6 +124,19 @@ export function DashboardComparisonChart({ comparison }: { comparison: MonthlyCo
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      <nav aria-label="Open monthly ledger" className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
+        {comparison.series.map((entry) => (
+          <Link
+            key={entry.month}
+            to={monthHref(entry.month)}
+            className="rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label={`View ${formatMonthLabel(entry.month)} in ledger`}
+          >
+            {formatMonthLabel(entry.month)}
+          </Link>
+        ))}
+      </nav>
 
       <table className="sr-only">
         <caption>Month-over-month Income, Expense, and Net</caption>

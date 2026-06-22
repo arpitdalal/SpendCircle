@@ -1,5 +1,14 @@
-import { colorHex, formatMoney, money, toCurrencyCode } from "@spend-circle/domain";
+import {
+  colorHex,
+  formatMoney,
+  money,
+  type PlainMonth,
+  type TransactionType,
+  toCurrencyCode,
+} from "@spend-circle/domain";
+import { Link } from "react-router";
 import type { CategoryAnalytics, CategoryAnalyticsRow } from "~/lib/data.js";
+import { ledgerDrilldownHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { cn } from "~/lib/utils.js";
 
@@ -11,7 +20,17 @@ import { cn } from "~/lib/utils.js";
  * Currency (ADR 0009); Categories are identified by name (and an Archived badge),
  * not color alone (CONTEXT a11y).
  */
-export function DashboardCategoryAnalytics({ analytics }: { analytics: CategoryAnalytics }) {
+export function DashboardCategoryAnalytics({
+  analytics,
+  circleRef,
+  month,
+  type,
+}: {
+  analytics: CategoryAnalytics;
+  circleRef: string;
+  month: PlainMonth;
+  type: TransactionType;
+}) {
   const currency = toCurrencyCode(analytics.currency);
   const locale = viewerLocale();
   const formatMinor = (minorUnits: number) => formatMoney(money(minorUnits, currency), locale);
@@ -44,6 +63,10 @@ export function DashboardCategoryAnalytics({ analytics }: { analytics: CategoryA
               row={row}
               maxTagged={maxTagged}
               formatMinor={formatMinor}
+              drilldownHref={ledgerDrilldownHref(
+                { ref: circleRef },
+                { month, categoryId: row.categoryId, type },
+              )}
             />
           ))}
         </ol>
@@ -56,10 +79,12 @@ function CategoryAnalyticsRowItem({
   row,
   maxTagged,
   formatMinor,
+  drilldownHref,
 }: {
   row: CategoryAnalyticsRow;
   maxTagged: number;
   formatMinor: (minorUnits: number) => string;
+  drilldownHref: string;
 }) {
   const barWidth = maxTagged > 0 ? Math.round((row.taggedTotalMinor / maxTagged) * 100) : 0;
   const isArchived = row.status === "archived";
@@ -73,7 +98,13 @@ function CategoryAnalyticsRowItem({
             isArchived && "text-muted-foreground",
           )}
         >
-          {row.name}
+          <Link
+            to={drilldownHref}
+            className="hover:underline"
+            aria-label={`View ${row.name} transactions`}
+          >
+            {row.name}
+          </Link>
         </span>
         {isArchived ? (
           <span className="shrink-0 rounded-full border border-border bg-muted px-2 py-px text-xs text-muted-foreground">

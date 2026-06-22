@@ -18,14 +18,12 @@ Income/Expense bars with a Net line overlay** (PRD 72), across a **Comparison Ra
 ## Implement
 
 - **Convex** (`dashboard.ts`):
-  - `getMonthlyComparison` query: args `{ circleId, endMonth?, rangeMonths: 1|3|6|12,
-    paidByMemberId? }`. `resolveCircleAccess` → compute the month window via `monthRange`/
-    `addMonths` (domain) → for each month sum active income/expense/net in minor units
-    (respect Paid By filter) → return an ordered series `{ month, incomeMinor, expenseMinor,
-    netMinor }[]` + currency.
+  - `getMonthlyComparison` query: args `{ circleId, endMonth?, rangeMonths: 1|3|6|12 }`.
+    `resolveCircleAccess` → compute the month window via `monthRange`/`addMonths` (domain) → for
+    each month sum active income/expense/net in minor units → return an ordered series `{ month,
+    incomeMinor, expenseMinor, netMinor }[]` + currency.
 - **Web:** Recharts grouped bar (income, expense) + line (net) overlay; comparison-range
-  selector (1/3/6/12, default 6); shares the Paid By filter with RPT-3. Format axes/tooltips via
-  the viewer locale and Circle Currency.
+  selector (1/3/6/12, default 6). Format axes/tooltips via the viewer locale and Circle Currency.
 
 ## Why this way
 
@@ -41,14 +39,13 @@ Income/Expense bars with a Net line overlay** (PRD 72), across a **Comparison Ra
   with no Transactions appear as zero entries (no gaps); archived excluded.
 - **Ranges:** 1/3/6/12 produce the right window ending at `endMonth` (default current); year
   boundary spans correct; default is 6.
-- **Paid By:** filtered series matches filtered totals.
 - **Ordering:** series is chronological.
 - **Access:** non-member → `null`.
 
 ## Done when
 
 - A correct, zero-filled, chronological monthly series for 1/3/6/12-month ranges (default 6),
-  Paid-By-aware, rendered as grouped bars + net line; tests green; gates pass.
+  rendered as grouped bars + net line; tests green; gates pass.
 
 ## Out of scope
 

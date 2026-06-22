@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { transactionDetailHref, withQuery } from "./ledger-url.js";
+import { ledgerDrilldownHref, transactionDetailHref, withQuery } from "./ledger-url.js";
 
 describe("transactionDetailHref", () => {
   it("builds the bare detail path (origin is carried by returnTo, not here)", () => {
@@ -16,5 +16,28 @@ describe("withQuery", () => {
 
   it("returns the bare path when the query is empty", () => {
     expect(withQuery("/a/b", "")).toBe("/a/b");
+  });
+});
+
+describe("ledgerDrilldownHref", () => {
+  it("builds a month-only ledger URL with canonical defaults", () => {
+    expect(ledgerDrilldownHref({ ref: "trip-c1" }, { month: "2026-04" })).toBe(
+      "/circles/trip-c1/transactions?month=2026-04&type=all&status=all",
+    );
+  });
+
+  it("adds category and type filters when provided", () => {
+    expect(
+      ledgerDrilldownHref(
+        { ref: "trip-c1" },
+        {
+          month: "2026-06",
+          categoryId: "cat-groceries",
+          type: "expense",
+        },
+      ),
+    ).toBe(
+      "/circles/trip-c1/transactions?month=2026-06&type=expense&status=all&categories=cat-groceries",
+    );
   });
 });

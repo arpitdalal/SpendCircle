@@ -7,7 +7,7 @@ import { RECENT_TRANSACTIONS_LIMIT } from "./dashboard.js";
 import { collectMonthActiveTransactions, sumMonthTotals } from "./monthActivity.js";
 import schema from "./schema.js";
 
-// getDashboard / getPaidByFilterOptions resolve access through guard.ts, which folds
+// getDashboard resolves access through guard.ts, which folds
 // in `getCurrentUserOrNull` — backed by Better Auth and unrunnable under convex-test.
 // We stub just that seam (as guard.test.ts does) and exercise the real handlers, db,
 // indexes, totals math, and filter logic against the simulated backend.
@@ -267,90 +267,6 @@ describe("getDashboard — recent feed", () => {
     const row = dashboard?.recent[0];
     expect(row?.paidBy.displayName).toBe("Alex");
     expect(row?.categories.map((category) => category.name)).toEqual(["Dining"]);
-  });
-});
-
-describe("getDashboard — Paid By filter (PRD 69)", () => {
-  it("narrows totals AND recent to one member's transactions; default is everyone", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
-    mockCurrentUser.mockResolvedValue(f.owner);
-
-    await t.run(async (ctx) => {
-      await seedTransaction(ctx, f, {
-        title: "Owner spend",
-        amountMinorUnits: 1_000,
-        date: "2026-06-05",
-      });
-      await seedTransaction(ctx, f, {
-        title: "Alex spend",
-        amountMinorUnits: 2_500,
-        date: "2026-06-06",
-        paidByMemberId: alex.memberId,
-      });
-    });
-
-    const all = await t.query(api.dashboard.getDashboard, {
-      circleId: f.circleId,
-      month: "2026-06",
-    });
-    expect(all?.totals.expenseMinor).toBe(3_500);
-    expect(all?.recent).toHaveLength(2);
-
-    const onlyAlex = await t.query(api.dashboard.getDashboard, {
-      circleId: f.circleId,
-      month: "2026-06",
-      paidByMemberId: alex.memberId,
-    });
-    expect(onlyAlex?.totals.expenseMinor).toBe(2_500);
-    expect(onlyAlex?.recent.map((txn) => txn.title)).toEqual(["Alex spend"]);
-  });
-
-  it("filters to a Removed Member who is Paid By on matching transactions", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const rae = await t.run((ctx) =>
-      addMember(ctx, f.circleId, "rae@example.com", "Rae Removed", "removed"),
-    );
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run(async (ctx) => {
-      await seedTransaction(ctx, f, {
-        title: "Owner spend",
-        amountMinorUnits: 1_000,
-        date: "2026-06-05",
-      });
-      await seedTransaction(ctx, f, {
-        title: "Rae spend",
-        amountMinorUnits: 4_200,
-        date: "2026-06-06",
-        paidByMemberId: rae.memberId,
-      });
-    });
-
-    const dashboard = await t.query(api.dashboard.getDashboard, {
-      circleId: f.circleId,
-      month: "2026-06",
-      paidByMemberId: rae.memberId,
-    });
-    expect(dashboard?.totals.expenseMinor).toBe(4_200);
-    expect(dashboard?.recent.map((txn) => txn.title)).toEqual(["Rae spend"]);
-  });
-
-  it("returns zeros for a member id that names no member of this circle", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const other = await t.run((ctx) => seedFixture(ctx, { currency: "EUR" }));
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run((ctx) => seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-06-05" }));
-
-    const dashboard = await t.query(api.dashboard.getDashboard, {
-      circleId: f.circleId,
-      month: "2026-06",
-      paidByMemberId: other.ownerMemberId,
-    });
-    expect(dashboard?.totals).toEqual({ incomeMinor: 0, expenseMinor: 0, netMinor: 0 });
-    expect(dashboard?.recent).toEqual([]);
   });
 });
 
@@ -634,86 +550,6 @@ describe("getMonthlyComparison — series math (RPT-4)", () => {
   });
 });
 
-describe("getMonthlyComparison — Paid By filter (PRD 69)", () => {
-  it("narrows every month of the series to one member; default is everyone", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run(async (ctx) => {
-      await seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-05-05" });
-      await seedTransaction(ctx, f, {
-        amountMinorUnits: 2_500,
-        date: "2026-05-06",
-        paidByMemberId: alex.memberId,
-      });
-      await seedTransaction(ctx, f, {
-        amountMinorUnits: 4_000,
-        date: "2026-06-06",
-        paidByMemberId: alex.memberId,
-      });
-    });
-
-    const all = await t.query(api.dashboard.getMonthlyComparison, {
-      circleId: f.circleId,
-      endMonth: "2026-06",
-      rangeMonths: 3,
-    });
-    expect(all?.series.map((entry) => entry.expenseMinor)).toEqual([0, 3_500, 4_000]);
-
-    const onlyAlex = await t.query(api.dashboard.getMonthlyComparison, {
-      circleId: f.circleId,
-      endMonth: "2026-06",
-      rangeMonths: 3,
-      paidByMemberId: alex.memberId,
-    });
-    expect(onlyAlex?.series.map((entry) => entry.expenseMinor)).toEqual([0, 2_500, 4_000]);
-  });
-
-  it("filters to a Removed Member who is Paid By on matching transactions", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const rae = await t.run((ctx) =>
-      addMember(ctx, f.circleId, "rae@example.com", "Rae Removed", "removed"),
-    );
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run(async (ctx) => {
-      await seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-06-05" });
-      await seedTransaction(ctx, f, {
-        amountMinorUnits: 4_200,
-        date: "2026-06-06",
-        paidByMemberId: rae.memberId,
-      });
-    });
-
-    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
-      circleId: f.circleId,
-      endMonth: "2026-06",
-      rangeMonths: 1,
-      paidByMemberId: rae.memberId,
-    });
-    expect(comparison?.series).toEqual([
-      { month: "2026-06", incomeMinor: 0, expenseMinor: 4_200, netMinor: -4_200 },
-    ]);
-  });
-
-  it("returns an all-zero series for a member id naming no member of this circle", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const other = await t.run((ctx) => seedFixture(ctx, { currency: "EUR" }));
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run((ctx) => seedTransaction(ctx, f, { amountMinorUnits: 1_000, date: "2026-06-05" }));
-
-    const comparison = await t.query(api.dashboard.getMonthlyComparison, {
-      circleId: f.circleId,
-      endMonth: "2026-06",
-      rangeMonths: 3,
-      paidByMemberId: other.ownerMemberId,
-    });
-    expect(comparison?.series.every((entry) => entry.netMinor === 0)).toBe(true);
-  });
-});
-
 describe("getMonthlyComparison — isolation & access (ADR 0016)", () => {
   it("never includes a transaction from another Circle", async () => {
     const t = convexTest(schema, modules);
@@ -809,92 +645,6 @@ describe("getMonthlyComparison — isolation & access (ADR 0016)", () => {
       rangeMonths: 1,
     });
     expect(after?.series[0]?.expenseMinor).toBe(0);
-  });
-});
-
-describe("getPaidByFilterOptions", () => {
-  it("returns current members (owner first) by default", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
-    mockCurrentUser.mockResolvedValue(f.owner);
-
-    const options = await t.query(api.dashboard.getPaidByFilterOptions, { circleId: f.circleId });
-    expect(options?.map((member) => member.displayName)).toEqual(["Olive Owner", "Alex"]);
-    expect(options?.every((member) => member.status === "active")).toBe(true);
-  });
-
-  it("includes a Removed Member who is Paid By on an active transaction", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const rae = await t.run((ctx) =>
-      addMember(ctx, f.circleId, "rae@example.com", "Rae Removed", "removed"),
-    );
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run((ctx) =>
-      seedTransaction(ctx, f, { date: "2026-06-06", paidByMemberId: rae.memberId }),
-    );
-
-    const options = await t.query(api.dashboard.getPaidByFilterOptions, { circleId: f.circleId });
-    const rae_option = options?.find((member) => member.displayName === "Rae Removed");
-    expect(rae_option?.status).toBe("removed");
-    // Current member precedes the removed option.
-    expect(options?.map((member) => member.displayName)).toEqual(["Olive Owner", "Rae Removed"]);
-  });
-
-  it("omits a Removed Member with no matching active transaction", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    await t.run((ctx) => addMember(ctx, f.circleId, "rae@example.com", "Rae Removed", "removed"));
-    mockCurrentUser.mockResolvedValue(f.owner);
-
-    const options = await t.query(api.dashboard.getPaidByFilterOptions, { circleId: f.circleId });
-    expect(options?.map((member) => member.displayName)).toEqual(["Olive Owner"]);
-  });
-
-  it("omits a Removed Member whose only Paid By transaction is archived", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const rae = await t.run((ctx) =>
-      addMember(ctx, f.circleId, "rae@example.com", "Rae Removed", "removed"),
-    );
-    mockCurrentUser.mockResolvedValue(f.owner);
-    await t.run((ctx) =>
-      seedTransaction(ctx, f, {
-        date: "2026-06-06",
-        paidByMemberId: rae.memberId,
-        status: "archived",
-      }),
-    );
-
-    const options = await t.query(api.dashboard.getPaidByFilterOptions, { circleId: f.circleId });
-    expect(options?.map((member) => member.displayName)).toEqual(["Olive Owner"]);
-  });
-
-  it("does not offer a Removed Member who is only Paid By in another Circle", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const other = await t.run((ctx) => seedFixture(ctx, { currency: "EUR" }));
-    const rae = await t.run((ctx) =>
-      addMember(ctx, f.circleId, "rae@example.com", "Rae Removed", "removed"),
-    );
-    mockCurrentUser.mockResolvedValue(f.owner);
-    // Rae is Paid By on an active txn, but in the OTHER circle — must not surface here.
-    await t.run((ctx) =>
-      seedTransaction(ctx, other, { date: "2026-06-06", paidByMemberId: rae.memberId }),
-    );
-
-    const options = await t.query(api.dashboard.getPaidByFilterOptions, { circleId: f.circleId });
-    expect(options?.map((member) => member.displayName)).toEqual(["Olive Owner"]);
-  });
-
-  it("returns null for a non-member (anti-enumeration)", async () => {
-    const t = convexTest(schema, modules);
-    const f = await t.run((ctx) => seedFixture(ctx));
-    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
-    mockCurrentUser.mockResolvedValue(stranger);
-    const options = await t.query(api.dashboard.getPaidByFilterOptions, { circleId: f.circleId });
-    expect(options).toBeNull();
   });
 });
 
@@ -1016,10 +766,9 @@ describe("getCategoryAnalytics — tagged spend (RPT-5)", () => {
     expect(analytics?.rows.some((row) => row.categoryId === archivedId)).toBe(false);
   });
 
-  it("filters by transaction type and paidByMemberId and month", async () => {
+  it("filters by transaction type and month", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
-    const alex = await t.run((ctx) => addMember(ctx, f.circleId, "alex@example.com", "Alex"));
     mockCurrentUser.mockResolvedValue(f.owner);
     await t.run(async (ctx) => {
       await seedTransaction(ctx, f, {
@@ -1033,12 +782,6 @@ describe("getCategoryAnalytics — tagged spend (RPT-5)", () => {
         date: "2026-06-02",
         categoryIds: [f.groceriesId],
       });
-      await seedTransaction(ctx, f, {
-        amountMinorUnits: 2_500,
-        date: "2026-06-03",
-        paidByMemberId: alex.memberId,
-        categoryIds: [f.diningId],
-      });
       await seedTransaction(ctx, f, { amountMinorUnits: 9_999, date: "2026-05-15" });
     });
 
@@ -1051,14 +794,13 @@ describe("getCategoryAnalytics — tagged spend (RPT-5)", () => {
       expect.objectContaining({ name: "Salary", taggedTotalMinor: 50_000, txnCount: 1 }),
     ]);
 
-    const alexExpenses = await t.query(api.dashboard.getCategoryAnalytics, {
+    const expenses = await t.query(api.dashboard.getCategoryAnalytics, {
       circleId: f.circleId,
       month: "2026-06",
       type: "expense",
-      paidByMemberId: alex.memberId,
     });
-    expect(alexExpenses?.rows).toEqual([
-      expect.objectContaining({ name: "Dining", taggedTotalMinor: 2_500, txnCount: 1 }),
+    expect(expenses?.rows).toEqual([
+      expect.objectContaining({ name: "Groceries", taggedTotalMinor: 1_000, txnCount: 1 }),
     ]);
   });
 

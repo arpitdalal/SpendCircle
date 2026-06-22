@@ -8,20 +8,18 @@ import {
 
 /**
  * RPT-3 true-E2E (ADR 0019): the per-Circle Dashboard (the Circle index route) shows
- * the current month's totals and a recent-Transactions feed, with a Paid By filter —
- * all against the real self-hosted backend through the real `getDashboard` /
- * `getPaidByFilterOptions` queries and the injected backend session (no OAuth).
+ * the current month's totals and a recent-Transactions feed against the real
+ * self-hosted backend through the real `getDashboard` query and the injected backend
+ * session (no OAuth).
  *
  * The suite runs `fullyParallel` and both projects share one Personal Circle (global
  * setup mints a single User per run), so current-month totals are nondeterministic —
  * other specs record into the same month. So this asserts the Dashboard SURFACE rather
  * than exact totals: the just-recorded Transaction (the newest by record time) appears
- * in the recent feed, and the Paid By filter is present and operable. A unique title
- * per run/project keeps the assertion isolated from the other specs' rows.
+ * in the recent feed. A unique title per run/project keeps the assertion isolated from
+ * the other specs' rows.
  */
-test("the dashboard shows recent activity and a working Paid By filter", async ({
-  page,
-}, testInfo) => {
+test("the dashboard shows recent activity", async ({ page }, testInfo) => {
   const stamp = `${Date.now()}-${testInfo.project.name}`;
   const categoryName = `E2E D ${stamp}`; // keep ≤ 40 chars (categoryNameMax)
   const title = `E2E Dash ${stamp}`;
@@ -54,22 +52,6 @@ test("the dashboard shows recent activity and a working Paid By filter", async (
   await expect(row).toBeVisible();
   await expect(row).toContainText("18.25");
   await expect(recent.getByRole("link", { name: `View ${title}` })).toBeVisible();
-
-  // The Paid By filter exists and is operable. Narrowing to the sole current Member
-  // (Paid By defaults to the recorder) keeps the Transaction visible; back to All too.
-  const filter = page.getByLabel(/paid by/i);
-  await expect(filter).toBeVisible();
-  await filter.selectOption({ index: 1 });
-  await expect(recent.getByRole("listitem").filter({ hasText: title })).toBeVisible();
-  // The selection is URL-owned: it lands in `paidBy`, survives a reload, and
-  // clears from the URL when back on All members (the canonical bare route).
-  await expect(page).toHaveURL(/paidBy=/);
-  await page.reload();
-  await expect(page.getByLabel(/paid by/i)).not.toHaveValue("");
-  await expect(recent.getByRole("listitem").filter({ hasText: title })).toBeVisible();
-  await page.getByLabel(/paid by/i).selectOption("");
-  await expect(page).not.toHaveURL(/paidBy=/);
-  await expect(recent.getByRole("listitem").filter({ hasText: title })).toBeVisible();
 });
 
 /**
@@ -122,4 +104,46 @@ test("the month-over-month comparison defaults to 6 months and the range selecto
   await expect(page.locator("tbody tr")).toHaveCount(12);
   await page.getByLabel(/range/i).selectOption("6");
   await expect(page).not.toHaveURL(/range=/);
+});
+
+/**
+ * RPT-6 true-E2E: a Dashboard category row drills into the Monthly Ledger with the
+ * Category filter pre-filled, and the matching Transaction is visible.
+ */
+test("a category analytics row drills into the ledger filtered to that category", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${Date.now()}-${testInfo.project.name}`;
+  const categoryName = `E2E DD ${stamp}`; // keep ≤ 40 chars (categoryNameMax)
+  const title = `E2E Drill ${stamp}`;
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
+
+  await clickCircleChromeTab(page, "Categories");
+  await createCategoryViaForm(page, { name: categoryName });
+  await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
+
+  await clickCircleChromeTab(page, "Transactions");
+  await page.getByRole("link", { name: "Add expense" }).click();
+  const form = page.getByRole("form", { name: /add expense/i });
+  await form.getByLabel("Title").fill(title);
+  await form.getByLabel(/Amount/).fill("22.40");
+  await pickFormCategory(page, form, categoryName);
+  await form.getByRole("button", { name: "Add expense" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
+
+  await clickCircleChromeTab(page, "Dashboard");
+  const analytics = page.getByRole("region", { name: /tagged spend by category/i });
+  await expect(
+    analytics.getByRole("link", { name: `View ${categoryName} transactions` }),
+  ).toBeVisible();
+
+  await analytics.getByRole("link", { name: `View ${categoryName} transactions` }).click();
+  await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
+  await expect(page).toHaveURL(/categories=/);
+  await expect(page).toHaveURL(/type=expense/);
+  await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: title })).toContainText("22.40");
 });

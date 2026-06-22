@@ -3,7 +3,6 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import { query } from "./_generated/server.js";
 import { resolveCircleAccess } from "./guard.js";
-import { toMemberView } from "./members.js";
 import { collectMonthActiveTransactions, sumMonthTotals } from "./monthActivity.js";
 import { newViewCaches, toTransactionView } from "./transactions.js";
 
@@ -17,7 +16,7 @@ const transactionType = v.union(v.literal("expense"), v.literal("income"));
 export const RECENT_TRANSACTIONS_LIMIT = 5;
 
 /**
- * The per-Circle Dashboard surface for one month (RPT-3; PRD stories 68, 69, 75).
+ * The per-Circle Dashboard surface for one month (RPT-3; PRD stories 68, 75).
  * Returns that month's Income / Expense / Net **in minor units** (ADR 0009 — the
  * edge formats once, never sums formatted strings), a bounded **recent** feed of
  * the latest Transactions by record time, the Circle Currency, and the resolved
@@ -27,13 +26,6 @@ export const RECENT_TRANSACTIONS_LIMIT = 5;
  * `month` defaults to the current month (server clock) when omitted; the route
  * passes the User's local current month so the Dashboard reads as "this month" for
  * them. An explicit malformed month throws, mirroring the Ledger.
- *
- * `paidByMemberId` narrows the SAME active set (Paid By filter — PRD 69): totals and
- * recent both reflect just that Member's month. A Removed Member's id is accepted —
- * their historical Transactions still count and surface (CONTEXT: Dashboard filters
- * include Removed Members when matching Transactions exist) — and an id naming no
- * Member of this Circle simply matches nothing (zeros + empty recent), leaking
- * nothing about it.
  *
  * Totals and recent come from one `collect` of the bounded month set (see
  * {@link collectMonthActiveTransactions}); recent is that set ordered by record time
@@ -51,7 +43,6 @@ export const getDashboard = query({
   args: {
     circleId: v.id("circles"),
     month: v.optional(v.string()),
-    paidByMemberId: v.optional(v.id("members")),
   },
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
@@ -64,12 +55,7 @@ export const getDashboard = query({
       throw new Error("Invalid month");
     }
 
-    const monthTxns = await collectMonthActiveTransactions(
-      ctx,
-      args.circleId,
-      month,
-      args.paidByMemberId,
-    );
+    const monthTxns = await collectMonthActiveTransactions(ctx, args.circleId, month);
 
     // Recent = the same bounded set, ordered by record time and capped. Sorting a
     // single bounded month in memory is fine (README §4 forbids sorting UNBOUNDED
@@ -108,11 +94,6 @@ export const getDashboard = query({
  * passes the User's local current month, mirroring `getDashboard`. An explicit
  * malformed month throws, mirroring the Ledger.
  *
- * `paidByMemberId` narrows EVERY month of the series the same way the Dashboard
- * totals narrow (PRD 69) — a Removed Member's id is accepted (their history still
- * counts), and an id naming no Member of this Circle matches nothing (an all-zero
- * series), leaking nothing about it.
- *
  * Each month is read through {@link collectMonthActiveTransactions} — the shared
  * bounded, index-backed Circle-month read (README §4) — and reduced by
  * {@link sumMonthTotals}, so the comparison can never disagree with the Ledger or
@@ -127,7 +108,6 @@ export const getMonthlyComparison = query({
     circleId: v.id("circles"),
     endMonth: v.optional(v.string()),
     rangeMonths: v.union(v.literal(1), v.literal(3), v.literal(6), v.literal(12)),
-    paidByMemberId: v.optional(v.id("members")),
   },
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
@@ -142,12 +122,7 @@ export const getMonthlyComparison = query({
 
     const series = await Promise.all(
       comparisonWindowMonths(endMonth, args.rangeMonths).map(async (month) => {
-        const monthTxns = await collectMonthActiveTransactions(
-          ctx,
-          args.circleId,
-          month,
-          args.paidByMemberId,
-        );
+        const monthTxns = await collectMonthActiveTransactions(ctx, args.circleId, month);
         return { month, ...sumMonthTotals(monthTxns) };
       }),
     );
@@ -157,19 +132,6 @@ export const getMonthlyComparison = query({
 });
 
 /**
- * The Members selectable in the Dashboard's Paid By filter (RPT-3; CONTEXT Paid By):
- * every CURRENT Member, plus Removed Members who are Paid By on at least one **active**
- * Transaction — a removed Member with no matching Transaction is NOT offered, matching
- * Search (RPT-2 reuses this). Active Members come first (Owner first, then by join
- * time — the Member List anchor, PRD 43); relevant Removed Members follow in join
- * order. Each row carries its `status`, so the UI can label a Removed option distinctly.
- *
- * Removed-Member relevance is one indexed existence check per Removed Member
- * (`by_circle_paidby_status_date`, `.first()`) — bounded by the Circle's removed count,
- * never a Transaction scan (README §4). Resolver query (ADR 0016): an inaccessible or
- * missing Circle returns `null`, identical to a non-member.
- */
-/**
  * Ranked, non-additive category tagged spend for one month (RPT-5; PRD stories 58, 73).
  * Each Category's total is the sum of full Transaction amounts for active Transactions
  * tagged with it in the period — a multi-Category Transaction contributes its full
@@ -177,9 +139,9 @@ export const getMonthlyComparison = query({
  * Archived Categories appear when in-period active Transactions still use them (PRD 58).
  *
  * Reads the same bounded active month set as `getDashboard` via
- * {@link collectMonthActiveTransactions}, optionally narrowed by `paidByMemberId` and
- * `type`. Returns rows sorted by `taggedTotalMinor` descending (name ascending on ties)
- * plus the Circle Currency in minor units (ADR 0009).
+ * {@link collectMonthActiveTransactions}, optionally narrowed by `type`. Returns rows
+ * sorted by `taggedTotalMinor` descending (name ascending on ties) plus the Circle
+ * Currency in minor units (ADR 0009).
  *
  * Anti-enumeration (ADR 0016): an inaccessible or missing Circle returns `null`.
  */
@@ -188,7 +150,6 @@ export const getCategoryAnalytics = query({
     circleId: v.id("circles"),
     month: v.optional(v.string()),
     type: v.optional(transactionType),
-    paidByMemberId: v.optional(v.id("members")),
   },
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
@@ -201,12 +162,7 @@ export const getCategoryAnalytics = query({
       throw new Error("Invalid month");
     }
 
-    const monthTxns = await collectMonthActiveTransactions(
-      ctx,
-      args.circleId,
-      month,
-      args.paidByMemberId,
-    );
+    const monthTxns = await collectMonthActiveTransactions(ctx, args.circleId, month);
     const scopedTxns = args.type ? monthTxns.filter((txn) => txn.type === args.type) : monthTxns;
 
     const accum = new Map<Id<"categories">, { taggedTotalMinor: number; txnCount: number }>();
@@ -248,46 +204,5 @@ export const getCategoryAnalytics = query({
     rows.sort((a, b) => b.taggedTotalMinor - a.taggedTotalMinor || a.name.localeCompare(b.name));
 
     return { rows, currency: access.circle.currency };
-  },
-});
-
-export const getPaidByFilterOptions = query({
-  args: { circleId: v.id("circles") },
-  handler: async (ctx, args) => {
-    const access = await resolveCircleAccess(ctx, args.circleId);
-    if (!access) {
-      return null;
-    }
-
-    const members = await ctx.db
-      .query("members")
-      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
-      .collect();
-
-    const byOwnerThenJoin = (a: Doc<"members">, b: Doc<"members">) => {
-      if (a.role !== b.role) {
-        return a.role === "owner" ? -1 : 1;
-      }
-      return a.joinedAt - b.joinedAt;
-    };
-
-    const active = members.filter((member) => member.status === "active").sort(byOwnerThenJoin);
-
-    const removed = members.filter((member) => member.status === "removed");
-    const matches = await Promise.all(
-      removed.map((member) =>
-        ctx.db
-          .query("transactions")
-          .withIndex("by_circle_paidby_status_date", (q) =>
-            q.eq("circleId", args.circleId).eq("paidByMemberId", member._id).eq("status", "active"),
-          )
-          .first(),
-      ),
-    );
-    const relevantRemoved = removed.filter((_, i) => matches[i] != null).sort(byOwnerThenJoin);
-
-    return [...active, ...relevantRemoved].map((member) =>
-      toMemberView(member, access.membership._id),
-    );
   },
 });

@@ -5,7 +5,7 @@ import {
   isComparisonRangeMonths,
 } from "@spend-circle/domain";
 import { getFunctionName } from "convex/server";
-import type { CategoryAnalytics, Dashboard, Member, MonthlyComparison } from "~/lib/data.js";
+import type { CategoryAnalytics, Dashboard, MonthlyComparison } from "~/lib/data.js";
 import type { EntityDouble } from "./contract.js";
 import { resolveWith } from "./contract.js";
 
@@ -50,19 +50,16 @@ const EMPTY_CATEGORY_ANALYTICS: CategoryAnalytics = {
 export interface DashboardState {
   /** `getDashboard` result; `undefined` ≡ loading, `null` ≡ inaccessible Circle.
    * Defaults to a zero Dashboard so the totals cards render. A function resolves per
-   * query args (e.g. by `paidByMemberId`) so a test can model the Paid By filter
-   * flipping the result without a loading gap. */
+   * query args so a test can model arg-driven results without a loading gap. */
   dashboard?: Dashboard | null | ((args: Record<string, unknown>) => Dashboard | null | undefined);
   /** `getMonthlyComparison` result (RPT-4); `undefined` ≡ loading, `null` ≡ inaccessible
    * Circle. Defaults to a zero series over the queried window so the chart renders. A
-   * function resolves per query args (e.g. by `rangeMonths` / `paidByMemberId`) so a test
-   * can model the range selector or Paid By filter reshaping the series. */
+   * function resolves per query args (e.g. by `rangeMonths`) so a test can model the
+   * range selector reshaping the series. */
   monthlyComparison?:
     | MonthlyComparison
     | null
     | ((args: Record<string, unknown>) => MonthlyComparison | null | undefined);
-  /** `getPaidByFilterOptions` result; `undefined` ≡ loading, `null` ≡ inaccessible. */
-  paidByFilterOptions?: Member[] | null;
   /** `getCategoryAnalytics` result (RPT-5); `undefined` ≡ loading, `null` ≡ inaccessible
    * Circle. Defaults to an empty ranked list so the section renders. */
   categoryAnalytics?:
@@ -75,7 +72,6 @@ export function dashboardDouble(state: DashboardState): EntityDouble {
   const {
     dashboard = EMPTY_DASHBOARD,
     monthlyComparison = emptyMonthlyComparison,
-    paidByFilterOptions,
     categoryAnalytics = EMPTY_CATEGORY_ANALYTICS,
   } = state;
   return {
@@ -83,7 +79,6 @@ export function dashboardDouble(state: DashboardState): EntityDouble {
       [getFunctionName(api.dashboard.getDashboard)]: (args) => resolveWith(dashboard, args),
       [getFunctionName(api.dashboard.getMonthlyComparison)]: (args) =>
         resolveWith(monthlyComparison, args),
-      [getFunctionName(api.dashboard.getPaidByFilterOptions)]: () => paidByFilterOptions,
       [getFunctionName(api.dashboard.getCategoryAnalytics)]: (args) =>
         resolveWith(categoryAnalytics, args),
     },
