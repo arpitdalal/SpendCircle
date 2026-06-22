@@ -14,6 +14,10 @@ import { circleSetupAnswersSchema } from "./setup.js";
 export const TRANSACTION_TYPES = ["expense", "income"] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
+export function isTransactionType(value: string): value is TransactionType {
+  return TRANSACTION_TYPES.some((type) => type === value);
+}
+
 const NAME_MAX = 60;
 
 export const LIMITS = {

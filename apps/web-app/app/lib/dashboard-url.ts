@@ -2,16 +2,12 @@ import {
   type ComparisonRangeMonths,
   DEFAULT_COMPARISON_RANGE_MONTHS,
   isComparisonRangeMonths,
-  TRANSACTION_TYPES,
+  isTransactionType,
   type TransactionType,
 } from "@spend-circle/domain";
 
 /** Default category analytics ranking — expense tagged spend (RPT-5). */
 export const DEFAULT_CATEGORY_ANALYTICS_TYPE: TransactionType = "expense";
-
-function isTransactionType(value: string): value is TransactionType {
-  return (TRANSACTION_TYPES as readonly string[]).includes(value);
-}
 
 /**
  * The Dashboard's URL-owned selections (RPT-3/RPT-4/RPT-5): the Paid By filter, the

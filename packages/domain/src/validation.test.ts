@@ -5,6 +5,7 @@ import {
   categoryInputSchema,
   circleInputSchema,
   circleSettingsUpdateSchema,
+  isTransactionType,
   LIMITS,
   parseCircleSettingsUpdate,
   parseProfileUpdate,
@@ -400,5 +401,17 @@ describe("colorLabel", () => {
 
   it("falls back to the id when unknown", () => {
     expect(colorLabel("chartreuse")).toBe("chartreuse");
+  });
+});
+
+describe("isTransactionType", () => {
+  it("accepts supported transaction types", () => {
+    expect(isTransactionType("expense")).toBe(true);
+    expect(isTransactionType("income")).toBe(true);
+  });
+
+  it("rejects unknown values", () => {
+    expect(isTransactionType("refund")).toBe(false);
+    expect(isTransactionType("")).toBe(false);
   });
 });
