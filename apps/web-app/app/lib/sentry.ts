@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/react";
 import { replayIntegration } from "@sentry/react";
 import { SENTRY_DSN } from "./env.js";
+import { scrubSentryBreadcrumb, scrubSentryEvent } from "./sentry-scrub.js";
 
 export function sentryReplayIntegration() {
   return replayIntegration({ maskAllText: true, blockAllMedia: true });
@@ -15,6 +16,8 @@ export function buildSentryInitOptions(dsn: string) {
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 1.0,
     integrations: [sentryReplayIntegration()],
+    beforeSend: scrubSentryEvent,
+    beforeBreadcrumb: scrubSentryBreadcrumb,
   };
 }
 

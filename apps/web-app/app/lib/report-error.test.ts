@@ -13,22 +13,23 @@ afterEach(() => {
 });
 
 describe("reportAppError", () => {
-  it("forwards to Sentry.captureMessage with extra context", () => {
-    reportAppError("Unparseable ref in URL", { rawRef: "not-a-ref" });
+  it("forwards scrubbed context to Sentry.captureMessage", () => {
+    reportAppError("Unparseable ref in URL", { rawRef: "grocery-shopping-bad!" });
 
     expect(captureMessage).toHaveBeenCalledWith("Unparseable ref in URL", {
-      extra: { rawRef: "not-a-ref" },
+      extra: { rawRef: "[unparseable-ref]" },
     });
   });
 
-  it("does not attach financial fields when only safe context is provided", () => {
-    reportAppError("Unparseable ref in URL", { rawRef: "bad-slug" });
+  it("redacts title-bearing refs and drops financial fields before capture", () => {
+    reportAppError("Unparseable ref in URL", {
+      rawRef: "weekly-shop-t1abc",
+      title: "Weekly shop",
+      amountMinorUnits: 500,
+    });
 
     const [, options] = captureMessage.mock.calls[0] ?? [];
-    expect(options).toEqual({ extra: { rawRef: "bad-slug" } });
-    expect(options?.extra).not.toHaveProperty("amount");
-    expect(options?.extra).not.toHaveProperty("title");
-    expect(options?.extra).not.toHaveProperty("note");
+    expect(options).toEqual({ extra: { rawRef: "t1abc" } });
   });
 
   it("console.warns in dev so local signal is unchanged", () => {

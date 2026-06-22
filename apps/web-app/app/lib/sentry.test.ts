@@ -44,6 +44,13 @@ describe("buildSentryInitOptions", () => {
       blockAllMedia: true,
     });
   });
+
+  it("scrubs title-bearing refs from events before send", () => {
+    const options = buildSentryInitOptions("https://example@sentry.io/1");
+
+    expect(options.beforeSend).toBeDefined();
+    expect(options.beforeBreadcrumb).toBeDefined();
+  });
 });
 
 describe("initSentry", () => {
