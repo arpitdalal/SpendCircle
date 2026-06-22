@@ -22,16 +22,15 @@
     "@tanstack/react-form": "^1.33.0",
     "better-auth": "1.6.16",
     "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
+    "cnfast": "^0.0.8",
     "convex": "^1.40.0",
     "convex-helpers": "0.1.119",
+    "isbot": "^5",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router": "^7.16.0",
-    "recharts": "^3.8.1",
-    "tailwind-merge": "^3.6.0",
-    "isbot": "^5"
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@react-router/dev": "^7.16.0",

@@ -14,3 +14,6 @@ allowBuilds:
   esbuild: true
   lefthook: true
   msw: true
+
+minimumReleaseAgeExclude:
+  - cnfast@0.0.8
