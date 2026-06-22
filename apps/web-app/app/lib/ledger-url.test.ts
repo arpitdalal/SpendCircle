@@ -26,7 +26,7 @@ describe("ledgerDrilldownHref", () => {
     );
   });
 
-  it("adds category, type, and paidBy filters when provided", () => {
+  it("adds category and type filters when provided", () => {
     expect(
       ledgerDrilldownHref(
         { ref: "trip-c1" },
@@ -34,11 +34,10 @@ describe("ledgerDrilldownHref", () => {
           month: "2026-06",
           categoryId: "cat-groceries",
           type: "expense",
-          paidByMemberId: "mem-alex",
         },
       ),
     ).toBe(
-      "/circles/trip-c1/transactions?month=2026-06&type=expense&status=all&categories=cat-groceries&paidBy=mem-alex",
+      "/circles/trip-c1/transactions?month=2026-06&type=expense&status=all&categories=cat-groceries",
     );
   });
 });

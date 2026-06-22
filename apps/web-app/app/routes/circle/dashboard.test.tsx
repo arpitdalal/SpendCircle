@@ -13,7 +13,6 @@ import type {
 import {
   configureConvex,
   makeCircleView,
-  makeMemberView,
   makeTransactionView,
   renderCircleRoutes,
   renderInCircle,
@@ -23,8 +22,7 @@ import {
 /**
  * Behavior test for the Dashboard route (jsdom). Doubles ONLY Convex's reactive client
  * (via the shared helper) and runs the REAL route + real `~/lib/data.js` hooks against
- * it (ADR 0006), so the totals cards, recent feed, and the Paid By filter's re-query
- * are exercised exactly as in the app.
+ * it (ADR 0006), so the totals cards and recent feed are exercised exactly as in the app.
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 
@@ -198,38 +196,6 @@ describe("Dashboard month-over-month comparison (RPT-4)", () => {
     expect(within(section).getAllByRole("row")).toHaveLength(13); // header + 12
   });
 
-  it("shares the Paid By filter: selecting a Member narrows the comparison query", async () => {
-    const alex = makeMemberView({
-      id: testId<Member["id"]>("mem-alex"),
-      displayName: "Alex",
-      role: "member",
-      isSelf: false,
-    });
-    configureConvex({
-      paidByFilterOptions: [alex],
-      monthlyComparison: (args) =>
-        args.paidByMemberId === "mem-alex"
-          ? {
-              series: [{ month: "2026-06", incomeMinor: 0, expenseMinor: 2_500, netMinor: -2_500 }],
-              currency: "USD",
-            }
-          : {
-              series: [
-                { month: "2026-06", incomeMinor: 0, expenseMinor: 10_000, netMinor: -10_000 },
-              ],
-              currency: "USD",
-            },
-    });
-    renderInCircle(makeCircleView(), <CircleDashboard />);
-
-    const section = screen.getByRole("region", { name: /month-over-month/i });
-    expect(within(section).getByText("$100.00")).toBeInTheDocument();
-
-    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "mem-alex");
-    expect(within(section).getByText("$25.00")).toBeInTheDocument();
-    expect(within(section).queryByText("$100.00")).not.toBeInTheDocument();
-  });
-
   it("shows a skeleton while the comparison loads", () => {
     configureConvex({ monthlyComparison: () => undefined });
     renderInCircle(makeCircleView(), <CircleDashboard />);
@@ -243,73 +209,6 @@ describe("Dashboard month-over-month comparison (RPT-4)", () => {
 
     const section = screen.getByRole("region", { name: /month-over-month/i });
     expect(within(section).getAllByRole("row")[1]).toHaveTextContent("US$5,000.00");
-  });
-});
-
-describe("Dashboard Paid By filter", () => {
-  const you = makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" });
-  const alex = makeMemberView({
-    id: testId<Member["id"]>("mem-alex"),
-    displayName: "Alex",
-    role: "member",
-    isSelf: false,
-  });
-  const rae = makeMemberView({
-    id: testId<Member["id"]>("mem-rae"),
-    displayName: "Rae",
-    role: "member",
-    status: "removed",
-    isSelf: false,
-  });
-
-  it("offers All members plus each option, labelling a Removed Member", () => {
-    configureConvex({
-      dashboard: makeDashboard(),
-      paidByFilterOptions: [you, alex, rae],
-    });
-    renderInCircle(makeCircleView(), <CircleDashboard />);
-
-    const select = screen.getByLabelText(/paid by/i);
-    const labels = within(select)
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(labels).toEqual(["All members", "You", "Alex", "Rae (removed)"]);
-  });
-
-  it("re-queries the dashboard narrowed to the selected Member", async () => {
-    // The dashboard result depends on the queried `paidByMemberId`, so selecting a
-    // Member flows a new arg through the real hook and updates the totals/recent.
-    configureConvex({
-      paidByFilterOptions: [you, alex],
-      dashboard: (args) =>
-        args.paidByMemberId === "mem-alex"
-          ? makeDashboard({
-              totals: { incomeMinor: 0, expenseMinor: 2_500, netMinor: -2_500 },
-              recent: [makeTransactionView({ title: "Alex spend", type: "expense" })],
-            })
-          : makeDashboard({
-              totals: { incomeMinor: 0, expenseMinor: 10_000, netMinor: -10_000 },
-              recent: [makeTransactionView({ title: "All spend", type: "expense" })],
-            }),
-    });
-    renderInCircle(makeCircleView(), <CircleDashboard />);
-
-    // Default (All members): the unfiltered total.
-    expect(screen.getByText("$100.00")).toBeInTheDocument();
-    expect(screen.getByText("All spend")).toBeInTheDocument();
-
-    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "mem-alex");
-
-    // Narrowed to Alex: totals and recent both reflect just their activity.
-    expect(screen.getByText("$25.00")).toBeInTheDocument();
-    expect(screen.getByText("Alex spend")).toBeInTheDocument();
-    expect(screen.queryByText("All spend")).not.toBeInTheDocument();
-  });
-
-  it("disables the filter while options load", () => {
-    configureConvex({ dashboard: makeDashboard(), paidByFilterOptions: undefined });
-    renderInCircle(makeCircleView(), <CircleDashboard />);
-    expect(screen.getByLabelText(/paid by/i)).toBeDisabled();
   });
 });
 
@@ -387,40 +286,6 @@ describe("Dashboard category analytics (RPT-5)", () => {
     expect(screen.queryByText("$73.50")).not.toBeInTheDocument();
   });
 
-  it("shares the Paid By filter with category analytics", async () => {
-    const alex = makeMemberView({
-      id: testId<Member["id"]>("mem-alex"),
-      displayName: "Alex",
-      role: "member",
-      isSelf: false,
-    });
-    configureConvex({
-      paidByFilterOptions: [alex],
-      categoryAnalytics: (args) =>
-        args.paidByMemberId === "mem-alex"
-          ? {
-              currency: "USD",
-              rows: [
-                {
-                  categoryId: testId<CategoryAnalytics["rows"][number]["categoryId"]>("cat-dining"),
-                  name: "Dining",
-                  color: "orange",
-                  status: "active",
-                  taggedTotalMinor: 2_500,
-                  txnCount: 1,
-                },
-              ],
-            }
-          : SAMPLE,
-    });
-    renderInCircle(makeCircleView(), <CircleDashboard />);
-
-    expect(screen.getByText("$73.50")).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "mem-alex");
-    expect(screen.getByText("$25.00")).toBeInTheDocument();
-    expect(screen.queryByText("$73.50")).not.toBeInTheDocument();
-  });
-
   it("shows a skeleton while category analytics loads", () => {
     configureConvex({ categoryAnalytics: () => undefined });
     renderInCircle(makeCircleView(), <CircleDashboard />);
@@ -434,14 +299,7 @@ describe("Dashboard category analytics (RPT-5)", () => {
   });
 });
 
-describe("Dashboard URL state (paidBy + range)", () => {
-  const you = makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" });
-  const alex = makeMemberView({
-    id: testId<Member["id"]>("mem-alex"),
-    displayName: "Alex",
-    role: "member",
-    isSelf: false,
-  });
+describe("Dashboard URL state (range + type)", () => {
   const ROUTES = <Route path="circles/:circleRef" element={<CircleDashboard />} />;
 
   function setup(initialSearch = "") {
@@ -450,91 +308,63 @@ describe("Dashboard URL state (paidBy + range)", () => {
     });
   }
 
-  it("restores a deep-linked Paid By + range and queries with both", () => {
+  it("restores a deep-linked range and queries with it", () => {
     configureConvex({
-      paidByFilterOptions: [you, alex],
-      // The double inspects the queried args, so this asserts the URL actually
-      // flowed through the real hooks into the subscription.
       monthlyComparison: (args) =>
-        args.rangeMonths === 3 && args.paidByMemberId === "mem-alex"
+        args.rangeMonths === 3
           ? {
               series: [{ month: "2026-06", incomeMinor: 0, expenseMinor: 4_200, netMinor: -4_200 }],
               currency: "USD",
             }
           : { series: [], currency: "USD" },
-      dashboard: (args) =>
-        args.paidByMemberId === "mem-alex"
-          ? makeDashboard({ totals: { incomeMinor: 0, expenseMinor: 2_500, netMinor: -2_500 } })
-          : makeDashboard(),
     });
-    setup("?paidBy=mem-alex&range=3");
+    setup("?range=3");
 
-    expect(screen.getByLabelText(/paid by/i)).toHaveValue("mem-alex");
     expect(screen.getByLabelText(/range/i)).toHaveValue("3");
-    expect(screen.getByText("$25.00")).toBeInTheDocument(); // filtered totals
     const section = screen.getByRole("region", { name: /month-over-month/i });
-    expect(within(section).getByText("-$42.00")).toBeInTheDocument(); // filtered series
+    expect(within(section).getByText("-$42.00")).toBeInTheDocument();
   });
 
   it("writes selections to the URL and clears them back to a bare URL on defaults", async () => {
-    configureConvex({ paidByFilterOptions: [you, alex] });
+    configureConvex({});
     const view = setup();
 
     await userEvent.selectOptions(screen.getByLabelText(/range/i), "12");
     expect(view.location()).toBe("/circles/trip-c1?range=12");
 
-    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "mem-alex");
-    expect(view.location()).toBe("/circles/trip-c1?paidBy=mem-alex&range=12");
+    await userEvent.selectOptions(screen.getByLabelText(/^type$/i), "income");
+    expect(view.location()).toBe("/circles/trip-c1?range=12&type=income");
 
     // Back to the defaults: the params drop, leaving the canonical bare URL.
     await userEvent.selectOptions(screen.getByLabelText(/range/i), "6");
-    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "");
+    await userEvent.selectOptions(screen.getByLabelText(/^type$/i), "expense");
     expect(view.location()).toBe("/circles/trip-c1");
   });
 
   it("falls back to the default range for an unsupported range param", () => {
-    configureConvex({ paidByFilterOptions: [you] });
+    configureConvex({});
     setup("?range=9");
     expect(screen.getByLabelText(/range/i)).toHaveValue("6");
   });
 
-  it("cleans a paidBy the loaded options do not know and shows the unfiltered view", async () => {
-    configureConvex({
-      paidByFilterOptions: [you],
-      dashboard: (args) =>
-        args.paidByMemberId
-          ? makeDashboard({ totals: { incomeMinor: 0, expenseMinor: 0, netMinor: 0 } })
-          : makeDashboard(),
-    });
-    const view = setup("?paidBy=mem-ghost");
+  it("strips legacy paidBy from the URL while preserving range and type", async () => {
+    configureConvex({});
+    const view = setup("?paidBy=mem-ghost&range=3&type=income");
 
-    // The stale id is dropped from the URL (same observable result as any unknown
-    // id — ADR 0016) and the queries run unfiltered.
-    await waitFor(() => expect(view.location()).toBe("/circles/trip-c1"));
-    expect(screen.getByLabelText(/paid by/i)).toHaveValue("");
-    expect(screen.getByText("$5,000.00")).toBeInTheDocument();
+    await waitFor(() => expect(view.location()).toBe("/circles/trip-c1?range=3&type=income"));
+    expect(screen.getByLabelText(/range/i)).toHaveValue("3");
+    expect(screen.getByLabelText(/^type$/i)).toHaveValue("income");
   });
 
-  it("holds the money queries while a deep-linked paidBy awaits its options", () => {
-    // Options still loading + a paidBy in the URL: the dashboard and comparison must
-    // read as LOADING (queries skipped), never flash unfiltered totals where a
-    // filtered view was deep-linked.
-    configureConvex({ paidByFilterOptions: undefined, dashboard: makeDashboard() });
-    setup("?paidBy=mem-alex");
+  it("strips legacy paidBy while preserving unrelated query params", async () => {
+    configureConvex({});
+    const view = setup("?paidBy=mem-ghost&utm=campaign");
 
-    expect(screen.getByText(/this month's totals/i).closest("fieldset")).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
-    expect(screen.getByTestId("comparison-skeleton")).toBeInTheDocument();
-    expect(screen.getByTestId("category-analytics-skeleton")).toBeInTheDocument();
-    expect(screen.getByTestId("recent-skeleton")).toBeInTheDocument();
-    expect(screen.queryByText("$5,000.00")).not.toBeInTheDocument();
+    await waitFor(() => expect(view.location()).toBe("/circles/trip-c1?utm=campaign"));
   });
 
   it("restores a deep-linked category analytics type and queries with it", () => {
     configureConvex({
-      paidByFilterOptions: [you],
       categoryAnalytics: (args) =>
         args.type === "income"
           ? {
@@ -583,13 +413,6 @@ describe("Dashboard drilldowns (RPT-6)", () => {
     ],
   };
 
-  const alex = makeMemberView({
-    id: testId<Member["id"]>("mem-alex"),
-    displayName: "Alex",
-    role: "member",
-    isSelf: false,
-  });
-
   function hrefOf(link: HTMLElement) {
     return new URL(link.getAttribute("href") ?? "", "http://t");
   }
@@ -616,57 +439,6 @@ describe("Dashboard drilldowns (RPT-6)", () => {
     expect(url.searchParams.get("month")).toBe(currentMonth(new Date()));
     expect(url.searchParams.get("categories")).toBe("cat-groceries");
     expect(url.searchParams.get("type")).toBe("expense");
-  });
-
-  it("carries the validated Paid By member into both drilldown hrefs", async () => {
-    configureConvex({
-      paidByFilterOptions: [alex],
-      monthlyComparison: THREE_MONTHS,
-      categoryAnalytics: SAMPLE,
-    });
-    renderInCircle(makeCircleView(), <CircleDashboard />);
-
-    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "mem-alex");
-
-    const comparison = screen.getByRole("region", { name: /month-over-month/i });
-    expect(
-      hrefOf(within(comparison).getByRole("link", { name: /april 2026/i })).searchParams.get(
-        "paidBy",
-      ),
-    ).toBe("mem-alex");
-
-    const category = screen.getByRole("link", { name: /view groceries transactions/i });
-    expect(hrefOf(category).searchParams.get("paidBy")).toBe("mem-alex");
-  });
-
-  it("does not carry a stale paidBy id the route already cleaned", async () => {
-    const you = makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" });
-    configureConvex({
-      paidByFilterOptions: [you],
-      monthlyComparison: THREE_MONTHS,
-      categoryAnalytics: SAMPLE,
-    });
-    const view = renderCircleRoutes(
-      makeCircleView(),
-      <Route path="circles/:circleRef" element={<CircleDashboard />} />,
-      {
-        initialEntries: ["/circles/trip-c1?paidBy=mem-ghost"],
-      },
-    );
-
-    await waitFor(() => expect(view.location()).toBe("/circles/trip-c1"));
-
-    const comparison = screen.getByRole("region", { name: /month-over-month/i });
-    expect(
-      hrefOf(within(comparison).getByRole("link", { name: /april 2026/i })).searchParams.get(
-        "paidBy",
-      ),
-    ).toBeNull();
-    expect(
-      hrefOf(screen.getByRole("link", { name: /view groceries transactions/i })).searchParams.get(
-        "paidBy",
-      ),
-    ).toBeNull();
   });
 
   it("keeps the comparison chart SVG aria-hidden while month links are focusable", () => {

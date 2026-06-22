@@ -107,7 +107,7 @@ graph TD
   TXN1 --> RPT1[RPT-1 · Monthly Ledger]
   TXN1 --> RPT2[RPT-2 · Search]
   RPT1 --> RPT2
-  TXN1 --> RPT3[RPT-3 · Dashboard totals + Paid By]
+  TXN1 --> RPT3[RPT-3 · Dashboard totals]
   RPT3 --> RPT4[RPT-4 · Charts + comparison ranges]
   RPT3 --> RPT5[RPT-5 · Category analytics]
   RPT1 --> RPT6[RPT-6 · Dashboard drilldowns]
@@ -326,7 +326,7 @@ Each slice file in this directory uses this structure:
 ### Reporting
 - [RPT-1 · Monthly Ledger](RPT-1-monthly-ledger.md)
 - [RPT-2 · Search](RPT-2-search.md)
-- [RPT-3 · Dashboard totals + Paid By filter](RPT-3-dashboard-totals.md)
+- [RPT-3 · Dashboard totals](RPT-3-dashboard-totals.md)
 - [RPT-4 · Dashboard charts + comparison ranges](RPT-4-dashboard-charts.md)
 - [RPT-5 · Category analytics](RPT-5-category-analytics.md)
 - [RPT-6 · Dashboard drilldowns](RPT-6-dashboard-drilldowns.md)

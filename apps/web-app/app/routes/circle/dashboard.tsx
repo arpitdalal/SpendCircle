@@ -21,13 +21,11 @@ import {
   type Circle,
   type Dashboard,
   type DashboardTotals,
-  type Member,
   type MonthlyComparison,
   type Transaction,
   useCategoryAnalytics,
   useDashboard,
   useMonthlyComparison,
-  usePaidByFilterOptions,
 } from "~/lib/data.js";
 import { transactionDetailHref } from "~/lib/ledger-url.js";
 import { viewerLocale } from "~/lib/locale.js";
@@ -38,10 +36,9 @@ import { DashboardCategoryAnalytics } from "./dashboard-category-analytics.js";
 import { DashboardComparisonChart } from "./dashboard-comparison-chart.js";
 
 /**
- * The per-Circle Dashboard (RPT-3; PRD stories 68, 69, 75) — the Circle index route.
+ * The per-Circle Dashboard (RPT-3; PRD stories 68, 75) — the Circle index route.
  * Shows the CURRENT month's Income / Expense / Net totals and a recent-Transactions
- * feed, with a Paid By filter that narrows BOTH to one Member so you can inspect one
- * person's activity. Only active Transactions count (archived excluded — TXN-3).
+ * feed for all active Transactions in the Circle (archived excluded — TXN-3).
  *
  * The month is the User's LOCAL current month (`currentMonth(new Date())`) so the
  * Dashboard reads as "this month" for them; month navigation and month-over-month
@@ -49,19 +46,13 @@ import { DashboardComparisonChart } from "./dashboard-comparison-chart.js";
  * is the totals + recent surface they build on.
  *
  * Totals and recent come from `getDashboard` (a bounded server-side aggregate over the
- * month — never summed on the client, ADR 0009); the Paid By options come from
- * `getPaidByFilterOptions` (current Members + Removed Members with matching active
- * Transactions).
+ * month — never summed on the client, ADR 0009).
  *
- * The Paid By filter and the Comparison Range live in the URL (`dashboard-url.ts` —
+ * The Comparison Range and category analytics type live in the URL (`dashboard-url.ts` —
  * the Ledger's URL-as-state policy), so a narrowed Dashboard survives reload and can
- * be shared; selection changes push history entries so Back walks them. The URL's
- * `paidBy` id is only TRUSTED once the loaded options vouch for it: until they
- * resolve, both money queries are held (`enabled: false`, reading as loading) so an
- * unverified id never reaches the backend and unfiltered totals never flash where a
- * filtered view was deep-linked; an id the options do not know (stale link, removed
- * relevance, hand-edited URL) is cleaned back to All members — the same observable
- * result as any other unknown id (ADR 0016).
+ * be shared; selection changes push history entries so Back walks them. Legacy `paidBy`
+ * deep links are stripped on load — the Dashboard is Circle-wide; Member-specific
+ * investigation lives on the Monthly Ledger and Transaction Search.
  */
 export default function CircleDashboard() {
   const circle = useCircle();
@@ -69,42 +60,22 @@ export default function CircleDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selection = readDashboardSelection(searchParams);
 
-  const filterOptions = usePaidByFilterOptions(circle.id);
-  // The URL carries a raw id; the loaded options are the validator. `undefined`
-  // means "not vouched for (yet)" — either still loading or unknown.
-  const paidByMemberId = selection.paidBy
-    ? filterOptions?.find((member) => member.id === selection.paidBy)?.id
-    : undefined;
-  const awaitingPaidBy = selection.paidBy !== "" && filterOptions === undefined;
-
-  // Drop a paidBy the loaded options do not know — mirroring the Ledger's
-  // dropUnknownIds cleanup — so the URL never keeps naming a filter that isn't
-  // applied. Range needs no cleanup: a malformed value already READS as the default.
-  // react-doctor-disable-next-line react-doctor/no-event-handler -- stale deep-link cleanup runs when options resolve, not from a discrete UI event.
+  // Strip legacy ?paidBy= from deep links without disturbing range, type, or foreign params.
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- legacy URL cleanup on mount/param change, not a discrete UI event.
   useEffect(() => {
-    if (selection.paidBy && filterOptions && !paidByMemberId) {
-      setSearchParams(canonicalDashboardParams({ ...selection, paidBy: "" }, searchParams), {
-        replace: true,
-      });
+    if (searchParams.has("paidBy")) {
+      setSearchParams(canonicalDashboardParams(selection, searchParams), { replace: true });
     }
-  }, [selection, filterOptions, paidByMemberId, searchParams, setSearchParams]);
+  }, [selection, searchParams, setSearchParams]);
 
-  const dashboard = useDashboard(circle.id, {
-    month,
-    paidByMemberId,
-    enabled: !awaitingPaidBy,
-  });
+  const dashboard = useDashboard(circle.id, { month });
   const comparison = useMonthlyComparison(circle.id, {
     endMonth: month,
     rangeMonths: selection.range,
-    paidByMemberId,
-    enabled: !awaitingPaidBy,
   });
   const categoryAnalytics = useCategoryAnalytics(circle.id, {
     month,
     type: selection.type,
-    paidByMemberId,
-    enabled: !awaitingPaidBy,
   });
 
   const select = (next: DashboardSelection) => {
@@ -122,14 +93,7 @@ export default function CircleDashboard() {
         }
         label="Loading dashboard…"
       />
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-display text-lg font-semibold tracking-tight">Dashboard</h2>
-        <PaidByFilter
-          options={filterOptions}
-          value={paidByMemberId}
-          onChange={(memberId) => select({ ...selection, paidBy: memberId ?? "" })}
-        />
-      </div>
+      <h2 className="font-display text-lg font-semibold tracking-tight">Dashboard</h2>
 
       <DashboardTotalsCards dashboard={dashboard} fallbackCurrency={circle.currency} />
       <MonthlyComparisonSection
@@ -137,7 +101,6 @@ export default function CircleDashboard() {
         rangeMonths={selection.range}
         onRangeChange={(range) => select({ ...selection, range })}
         circleRef={circle.ref}
-        paidByMemberId={paidByMemberId}
       />
       <CategoryAnalyticsSection
         analytics={categoryAnalytics}
@@ -145,58 +108,8 @@ export default function CircleDashboard() {
         onTypeChange={(type) => select({ ...selection, type })}
         circleRef={circle.ref}
         month={month}
-        paidByMemberId={paidByMemberId}
       />
       <RecentTransactions dashboard={dashboard} circle={circle} />
-    </div>
-  );
-}
-
-/**
- * The Paid By filter (PRD 69): "All members" plus each selectable Member; a Removed
- * Member option is labelled so it reads distinctly (CONTEXT Paid By — Removed Members
- * stay selectable when matching Transactions exist). A native `<select>` with an
- * associated label keeps it keyboard-operable and accessible (README §4). While the
- * options load it renders with just "All members" and is disabled; `null`
- * (inaccessible Circle) is handled a layer up by the guard, so it is treated as no
- * extra options here.
- */
-function PaidByFilter({
-  options,
-  value,
-  onChange,
-}: {
-  options: Member[] | null | undefined;
-  value: Member["id"] | undefined;
-  onChange: (value: Member["id"] | undefined) => void;
-}) {
-  const members = options ?? [];
-  const loading = options === undefined;
-
-  return (
-    <div className="flex items-center gap-2">
-      <label htmlFor="dashboard-paid-by" className="text-xs text-muted-foreground">
-        Paid by
-      </label>
-      <select
-        id="dashboard-paid-by"
-        value={value ?? ""}
-        disabled={loading}
-        onChange={(event) =>
-          // The branded Member id is the option's own value, narrowed back from the
-          // string the DOM emits; "" is the "All members" sentinel (no filter).
-          onChange(members.find((member) => member.id === event.target.value)?.id)
-        }
-        className="rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:opacity-50"
-      >
-        <option value="">All members</option>
-        {members.map((member) => (
-          <option key={member.id} value={member.id}>
-            {member.displayName}
-            {member.status === "removed" ? " (removed)" : ""}
-          </option>
-        ))}
-      </select>
     </div>
   );
 }
@@ -259,8 +172,7 @@ function DashboardTotalsCards({
  * Comparison Range (1/3/6/12 months, default 6 — CONTEXT glossary), ending at the
  * current month. The series arrives chronological, zero-filled, and in minor units;
  * this surface only formats (ADR 0009) — axes/tooltips in the viewer locale and the
- * Circle Currency. It shares the Dashboard's Paid By filter, so the chart always
- * describes the same activity as the totals cards.
+ * Circle Currency.
  *
  * The chart SVG is presentational (`aria-hidden`): its colors are a visual cue only
  * (CONTEXT: never identify by color alone — the legend and tooltip carry the names),
@@ -272,13 +184,11 @@ function MonthlyComparisonSection({
   rangeMonths,
   onRangeChange,
   circleRef,
-  paidByMemberId,
 }: {
   comparison: MonthlyComparison | null | undefined;
   rangeMonths: ComparisonRangeMonths;
   onRangeChange: (rangeMonths: ComparisonRangeMonths) => void;
   circleRef: string;
-  paidByMemberId?: string;
 }) {
   return (
     <section className="space-y-3" aria-labelledby="dashboard-comparison-heading">
@@ -322,19 +232,15 @@ function MonthlyComparisonSection({
           No comparison available.
         </p>
       ) : (
-        <DashboardComparisonChart
-          comparison={comparison}
-          circleRef={circleRef}
-          paidByMemberId={paidByMemberId}
-        />
+        <DashboardComparisonChart comparison={comparison} circleRef={circleRef} />
       )}
     </section>
   );
 }
 
 /**
- * Ranked category tagged spend (RPT-5). Shares the Dashboard's Paid By filter and
- * month scope; the expense/income toggle is URL-owned via `dashboard-url.ts`.
+ * Ranked category tagged spend (RPT-5). Uses the Dashboard's current month scope; the
+ * expense/income toggle is URL-owned via `dashboard-url.ts`.
  */
 function CategoryAnalyticsSection({
   analytics,
@@ -342,14 +248,12 @@ function CategoryAnalyticsSection({
   onTypeChange,
   circleRef,
   month,
-  paidByMemberId,
 }: {
   analytics: CategoryAnalytics | null | undefined;
   type: DashboardSelection["type"];
   onTypeChange: (type: DashboardSelection["type"]) => void;
   circleRef: string;
   month: PlainMonth;
-  paidByMemberId?: string;
 }) {
   return (
     <section className="space-y-3" aria-labelledby="dashboard-category-scope-heading">
@@ -392,7 +296,6 @@ function CategoryAnalyticsSection({
           circleRef={circleRef}
           month={month}
           type={type}
-          paidByMemberId={paidByMemberId}
         />
       )}
     </section>
@@ -402,10 +305,9 @@ function CategoryAnalyticsSection({
 /**
  * The recent-Transactions feed (PRD 75): the latest active Transactions by record
  * time, money formatted in the Circle Currency. Each row's title links to the TXN-4
- * detail route, carrying the Dashboard's current URL (its scope / Paid By filter) as a
- * validated `returnTo` origin (issue #123) so close/back returns here — matching the
- * Ledger row links. `dashboard` is `undefined` while loading; an empty feed reads as "no recent
- * activity" for the selected scope (which the Paid By filter may have narrowed).
+ * detail route, carrying the Dashboard's current URL as a validated `returnTo` origin
+ * (issue #123) so close/back returns here — matching the Ledger row links. `dashboard`
+ * is `undefined` while loading; an empty feed reads as "no recent activity".
  */
 function RecentTransactions({
   dashboard,
@@ -415,8 +317,6 @@ function RecentTransactions({
   circle: Circle;
 }) {
   const currency = toCurrencyCode(circle.currency);
-  // The Dashboard's own URL (its scope/Paid By filter) is the origin a recent row returns
-  // to via `returnTo` (#123), matching the ledger/search row links.
   const origin = useReturnToOrigin();
 
   return (

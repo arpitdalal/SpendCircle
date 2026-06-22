@@ -68,12 +68,10 @@ export function ledgerDrilldownHref(
     month,
     categoryId,
     type,
-    paidByMemberId,
   }: {
     month: PlainMonth;
     categoryId?: string;
     type?: TransactionType;
-    paidByMemberId?: string;
   },
 ) {
   const filters = defaultLedgerFilters(month);
@@ -82,9 +80,6 @@ export function ledgerDrilldownHref(
   }
   if (type) {
     filters.type = type;
-  }
-  if (paidByMemberId) {
-    filters.paidBy = [paidByMemberId];
   }
   return withQuery(
     circlePath(circle.ref, "transactions"),

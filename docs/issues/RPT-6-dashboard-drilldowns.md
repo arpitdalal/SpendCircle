@@ -7,7 +7,7 @@
 | **Depends on** | RPT-1 (Done), RPT-2 (Done), RPT-3 (Done), RPT-4 (Done · [PR #86](https://github.com/arpitdalal/SpendCircle/pull/86)), RPT-5 (Done · [PR #213](https://github.com/arpitdalal/SpendCircle/pull/213)) — all merged |
 | **PRD stories** | 74 |
 | **ADRs** | 0005, 0016, 0017 |
-| **Glossary** | Dashboard, Monthly Ledger, Ledger Filter, Paid By |
+| **Glossary** | Dashboard, Monthly Ledger, Ledger Filter |
 
 ## Intent
 
@@ -30,17 +30,13 @@ Two drilldown sources exist on the Dashboard today
    → the **current-month Ledger narrowed to that Category** (and the same Income/Expense `type`
    the analytics list is currently showing).
 
-**The Dashboard's active Paid By selection is carried into every drilldown** so the Ledger opens
-describing the same activity the chart did (one Member's spend, if a Member is selected).
-
 ### Not in this slice (already shipped or no such element)
 
 - **Recent Transaction → detail is already done.** `RecentRow` in
   [`dashboard.tsx`](../../apps/web-app/app/routes/circle/dashboard.tsx) already links each recent
   row's title to the TXN-4 detail route with a validated `returnTo`. Do **not** rebuild it.
-- **There is no "Paid By segment" to click.** Paid By on the Dashboard is a `<select>` filter
-  (RPT-3), not a chart/segment/pie. PRD 74 is "*charts* lead to records." Paid By is a *dimension
-  carried* into the drilldown (point 3 above), not a click source. Do not build a per-Member chart.
+- **Member-specific Dashboard reporting is out of scope.** The Dashboard is Circle-wide; the
+  Monthly Ledger and Transaction Search provide Member-specific investigation.
 
 ## Implement
 
@@ -51,8 +47,8 @@ describing the same activity the chart did (one Member's spend, if a Member is s
 The two routes use **different URL codecs** — this is the one non-obvious part. Build a *Ledger*
 URL, never reuse the Dashboard's params:
 
-- Dashboard codec ([`dashboard-url.ts`](../../apps/web-app/app/lib/dashboard-url.ts)): `paidBy`
-  is a **single id string** (`""` = All members), plus `range`, `type` (`expense`/`income`).
+- Dashboard codec ([`dashboard-url.ts`](../../apps/web-app/app/lib/dashboard-url.ts)): `range`
+  plus `type` (`expense`/`income`).
 - Ledger codec
   ([`transaction-filter-url.ts`](../../apps/web-app/app/lib/transaction-filter-url.ts)): `month`,
   `q`, `type` (`all`/`expense`/`income`), `status` (`active`/`archived`/`all`), and **array**
@@ -65,29 +61,22 @@ import { canonicalLedgerParams, defaultLedgerFilters } from "~/lib/transaction-f
 import { circlePath } from "~/lib/circle-path.js";
 import { withQuery } from "~/lib/ledger-url.js";
 
-function ledgerDrilldownHref(circle, { month, categoryId, type, paidByMemberId }) {
+function ledgerDrilldownHref(circle, { month, categoryId, type }) {
   const filters = defaultLedgerFilters(month);          // month + empty filters
   if (categoryId) filters.categories = [categoryId];    // single id → ledger's array param
   if (type) filters.type = type;                        // "expense" | "income" (else default "all")
-  if (paidByMemberId) filters.paidBy = [paidByMemberId];// Dashboard's single Paid By → array
   return withQuery(circlePath(circle.ref, "transactions"), canonicalLedgerParams(filters).toString());
 }
 ```
 
-- A **month-bar** drilldown: `{ month: entry.month, paidByMemberId }` — `type` stays the Ledger
-  default (`all`); both Income and Expense for that month are what the user wants to inspect.
+- A **month-bar** drilldown: `{ month: entry.month }` — `type` stays the Ledger default (`all`);
+  both Income and Expense for that month are what the user wants to inspect.
 - A **category-row** drilldown: `{ month: currentMonth(new Date()), categoryId: row.categoryId,
-  type: selection.type, paidByMemberId }` — `selection.type` and `paidByMemberId` come from
-  `readDashboardSelection(searchParams)` / the route's already-validated `paidByMemberId` (the same
-  value passed to the analytics query, so the Ledger matches exactly what the list showed).
+  type: selection.type }` — `selection.type` comes from `readDashboardSelection(searchParams)` and
+  matches the analytics query.
 - `defaultLedgerFilters` already leaves `status: "all"`, so archived Transactions appear in the
   drilled-in Ledger marked as archived — same as opening the Ledger directly (CONTEXT: Ledger
   Filter lifecycle defaults to all).
-
-Pass the Member id the route **already validated against the loaded Paid By options**
-(`paidByMemberId` in `dashboard.tsx`), not the raw `selection.paidBy` string — a stale/unknown id
-is already cleaned to `undefined` there, so the drilldown can't carry a filter the Ledger would
-reject.
 
 These are plain in-app navigations (a top-level list route, not an object route), so use a React
 Router `<Link>` and **no `returnTo`** — browser Back returns to the Dashboard naturally.
@@ -123,8 +112,6 @@ this slice only adds links, it does not restyle the charts.
   `canonicalLedgerParams` are the single home for the Ledger param vocabulary; building the href
   through them means a drilldown URL can never diverge from a URL the Ledger itself would produce
   (defaults omitted, ids in the canonical array shape).
-- **Carry the *validated* Paid By id**, so the Ledger opens scoped to exactly the activity the chart
-  described and never names a filter the Ledger would clean away.
 - **Accessible affordance, not an `onClick` on `aria-hidden`.** The chart SVGs are intentionally
   `aria-hidden` with an accessible twin; the drilldown rides the twin so keyboard/SR users get the
   same capability as mouse users.
@@ -144,9 +131,6 @@ redefine per-file scaffolding (CLAUDE.md). No new Convex tests (no backend chang
 - **Category-row navigation:** the category name link points at the current-month Ledger with
   `categories=<id>` and the current analytics `type` (`expense`/`income`); the destination filters to
   that Category.
-- **Paid By carried:** with a Member selected in the Dashboard Paid By filter, both drilldown hrefs
-  include `paidBy=<member id>`; with All members selected, neither does. Assert the carried id is the
-  *validated* one (a stale `?paidBy=` already cleaned by the route is not carried).
 - **URL state round-trips:** the drilled-in Ledger reads its filter from the URL; reloading preserves
   it (true by construction — it's in the URL); Back returns to the Dashboard.
 - **Accessibility:** the month link and the category link are keyboard-focusable and have accessible
@@ -161,9 +145,9 @@ redefine per-file scaffolding (CLAUDE.md). No new Convex tests (no backend chang
 ## Done when
 
 - A month bar drills into the Monthly Ledger for that month, and a category row drills into the
-  current-month Ledger filtered to that Category and analytics type; both carry the Dashboard's
-  active Paid By scope; filters live in the URL (deep-linkable, reload-safe, Back-friendly); the
-  drilldown affordances are keyboard/screen-reader accessible; tests green; gates pass
+  current-month Ledger filtered to that Category and analytics type; filters live in the URL
+  (deep-linkable, reload-safe, Back-friendly); the drilldown affordances are keyboard/screen-reader
+  accessible; tests green; gates pass
   (`pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm test:e2e`).
 
 ## Out of scope
@@ -171,6 +155,5 @@ redefine per-file scaffolding (CLAUDE.md). No new Convex tests (no backend chang
 - The chart math and surfaces themselves (RPT-3 totals, RPT-4 comparison, RPT-5 category analytics),
   and the Monthly Ledger + Ledger Filter (RPT-1/RPT-2) — all reused, not rebuilt.
 - **Recent Transaction → detail** — already shipped in `RecentRow` (`dashboard.tsx`).
-- A **Paid By chart/segment** — no such element exists; Paid By is a filter dimension, not a click
-  source (PRD 74 is charts → records).
+- Member-specific Dashboard reporting.
 - Any new backend query, fixture, or `data.ts` hook — this slice wires existing reads.

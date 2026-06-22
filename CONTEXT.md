@@ -109,7 +109,7 @@ The **Member** who creates a **Transaction**. Only the Recorded By Member can ed
 _Avoid_: Creator
 
 **Paid By**:
-The **Member** the **Transaction's** money movement belongs to. Paid By defaults to the **Recorded By** Member, can be set to another current Member, and preserves historical identity if that Member is later removed; Ledger Filter, Transaction Search, and Dashboard filters can still include Removed Members when relevant, but when editing Paid By, only current Members can be newly selected. If the same **User** rejoins, Paid By resolves to their current Display Name and Profile Picture again.
+The **Member** the **Transaction's** money movement belongs to. Paid By defaults to the **Recorded By** Member, can be set to another current Member, and preserves historical identity if that Member is later removed; Ledger Filter and Transaction Search can still include Removed Members when relevant, but when editing Paid By, only current Members can be newly selected. If the same **User** rejoins, Paid By resolves to their current Display Name and Profile Picture again.
 _Avoid_: Payer
 
 **Settlement**:
@@ -189,7 +189,7 @@ A lightweight way to narrow a **Circle's** **Category** list of one **Transactio
 _Avoid_: Category Search, Category Lookup
 
 **Dashboard**:
-A per-**Circle** summary of money activity. The v1 Dashboard shows current-month Income, Expenses, Net, recent Transactions, a selected-month Expense breakdown by Category, and month-over-month Income, Expense, and Net comparison; totals include all active Transactions by default and can be filtered by Paid By. Category analytics are non-additive because a Transaction can have multiple Categories, and include Archived Categories when active Transactions in the selected period still use them.
+A per-**Circle** summary of money activity. The v1 Dashboard shows current-month Income, Expenses, Net, recent Transactions, a selected-month Expense breakdown by Category, and month-over-month Income, Expense, and Net comparison; all metrics include active Transactions across the Circle. Category analytics are non-additive because a Transaction can have multiple Categories, and include Archived Categories when active Transactions in the selected period still use them.
 _Avoid_: Overview
 
 **Home Summary**:
@@ -298,7 +298,7 @@ _Avoid_: Release Notes
 
 **Engineer**: "If Sam records Alex's grocery expense, who owns the Transaction?"
 
-**Product**: "Sam is Recorded By and controls field edits. Alex can be Paid By so reports and search show whose money movement it was."
+**Product**: "Sam is Recorded By and controls field edits. Alex can be Paid By so Ledger and Search show whose money movement it was."
 
 **Engineer**: "How should a real refund be recorded?"
 

@@ -25,13 +25,11 @@ export function DashboardCategoryAnalytics({
   circleRef,
   month,
   type,
-  paidByMemberId,
 }: {
   analytics: CategoryAnalytics;
   circleRef: string;
   month: PlainMonth;
   type: TransactionType;
-  paidByMemberId?: string;
 }) {
   const currency = toCurrencyCode(analytics.currency);
   const locale = viewerLocale();
@@ -67,7 +65,7 @@ export function DashboardCategoryAnalytics({
               formatMinor={formatMinor}
               drilldownHref={ledgerDrilldownHref(
                 { ref: circleRef },
-                { month, categoryId: row.categoryId, type, paidByMemberId },
+                { month, categoryId: row.categoryId, type },
               )}
             />
           ))}

@@ -19,15 +19,15 @@ are included when active Transactions in the period still use them** (PRD 58) �
 not vanish because a label was archived.
 
 This builds directly on the Dashboard surfaces shipped by RPT-3/RPT-4: the same Circle index
-route ([`dashboard.tsx`](../../apps/web-app/app/routes/circle/dashboard.tsx)), the same
-Paid By filter, the same bounded month-set reader. Read those first — this slice adds one
-backend query + one hook + one section, mirroring what's already there.
+route ([`dashboard.tsx`](../../apps/web-app/app/routes/circle/dashboard.tsx)) and the same bounded
+month-set reader. Read those first — this slice adds one backend query + one hook + one section,
+mirroring what's already there.
 
 ## Implement
 
 ### Convex — new query in [`dashboard.ts`](../../packages/convex/convex/dashboard.ts)
 
-`getCategoryAnalytics` query: args `{ circleId, month?, type?, paidByMemberId? }`
+`getCategoryAnalytics` query: args `{ circleId, month?, type? }`
 (`type` = `v.optional(transactionType)` — `"expense" | "income"`).
 
 1. `resolveCircleAccess(ctx, args.circleId)` → `null` if inaccessible/missing (ADR 0016 —
@@ -35,7 +35,7 @@ backend query + one hook + one section, mirroring what's already there.
 2. Default month: `args.month ?? currentMonth(new Date())`; throw `"Invalid month"` if
    `!isValidPlainMonth(month)` — **mirror `getDashboard` exactly** (both from `@spend-circle/domain`).
 3. Read the **same bounded active month set** the Dashboard/Ledger use — call
-   `collectMonthActiveTransactions(ctx, args.circleId, month, args.paidByMemberId)` from
+   `collectMonthActiveTransactions(ctx, args.circleId, month)` from
    [`monthActivity.ts`](../../packages/convex/convex/monthActivity.ts). Do **not** re-query
    `transactions` by hand; reusing this is what guarantees category totals can never disagree
    with the totals cards about which Transactions count (active-only, archived excluded — TXN-3).
@@ -69,8 +69,7 @@ backend query + one hook + one section, mirroring what's already there.
   add `useCategoryAnalytics` mirroring `useDashboard`/`useMonthlyComparison` — derive the view
   type from `FunctionReturnType<typeof api.dashboard.getCategoryAnalytics>` (no hand-written
   contract — ADR 0003 drift-proofing), honour the `MOCKS` fixture + `"skip"` path, and accept the
-  same `{ month, paidByMemberId, enabled }` options so it participates in the route's Paid By
-  validation gate (`enabled: !awaitingPaidBy`).
+  same `{ month, enabled }` options.
 - **Fixture** in [`app/lib/fixtures.ts`](../../apps/web-app/app/lib/fixtures.ts): a
   `MOCK_CATEGORY_ANALYTICS` alongside `MOCK_DASHBOARD` for mock mode.
 - **Render** a new section in [`dashboard.tsx`](../../apps/web-app/app/routes/circle/dashboard.tsx):
@@ -79,8 +78,7 @@ backend query + one hook + one section, mirroring what's already there.
   counts toward every Category it carries). Format money via the viewer locale + Circle Currency
   (`formatMoney`/`money`, the existing pattern in this file), badge Archived Categories distinctly,
   and identify Categories by **name/legend, not color alone** (CONTEXT a11y rule the comparison
-  chart already follows). Share the existing Paid By selection from
-  [`dashboard-url.ts`](../../apps/web-app/app/lib/dashboard-url.ts) — do not add a second filter.
+  chart already follows).
 - **Month scope:** the Dashboard currently has **no month picker** — the route hardcodes
   `currentMonth(new Date())` and passes it to every query. So `month` here is just the local
   current month for now; the `month?` arg exists for parity/future month navigation, not a new UI
@@ -94,7 +92,7 @@ backend query + one hook + one section, mirroring what's already there.
   *each* of its Categories — document this in the UI so it isn't read as additive.
 - **One shared month set:** routing through `collectMonthActiveTransactions` means the category
   ranking, the totals cards (RPT-3), and the comparison chart (RPT-4) can never drift on what a
-  Circle-month contains or how Paid By narrows it.
+  Circle-month contains.
 - **Archived-but-used included** so historical spend stays visible (PRD 58); purely-archived-
   unused Categories are omitted because they have no in-period link.
 
@@ -113,15 +111,15 @@ tests that don't drive the ranking still render it; never redefine per-file scaf
 - **Archived inclusion:** an Archived Category still attached to in-period active Transactions
   appears (badged via `status`); an Archived Category with no in-period active Transactions is
   excluded.
-- **Filters:** `type` and `paidByMemberId` and `month` narrow correctly; archived Transactions
-  are excluded from the math (collected set is active-only).
+- **Filters:** `type` and `month` narrow correctly; archived Transactions are excluded from the
+  math (collected set is active-only).
 - **Access:** non-member / missing Circle → `null` (ADR 0016).
 
 ## Done when
 
 - Ranked, non-additive tagged category spend in minor units, including archived-but-used
-  categories, filterable by month/type/Paid By, clearly not presented as additive; the surface
-  reuses the shared month-set reader and the Dashboard's Paid By filter; tests green; gates pass.
+  categories, filterable by month/type, clearly not presented as additive; the surface reuses the
+  shared month-set reader; tests green; gates pass.
 
 ## Out of scope
 

@@ -20,11 +20,9 @@ import { viewerLocale } from "~/lib/locale.js";
 export function DashboardComparisonChart({
   comparison,
   circleRef,
-  paidByMemberId,
 }: {
   comparison: MonthlyComparison;
   circleRef: string;
-  paidByMemberId?: string;
 }) {
   const navigate = useNavigate();
   const currency = toCurrencyCode(comparison.currency);
@@ -42,8 +40,7 @@ export function DashboardComparisonChart({
   const formatTick = (minorUnits: number) =>
     compactTick.format(minorUnits / 10 ** getCurrency(currency).decimals);
 
-  const monthHref = (month: string) =>
-    ledgerDrilldownHref({ ref: circleRef }, { month, paidByMemberId });
+  const monthHref = (month: string) => ledgerDrilldownHref({ ref: circleRef }, { month });
 
   const navigateToMonth = (payload: unknown) => {
     if (
