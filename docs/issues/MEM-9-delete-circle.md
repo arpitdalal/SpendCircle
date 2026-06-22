@@ -23,15 +23,16 @@ setup artifacts and do not block deletion. A Personal Circle can never be delete
 Transactions still represent history. "No current Member other than the Owner" means removed
 member rows do not block deletion, while any active co-Member does.
 
-## Current implementation
+## Shipped
 
 ### Backend (`packages/convex/convex/circles.ts`)
 
-- **`deleteCircle`** — owner-only; currently rejects Personal Circles, any additional membership
-  row (including Removed Members), or any-transaction circles
-  with coded `ConvexError`s; cascades members, categories, invitations, circle/category
-  histories, and `e2eInvitationTokens`; retains `invitationEmailEvents` (ADR 0026 rate-limit
-  ledger); no `recordEvent` (entity ceases to exist).
+- **`deleteCircle`** — owner-only; rejects Personal Circles, any active co-Member, or
+  any-transaction circles with coded `ConvexError`s; removed member rows, pending
+  Invitations, and setup/history rows do not block; cascades all member rows (active and
+  removed), categories, invitations, circle/category histories, and `e2eInvitationTokens`;
+  retains `invitationEmailEvents` (ADR 0026 rate-limit ledger); no `recordEvent` (entity
+  ceases to exist).
 - **`circleHasTransactions`** — minimal boolean query for the settings UI gate (`null` when
   inaccessible).
 
@@ -45,12 +46,6 @@ member rows do not block deletion, while any active co-Member does.
 - `useDeleteCircle` / `useCircleHasTransactions` in `app/lib/data/circles.ts`.
 - Danger-zone **Delete circle** on `app/routes/circle/settings.tsx` — shown only for empty
   regular circles; archive guidance when history exists; confirm dialog; success → `/`.
-
-## Decision gap
-
-The server must count only active co-Members for delete eligibility, while still cascading all
-member rows on deletion. The current settings gate already uses the active Member list and will
-then agree with the mutation.
 
 ### Tests
 

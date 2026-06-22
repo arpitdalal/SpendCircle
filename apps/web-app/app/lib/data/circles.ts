@@ -77,7 +77,7 @@ export function useCircleHasTransactions(circleId: Circle["id"] | undefined) {
   return queried;
 }
 
-/** Deletes a strictly-empty regular Circle (MEM-9). */
+/** Deletes an owner-only, zero-transaction regular Circle (MEM-9). */
 export function useDeleteCircle() {
   return useMutation(api.circles.deleteCircle);
 }

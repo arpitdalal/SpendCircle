@@ -1037,11 +1037,41 @@ describe("deleteCircle", () => {
     });
   });
 
-  it("rejects when a second member row exists, including removed", async () => {
+  it("deletes when removed member rows exist but no active co-members", async () => {
+    const t = convexTest(schema, modules);
+    let removedMemberId: Awaited<ReturnType<typeof addMember>>["memberId"];
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      const removed = await addMember(
+        ctx,
+        seed.circleId,
+        "removed@example.com",
+        "Removed Member",
+        "removed",
+      );
+      removedMemberId = removed.memberId;
+      return seed;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.deleteCircle, { circleId });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(circleId)).toBeNull();
+      expect(await ctx.db.get(removedMemberId)).toBeNull();
+      expect(
+        await ctx.db
+          .query("members")
+          .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+          .collect(),
+      ).toHaveLength(0);
+    });
+  });
+
+  it("rejects when an active co-member exists", async () => {
     const t = convexTest(schema, modules);
     const { owner, circleId } = await t.run(async (ctx) => {
       const seed = await seedCircle(ctx);
-      await addMember(ctx, seed.circleId, "removed@example.com", "Removed Member", "removed");
+      await addMember(ctx, seed.circleId, "active@example.com", "Active Member", "active");
       return seed;
     });
     mockCurrentUser.mockResolvedValue(owner);

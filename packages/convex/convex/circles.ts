@@ -379,7 +379,7 @@ export const circleHasTransactions = query({
   },
 });
 
-/** Deletes a strictly-empty regular Circle and cascades dependent rows (MEM-9). */
+/** Deletes an owner-only, zero-transaction regular Circle (MEM-9). */
 export const deleteCircle = mutation({
   args: { circleId: v.id("circles") },
   handler: async (ctx, args) => {
@@ -391,15 +391,13 @@ export const deleteCircle = mutation({
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeletePersonal));
     }
 
-    const members = await ctx.db
+    const activeMembers = await ctx.db
       .query("members")
-      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+      .withIndex("by_circle_and_status", (q) =>
+        q.eq("circleId", args.circleId).eq("status", "active"),
+      )
       .collect();
-    if (members.length !== 1) {
-      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeleteHasMembers));
-    }
-    const soleMember = members[0];
-    if (!soleMember) {
+    if (activeMembers.length !== 1) {
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeleteHasMembers));
     }
 
@@ -411,7 +409,7 @@ export const deleteCircle = mutation({
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeleteNotEmpty));
     }
 
-    await deleteCircleCascade(ctx, args.circleId, soleMember._id);
+    await deleteCircleCascade(ctx, args.circleId);
   },
 });
 
@@ -450,11 +448,7 @@ async function deleteHistoriesForEntity(ctx: MutationCtx, entityId: string) {
   }
 }
 
-async function deleteCircleCascade(
-  ctx: MutationCtx,
-  circleId: Id<"circles">,
-  soleMemberId: Id<"members">,
-) {
+async function deleteCircleCascade(ctx: MutationCtx, circleId: Id<"circles">) {
   const categories = await ctx.db
     .query("categories")
     .withIndex("by_circle", (q) => q.eq("circleId", circleId))
@@ -481,7 +475,15 @@ async function deleteCircleCascade(
   }
 
   await deleteHistoriesForEntity(ctx, circleId);
-  await ctx.db.delete(soleMemberId);
+
+  const members = await ctx.db
+    .query("members")
+    .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+    .collect();
+  for (const member of members) {
+    await ctx.db.delete(member._id);
+  }
+
   await ctx.db.delete(circleId);
 }
 
