@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done · [PR #206](https://github.com/arpitdalal/SpendCircle/pull/206) |
 | **Labels** | `area:circles`, `backend`, `ui` |
 | **Depends on** | MEM-2, TXN-1 |
 | **PRD stories** | 23 |
@@ -11,53 +11,55 @@
 
 ## Intent
 
-Abandoned setup work shouldn't become permanent noise: an Owner can **delete** a regular Circle
-**only when it is truly empty** — exactly **one Member and no Transactions ever created** (PRD
-23). Anything with history is archived (MEM-8), never deleted. Deletion also revokes pending
-Invitations + invalidates links (PRD 22 applies to delete too). A Personal Circle can never be
-deleted (glossary).
+Abandoned setup work shouldn't become permanent noise: an Owner can **delete** an active or
+archived regular Circle with **no Transactions ever created and no current Member other than the
+Owner**. A removed Member does not block deletion: without financial history, a mistaken shared setup is still
+disposable. A current co-Member blocks deletion until removed, so deletion never unexpectedly
+revokes active access. Deletion also revokes pending Invitations + invalidates links (PRD 22
+applies to delete too). Circle Settings, Categories, and Circle History alone are disposable
+setup artifacts and do not block deletion. A Personal Circle can never be deleted (glossary).
 
 "No Transactions ever created" means none exist now — including archived ones — since archived
-Transactions still represent history.
+Transactions still represent history. "No current Member other than the Owner" means removed
+member rows do not block deletion, while any active co-Member does.
 
-## Implement
+## Shipped
 
-- **Convex** (`circles.ts`):
-  - `deleteCircle` mutation: `requireCircleAccess` → Owner-only → reject Personal → assert
-    **exactly one Member** (the Owner) → assert **zero Transactions** of any status for the
-    Circle (query `by_circle`, any row ⇒ reject) → revoke pending Invitations → delete the
-    Circle and its dependent rows (the single member row, any Categories, the now-revoked
-    invitations, the Circle's history rows) → no `recordEvent` (the entity is gone). Consider
-    whether Circle History should be retained — per PRD, a truly-empty Circle has only
-    setup-era events; deleting them is acceptable since the entity ceases to exist.
-- **Web:** Owner-only "delete" action available **only** when the empty conditions hold (and
-  enforced server-side regardless); confirm destructive action; navigate to safe fallback.
+### Backend (`packages/convex/convex/circles.ts`)
 
-## Why this way
+- **`deleteCircle`** — owner-only; rejects Personal Circles, any active co-Member, or
+  any-transaction circles with coded `ConvexError`s; removed member rows, pending
+  Invitations, and setup/history rows do not block; cascades all member rows (active and
+  removed), categories, invitations, circle/category histories, and `e2eInvitationTokens`;
+  retains `invitationEmailEvents` (ADR 0026 rate-limit ledger); no `recordEvent` (entity
+  ceases to exist).
+- **`circleHasTransactions`** — minimal boolean query for the settings UI gate (`null` when
+  inaccessible).
 
-- **Strict emptiness, checked server-side:** one Member AND zero Transactions of *any* status.
-  The flag/heuristic isn't enough — query Transactions directly.
-- **Delete vs archive is a hard fork:** if any Transaction exists, the correct action is
-  archive (MEM-8); `deleteCircle` must refuse, guiding the Owner to archive.
-- **Hard delete is irreversible** — gate it behind the strict check and a confirmation; this is
-  the one place we remove data, so be conservative.
+### Domain (`packages/domain/src/mutation-errors.ts`)
 
-## How to test
+- `circle.delete.forbidden`, `circle.delete.personal`, `circle.delete.hasMembers`,
+  `circle.delete.notEmpty` — user-facing messages guide toward archive where appropriate.
 
-- **Happy:** Owner deletes a one-Member, zero-Transaction regular Circle → Circle + its member/
-  category/invitation/history rows gone; pending invites revoked first; caller redirected.
-- **Refusals:** delete with ≥1 Transaction (active OR archived) ✗ (suggest archive); delete with
-  ≥2 Members ✗; delete Personal Circle ✗; non-owner ✗; unauthenticated ✗.
-- **Anti-enumeration:** deleting a non-existent/inaccessible Circle → generic not-found.
-- **No dangling rows:** assert no orphaned members/categories/invitations/history remain.
+### Web
+
+- `useDeleteCircle` / `useCircleHasTransactions` in `app/lib/data/circles.ts`.
+- Danger-zone **Delete circle** on `app/routes/circle/settings.tsx` — shown only for empty
+  regular circles; archive guidance when history exists; confirm dialog; success → `/`.
+
+### Tests
+
+- Convex: `packages/convex/convex/circles.test.ts` (`deleteCircle`, `circleHasTransactions`).
+- Web: `apps/web-app/app/routes/circle/settings.test.tsx` (delete flow, coded errors, guidance).
 
 ## Done when
 
-- Owner can delete only a strictly-empty regular Circle (1 Member, 0 Transactions any status),
-  cascading dependent rows and revoking invites; everything else refuses toward archive; tests
-  green; gates pass.
+- Owner can delete only a regular Circle with no active co-Members and 0 Transactions any status,
+  cascading every dependent row (members, categories, invitations, related histories, e2e tokens)
+  while retaining the invitation rate-limit ledger; everything else refuses with a coded error toward
+  archive; invite links die; caller lands on `/`; tests green; gates pass.
 
 ## Out of scope
 
-Archiving non-empty Circles (MEM-8).
-</content>
+Archiving non-empty Circles (MEM-8 — shipped separately); cleaning up `notifications` whose links
+point at the deleted Circle.

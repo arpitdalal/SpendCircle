@@ -106,6 +106,22 @@ const mutationErrors = defineMutationErrorCatalog({
     "member.ownerMustTransfer",
     "Transfer ownership before leaving",
   ),
+  circleDeleteForbidden: defineMutationError(
+    "circle.delete.forbidden",
+    "Only the Circle owner can delete this circle",
+  ),
+  circleDeletePersonal: defineMutationError(
+    "circle.delete.personal",
+    "Personal Circles can't be deleted",
+  ),
+  circleDeleteHasMembers: defineMutationError(
+    "circle.delete.hasMembers",
+    "This circle has other members — archive it instead of deleting",
+  ),
+  circleDeleteNotEmpty: defineMutationError(
+    "circle.delete.notEmpty",
+    "This circle has transactions — archive it instead of deleting",
+  ),
 });
 
 export const MUTATION_ERRORS = mutationErrors.errors;

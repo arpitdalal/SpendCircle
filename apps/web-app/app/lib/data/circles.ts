@@ -2,7 +2,7 @@ import { api } from "@spend-circle/convex";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "../env.js";
-import { MOCK_CIRCLES } from "../fixtures.js";
+import { MOCK_CIRCLES, MOCK_TRANSACTIONS } from "../fixtures.js";
 
 /**
  * The single Circle view contract, derived from the Convex function's return
@@ -63,6 +63,23 @@ export function useArchiveCircle() {
 /** Restores an archived Circle (MEM-8). */
 export function useRestoreCircle() {
   return useMutation(api.circles.restoreCircle);
+}
+
+/** Whether the Circle has any Transaction (MEM-9 UI gate). `null` when inaccessible. */
+export function useCircleHasTransactions(circleId: Circle["id"] | undefined) {
+  const queried = useQuery(
+    api.circles.circleHasTransactions,
+    circleId === undefined || MOCKS ? "skip" : { circleId },
+  );
+  if (MOCKS) {
+    return circleId === undefined ? undefined : MOCK_TRANSACTIONS.length > 0;
+  }
+  return queried;
+}
+
+/** Deletes an owner-only, zero-transaction regular Circle (MEM-9). */
+export function useDeleteCircle() {
+  return useMutation(api.circles.deleteCircle);
 }
 
 /** Splits a Personal-first circle list into active vs archived for switcher/home grouping. */

@@ -25,7 +25,7 @@ The always-solo **Circle** automatically created for a Google-authenticated **Us
 _Avoid_: Personal Household, Private Circle, Default Group
 
 **Archived Circle**:
-A **Circle** hidden from active use after the **Owner** no longer needs it. Current Members can view and search historical Transactions from archives, but cannot add, edit, or delete Transactions, Categories, or membership unless the Owner restores the Circle; anyone viewing a Circle when it is archived is moved to its read-only archived view; archiving revokes pending Invitations and invalidates their Invitation Links. V1 only supports deleting an empty regular Circle with exactly one Member and no Transactions ever created; deleting also revokes pending Invitations and invalidates their Invitation Links; a Personal Circle cannot be archived or deleted.
+A **Circle** hidden from active use after the **Owner** no longer needs it. Current Members can view and search historical Transactions from archives, but cannot add, edit, or delete Transactions, Categories, or membership unless the Owner restores the Circle; anyone viewing a Circle when it is archived is moved to its read-only archived view; archiving revokes pending Invitations and invalidates their Invitation Links. V1 only supports deleting a regular Circle, active or archived, with no Transactions ever created and no current Member other than its Owner; Circle Settings, Categories, and Circle History alone do not block deletion, while Removed Members and pending Invitations do not block it either; deletion revokes pending Invitations and invalidates their Invitation Links; a Personal Circle cannot be archived or deleted.
 _Avoid_: Deleted Circle
 
 **Circle Setup**:

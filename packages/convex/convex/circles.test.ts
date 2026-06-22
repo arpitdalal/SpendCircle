@@ -1,16 +1,21 @@
 import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
+import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addMember,
   makeCategory,
+  makeUser,
   seedCircle,
   seedFixture,
   seedInvitation,
+  seedInvitationEmailEvent,
   seedPersonalCircleOwner,
   seedTransaction,
 } from "../test/seed.js";
 import { api } from "./_generated/api.js";
+import { circleEntity, recordEvent } from "./history.js";
+import { generateInvitationToken, hashInvitationToken } from "./invitationToken.js";
 import schema from "./schema.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
@@ -874,5 +879,263 @@ describe("archiveCircle — read-only cascade", () => {
     ).rejects.toMatchObject({
       data: mutationErrorData(MUTATION_ERRORS.circleArchived),
     });
+  });
+});
+
+describe("circleHasTransactions", () => {
+  it("returns false for an empty circle and true when any transaction exists", async () => {
+    const t = convexTest(schema, modules);
+    const fixture = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(fixture.owner);
+
+    await expect(
+      t.query(api.circles.circleHasTransactions, { circleId: fixture.circleId }),
+    ).resolves.toBe(false);
+
+    await t.run((ctx) => seedTransaction(ctx, fixture));
+    await expect(
+      t.query(api.circles.circleHasTransactions, { circleId: fixture.circleId }),
+    ).resolves.toBe(true);
+  });
+
+  it("returns null for inaccessible circles", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(null);
+
+    await expect(t.query(api.circles.circleHasTransactions, { circleId })).resolves.toBeNull();
+  });
+});
+
+describe("deleteCircle", () => {
+  it("deletes a one-member zero-transaction circle and cascades dependent rows", async () => {
+    const t = convexTest(schema, modules);
+    const token = generateInvitationToken();
+    let groceriesId: Awaited<ReturnType<typeof makeCategory>>;
+    const { owner, circleId, ownerMemberId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      groceriesId = await makeCategory(ctx, seed.circleId, {
+        name: "Groceries",
+        creatorUserId: seed.owner._id,
+      });
+      const ownerMembership = await ctx.db.get(seed.ownerMemberId);
+      await recordEvent(ctx, {
+        entity: circleEntity(seed.circleId),
+        actor: ownerMembership,
+        action: "created",
+        changes: [{ field: "name", to: "Trip" }],
+      });
+      await recordEvent(ctx, {
+        entity: { entityId: groceriesId },
+        actor: ownerMembership,
+        action: "created",
+        changes: [{ field: "name", to: "Groceries" }],
+      });
+      const invitationId = await seedInvitation(ctx, seed.circleId, seed.owner._id, {
+        email: "pending@example.com",
+        status: "pending",
+        tokenHash: await hashInvitationToken(token),
+      });
+      await seedInvitationEmailEvent(ctx, {
+        invitedByUserId: seed.owner._id,
+        circleId: seed.circleId,
+        emailLower: "pending@example.com",
+        kind: "create",
+        sentAt: Date.now(),
+      });
+      await ctx.db.insert("e2eInvitationTokens", {
+        circleId: seed.circleId,
+        emailLower: "pending@example.com",
+        invitationId,
+        token,
+        updatedAt: Date.now(),
+      });
+      return seed;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.deleteCircle, { circleId });
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(circleId)).toBeNull();
+      expect(
+        await ctx.db
+          .query("members")
+          .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+          .collect(),
+      ).toHaveLength(0);
+      expect(
+        await ctx.db
+          .query("categories")
+          .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+          .collect(),
+      ).toHaveLength(0);
+      expect(
+        await ctx.db
+          .query("invitations")
+          .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+          .collect(),
+      ).toHaveLength(0);
+      expect(
+        await ctx.db
+          .query("e2eInvitationTokens")
+          .withIndex("by_circle_and_email", (q) => q.eq("circleId", circleId))
+          .collect(),
+      ).toHaveLength(0);
+      expect(
+        await ctx.db
+          .query("histories")
+          .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+          .collect(),
+      ).toHaveLength(0);
+      expect(
+        await ctx.db
+          .query("histories")
+          .withIndex("by_entity", (q) => q.eq("entityId", groceriesId))
+          .collect(),
+      ).toHaveLength(0);
+
+      const emailEvents = await ctx.db
+        .query("invitationEmailEvents")
+        .withIndex("by_circle_email_and_sentAt", (q) =>
+          q.eq("circleId", circleId).eq("emailLower", "pending@example.com"),
+        )
+        .collect();
+      expect(emailEvents).toHaveLength(1);
+
+      expect(await ctx.db.get(ownerMemberId)).toBeNull();
+    });
+
+    const ada = await t.run((ctx) => makeUser(ctx, "ada@example.com", "Ada Lovelace"));
+    mockCurrentUser.mockResolvedValue(ada);
+    await expect(t.mutation(api.invitations.acceptInvitation, { token })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.inviteInvalid),
+    });
+  });
+
+  it("allows deleting an archived empty circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.deleteCircle, { circleId });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(circleId)).toBeNull();
+    });
+  });
+
+  it("rejects when any transaction exists, including archived", async () => {
+    const t = convexTest(schema, modules);
+    const fixture = await t.run((ctx) => seedFixture(ctx));
+    await t.run((ctx) => seedTransaction(ctx, fixture, { status: "archived" }));
+    mockCurrentUser.mockResolvedValue(fixture.owner);
+
+    await expect(
+      t.mutation(api.circles.deleteCircle, { circleId: fixture.circleId }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleDeleteNotEmpty),
+    });
+  });
+
+  it("deletes when removed member rows exist but no active co-members", async () => {
+    const t = convexTest(schema, modules);
+    let removedMemberId: Awaited<ReturnType<typeof addMember>>["memberId"];
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      const removed = await addMember(
+        ctx,
+        seed.circleId,
+        "removed@example.com",
+        "Removed Member",
+        "removed",
+      );
+      removedMemberId = removed.memberId;
+      return seed;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.deleteCircle, { circleId });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(circleId)).toBeNull();
+      expect(await ctx.db.get(removedMemberId)).toBeNull();
+      expect(
+        await ctx.db
+          .query("members")
+          .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+          .collect(),
+      ).toHaveLength(0);
+    });
+  });
+
+  it("rejects when an active co-member exists", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      await addMember(ctx, seed.circleId, "active@example.com", "Active Member", "active");
+      return seed;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(t.mutation(api.circles.deleteCircle, { circleId })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleDeleteHasMembers),
+    });
+  });
+
+  it("rejects a Personal Circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { kind: "personal" }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(t.mutation(api.circles.deleteCircle, { circleId })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleDeletePersonal),
+    });
+  });
+
+  it("rejects a non-owner member", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    const member = await t.run((ctx) =>
+      addMember(ctx, circleId, "member@example.com", "Maya Member"),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+
+    await expect(t.mutation(api.circles.deleteCircle, { circleId })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleDeleteForbidden),
+    });
+  });
+
+  it("throws generic not-found for unauthenticated callers", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(null);
+
+    await expect(t.mutation(api.circles.deleteCircle, { circleId })).rejects.toThrow(
+      /Circle not found/,
+    );
+  });
+
+  it("throws generic not-found for non-members", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    const outsider = await t.run((ctx) => makeUser(ctx, "outsider@example.com", "Outsider"));
+    mockCurrentUser.mockResolvedValue(outsider);
+
+    await expect(t.mutation(api.circles.deleteCircle, { circleId })).rejects.toThrow(
+      /Circle not found/,
+    );
+  });
+
+  it("surfaces coded ConvexError payloads for user-facing rejections", async () => {
+    const t = convexTest(schema, modules);
+    const fixture = await t.run((ctx) => seedFixture(ctx));
+    await t.run((ctx) => seedTransaction(ctx, fixture));
+    mockCurrentUser.mockResolvedValue(fixture.owner);
+
+    try {
+      await t.mutation(api.circles.deleteCircle, { circleId: fixture.circleId });
+      throw new Error("expected rejection");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConvexError);
+    }
   });
 });
