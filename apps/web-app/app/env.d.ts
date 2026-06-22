@@ -10,6 +10,8 @@ interface ImportMetaEnv {
   readonly VITE_MOCKS?: string;
   /** When "true", true-E2E mode: real backend + real session + gated test-auth helper (ADR 0019). */
   readonly VITE_E2E?: string;
+  /** Sentry ingest DSN for client error monitoring (ADR 0012). Optional locally. */
+  readonly VITE_SENTRY_DSN?: string;
 }
 
 interface ImportMeta {

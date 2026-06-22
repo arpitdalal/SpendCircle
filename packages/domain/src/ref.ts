@@ -55,3 +55,20 @@ export function buildRef(name: string, id: string): string {
 export function isCanonicalRef(ref: string, name: string, id: string): boolean {
   return ref === buildRef(name, id);
 }
+
+/**
+ * Strips the human-readable slug from a ref for external telemetry (ADR 0012,
+ * ADR 0013). Parsed refs return the authoritative bare ID only. Unparseable
+ * hyphenated segments may embed titles or names, so they are replaced with a
+ * constant token; static route segments without hyphens pass through unchanged.
+ */
+export function redactRefSlug(ref: string, isValidId: IdValidator): string {
+  const parsed = parseRef(ref, isValidId);
+  if (parsed) {
+    return parsed.id;
+  }
+  if (ref.includes("-")) {
+    return "[unparseable-ref]";
+  }
+  return ref;
+}

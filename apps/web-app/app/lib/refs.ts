@@ -1,4 +1,4 @@
-import { type ParsedRef, parseRef } from "@spend-circle/domain";
+import { type ParsedRef, parseRef, redactRefSlug } from "@spend-circle/domain";
 
 /**
  * Client-side ID validator injected into the domain ref parser. It only rejects
@@ -35,4 +35,9 @@ export function parseTransactionRef(ref: string | undefined): ParsedRef | null {
     return null;
   }
   return parseRef(ref, isConvexId);
+}
+
+/** Strips title/name slugs from a ref before Sentry capture (ADR 0012, ADR 0013). */
+export function redactRefForTelemetry(ref: string): string {
+  return redactRefSlug(ref, isConvexId);
 }
