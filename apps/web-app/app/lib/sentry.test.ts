@@ -12,9 +12,10 @@ vi.mock("@sentry/react", () => ({
   replayIntegration: sentrySdk.replayIntegration,
 }));
 
-const env = vi.hoisted(() => ({
-  SENTRY_DSN: undefined as string | undefined,
-}));
+const env = vi.hoisted(() => {
+  const mock: { SENTRY_DSN: string | undefined } = { SENTRY_DSN: undefined };
+  return mock;
+});
 
 vi.mock("./env.js", () => env);
 
