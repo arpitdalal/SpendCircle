@@ -1,3 +1,7 @@
+import type { PlainMonth, TransactionType } from "@spend-circle/domain";
+import { circlePath } from "./circle-path.js";
+import { canonicalLedgerParams, defaultLedgerFilters } from "./transaction-filter-url.js";
+
 /**
  * Transaction object-route URL helpers. The origin a route returns to on close/back —
  * the ledger month, search filters + page, dashboard scope — is no longer carried as a
@@ -51,4 +55,39 @@ export function transactionNewHref(
 ) {
   const params = new URLSearchParams({ type, month });
   return withQuery(`/circles/${circle.ref}/transactions/new`, params.toString());
+}
+
+/**
+ * Dashboard drilldown → Monthly Ledger (RPT-6). Translates Dashboard scope into the
+ * Ledger's URL codec via `defaultLedgerFilters` + `canonicalLedgerParams` so drilldown
+ * URLs cannot diverge from ones the Ledger itself would produce.
+ */
+export function ledgerDrilldownHref(
+  circle: ObjectRef,
+  {
+    month,
+    categoryId,
+    type,
+    paidByMemberId,
+  }: {
+    month: PlainMonth;
+    categoryId?: string;
+    type?: TransactionType;
+    paidByMemberId?: string;
+  },
+) {
+  const filters = defaultLedgerFilters(month);
+  if (categoryId) {
+    filters.categories = [categoryId];
+  }
+  if (type) {
+    filters.type = type;
+  }
+  if (paidByMemberId) {
+    filters.paidBy = [paidByMemberId];
+  }
+  return withQuery(
+    circlePath(circle.ref, "transactions"),
+    canonicalLedgerParams(filters).toString(),
+  );
 }

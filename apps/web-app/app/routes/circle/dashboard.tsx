@@ -5,6 +5,7 @@ import {
   formatMoney,
   isComparisonRangeMonths,
   money,
+  type PlainMonth,
   toCurrencyCode,
 } from "@spend-circle/domain";
 import { useEffect } from "react";
@@ -135,11 +136,16 @@ export default function CircleDashboard() {
         comparison={comparison}
         rangeMonths={selection.range}
         onRangeChange={(range) => select({ ...selection, range })}
+        circleRef={circle.ref}
+        paidByMemberId={paidByMemberId}
       />
       <CategoryAnalyticsSection
         analytics={categoryAnalytics}
         type={selection.type}
         onTypeChange={(type) => select({ ...selection, type })}
+        circleRef={circle.ref}
+        month={month}
+        paidByMemberId={paidByMemberId}
       />
       <RecentTransactions dashboard={dashboard} circle={circle} />
     </div>
@@ -265,10 +271,14 @@ function MonthlyComparisonSection({
   comparison,
   rangeMonths,
   onRangeChange,
+  circleRef,
+  paidByMemberId,
 }: {
   comparison: MonthlyComparison | null | undefined;
   rangeMonths: ComparisonRangeMonths;
   onRangeChange: (rangeMonths: ComparisonRangeMonths) => void;
+  circleRef: string;
+  paidByMemberId?: string;
 }) {
   return (
     <section className="space-y-3" aria-labelledby="dashboard-comparison-heading">
@@ -312,7 +322,11 @@ function MonthlyComparisonSection({
           No comparison available.
         </p>
       ) : (
-        <DashboardComparisonChart comparison={comparison} />
+        <DashboardComparisonChart
+          comparison={comparison}
+          circleRef={circleRef}
+          paidByMemberId={paidByMemberId}
+        />
       )}
     </section>
   );
@@ -326,10 +340,16 @@ function CategoryAnalyticsSection({
   analytics,
   type,
   onTypeChange,
+  circleRef,
+  month,
+  paidByMemberId,
 }: {
   analytics: CategoryAnalytics | null | undefined;
   type: DashboardSelection["type"];
   onTypeChange: (type: DashboardSelection["type"]) => void;
+  circleRef: string;
+  month: PlainMonth;
+  paidByMemberId?: string;
 }) {
   return (
     <section className="space-y-3" aria-labelledby="dashboard-category-scope-heading">
@@ -367,7 +387,13 @@ function CategoryAnalyticsSection({
           No category analytics available.
         </p>
       ) : (
-        <DashboardCategoryAnalytics analytics={analytics} />
+        <DashboardCategoryAnalytics
+          analytics={analytics}
+          circleRef={circleRef}
+          month={month}
+          type={type}
+          paidByMemberId={paidByMemberId}
+        />
       )}
     </section>
   );

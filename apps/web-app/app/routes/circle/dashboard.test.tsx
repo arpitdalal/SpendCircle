@@ -1,3 +1,4 @@
+import { currentMonth } from "@spend-circle/domain";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
@@ -555,5 +556,142 @@ describe("Dashboard URL state (paidBy + range)", () => {
 
     expect(screen.getByLabelText(/^type$/i)).toHaveValue("income");
     expect(screen.getByText("$5,000.00")).toBeInTheDocument();
+  });
+});
+
+describe("Dashboard drilldowns (RPT-6)", () => {
+  const THREE_MONTHS: MonthlyComparison = {
+    series: [
+      { month: "2026-04", incomeMinor: 500_000, expenseMinor: 1_250, netMinor: 498_750 },
+      { month: "2026-05", incomeMinor: 0, expenseMinor: 7_500, netMinor: -7_500 },
+      { month: "2026-06", incomeMinor: 2_000, expenseMinor: 9_000, netMinor: -7_000 },
+    ],
+    currency: "USD",
+  };
+
+  const SAMPLE: CategoryAnalytics = {
+    currency: "USD",
+    rows: [
+      {
+        categoryId: testId<CategoryAnalytics["rows"][number]["categoryId"]>("cat-groceries"),
+        name: "Groceries",
+        color: "green",
+        status: "active",
+        taggedTotalMinor: 7_350,
+        txnCount: 2,
+      },
+    ],
+  };
+
+  const alex = makeMemberView({
+    id: testId<Member["id"]>("mem-alex"),
+    displayName: "Alex",
+    role: "member",
+    isSelf: false,
+  });
+
+  function hrefOf(link: HTMLElement) {
+    return new URL(link.getAttribute("href") ?? "", "http://t");
+  }
+
+  it("links each comparison month row to that month's Ledger", () => {
+    configureConvex({ monthlyComparison: THREE_MONTHS, categoryAnalytics: SAMPLE });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    const section = screen.getByRole("region", { name: /month-over-month/i });
+    const april = within(section).getByRole("link", { name: /april 2026/i });
+    expect(hrefOf(april).pathname).toBe("/circles/trip-c1/transactions");
+    expect(hrefOf(april).searchParams.get("month")).toBe("2026-04");
+    expect(hrefOf(april).searchParams.get("type")).toBe("all");
+    expect(hrefOf(april).searchParams.get("categories")).toBeNull();
+  });
+
+  it("links a category name to the current-month Ledger filtered by category and type", () => {
+    configureConvex({ categoryAnalytics: SAMPLE });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    const link = screen.getByRole("link", { name: /view groceries transactions/i });
+    const url = hrefOf(link);
+    expect(url.pathname).toBe("/circles/trip-c1/transactions");
+    expect(url.searchParams.get("month")).toBe(currentMonth(new Date()));
+    expect(url.searchParams.get("categories")).toBe("cat-groceries");
+    expect(url.searchParams.get("type")).toBe("expense");
+  });
+
+  it("carries the validated Paid By member into both drilldown hrefs", async () => {
+    configureConvex({
+      paidByFilterOptions: [alex],
+      monthlyComparison: THREE_MONTHS,
+      categoryAnalytics: SAMPLE,
+    });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "mem-alex");
+
+    const comparison = screen.getByRole("region", { name: /month-over-month/i });
+    expect(
+      hrefOf(within(comparison).getByRole("link", { name: /april 2026/i })).searchParams.get(
+        "paidBy",
+      ),
+    ).toBe("mem-alex");
+
+    const category = screen.getByRole("link", { name: /view groceries transactions/i });
+    expect(hrefOf(category).searchParams.get("paidBy")).toBe("mem-alex");
+  });
+
+  it("does not carry a stale paidBy id the route already cleaned", async () => {
+    const you = makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" });
+    configureConvex({
+      paidByFilterOptions: [you],
+      monthlyComparison: THREE_MONTHS,
+      categoryAnalytics: SAMPLE,
+    });
+    const view = renderCircleRoutes(
+      makeCircleView(),
+      <Route path="circles/:circleRef" element={<CircleDashboard />} />,
+      {
+        initialEntries: ["/circles/trip-c1?paidBy=mem-ghost"],
+      },
+    );
+
+    await waitFor(() => expect(view.location()).toBe("/circles/trip-c1"));
+
+    const comparison = screen.getByRole("region", { name: /month-over-month/i });
+    expect(
+      hrefOf(within(comparison).getByRole("link", { name: /april 2026/i })).searchParams.get(
+        "paidBy",
+      ),
+    ).toBeNull();
+    expect(
+      hrefOf(screen.getByRole("link", { name: /view groceries transactions/i })).searchParams.get(
+        "paidBy",
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the comparison chart SVG aria-hidden while month links are focusable", () => {
+    configureConvex({ monthlyComparison: THREE_MONTHS });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    const section = screen.getByRole("region", { name: /month-over-month/i });
+    expect(
+      section.querySelector('[aria-hidden="true"] .recharts-responsive-container'),
+    ).toBeTruthy();
+    const monthLink = within(section).getByRole("link", { name: /may 2026/i });
+    expect(monthLink).toHaveAttribute("href");
+    monthLink.focus();
+    expect(monthLink).toHaveFocus();
+  });
+
+  it("renders no drilldown links when comparison or category analytics are empty", () => {
+    configureConvex({
+      monthlyComparison: { series: [], currency: "USD" },
+      categoryAnalytics: { currency: "USD", rows: [] },
+    });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    const comparison = screen.getByRole("region", { name: /month-over-month/i });
+    expect(within(comparison).queryAllByRole("link")).toHaveLength(0);
+    expect(screen.queryByRole("link", { name: /view .* transactions/i })).not.toBeInTheDocument();
   });
 });

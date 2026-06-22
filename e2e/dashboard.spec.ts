@@ -123,3 +123,45 @@ test("the month-over-month comparison defaults to 6 months and the range selecto
   await page.getByLabel(/range/i).selectOption("6");
   await expect(page).not.toHaveURL(/range=/);
 });
+
+/**
+ * RPT-6 true-E2E: a Dashboard category row drills into the Monthly Ledger with the
+ * Category filter pre-filled, and the matching Transaction is visible.
+ */
+test("a category analytics row drills into the ledger filtered to that category", async ({
+  page,
+}, testInfo) => {
+  const stamp = `${Date.now()}-${testInfo.project.name}`;
+  const categoryName = `E2E DD ${stamp}`; // keep ≤ 40 chars (categoryNameMax)
+  const title = `E2E Drill ${stamp}`;
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Your circles" })).toBeVisible();
+  await page.getByRole("link", { name: /Your Circle/ }).click();
+
+  await clickCircleChromeTab(page, "Categories");
+  await createCategoryViaForm(page, { name: categoryName });
+  await expect(page.getByRole("listitem").filter({ hasText: categoryName })).toBeVisible();
+
+  await clickCircleChromeTab(page, "Transactions");
+  await page.getByRole("link", { name: "Add expense" }).click();
+  const form = page.getByRole("form", { name: /add expense/i });
+  await form.getByLabel("Title").fill(title);
+  await form.getByLabel(/Amount/).fill("22.40");
+  await pickFormCategory(page, form, categoryName);
+  await form.getByRole("button", { name: "Add expense" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
+
+  await clickCircleChromeTab(page, "Dashboard");
+  const analytics = page.getByRole("region", { name: /tagged spend by category/i });
+  await expect(
+    analytics.getByRole("link", { name: `View ${categoryName} transactions` }),
+  ).toBeVisible();
+
+  await analytics.getByRole("link", { name: `View ${categoryName} transactions` }).click();
+  await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
+  await expect(page).toHaveURL(/categories=/);
+  await expect(page).toHaveURL(/type=expense/);
+  await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: title })).toContainText("22.40");
+});
