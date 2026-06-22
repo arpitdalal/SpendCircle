@@ -422,7 +422,7 @@ describe("Dashboard drilldowns (RPT-6)", () => {
     renderInCircle(makeCircleView(), <CircleDashboard />);
 
     const section = screen.getByRole("region", { name: /month-over-month/i });
-    const april = within(section).getByRole("link", { name: /april 2026/i });
+    const april = within(section).getByRole("link", { name: /view april 2026 in ledger/i });
     expect(hrefOf(april).pathname).toBe("/circles/trip-c1/transactions");
     expect(hrefOf(april).searchParams.get("month")).toBe("2026-04");
     expect(hrefOf(april).searchParams.get("type")).toBe("all");
@@ -441,7 +441,7 @@ describe("Dashboard drilldowns (RPT-6)", () => {
     expect(url.searchParams.get("type")).toBe("expense");
   });
 
-  it("keeps the comparison chart SVG aria-hidden while month links are focusable", () => {
+  it("keeps the comparison chart SVG aria-hidden while visible month links are keyboard-focusable", () => {
     configureConvex({ monthlyComparison: THREE_MONTHS });
     renderInCircle(makeCircleView(), <CircleDashboard />);
 
@@ -449,10 +449,15 @@ describe("Dashboard drilldowns (RPT-6)", () => {
     expect(
       section.querySelector('[aria-hidden="true"] .recharts-responsive-container'),
     ).toBeTruthy();
-    const monthLink = within(section).getByRole("link", { name: /may 2026/i });
+    const monthLink = within(section).getByRole("link", { name: /view may 2026 in ledger/i });
+    expect(monthLink).toBeVisible();
+    expect(monthLink.closest(".sr-only")).toBeNull();
     expect(monthLink).toHaveAttribute("href");
     monthLink.focus();
     expect(monthLink).toHaveFocus();
+    const dataTable = section.querySelector("table.sr-only");
+    expect(dataTable).toBeTruthy();
+    expect(within(dataTable as HTMLElement).queryByRole("link")).toBeNull();
   });
 
   it("renders no drilldown links when comparison or category analytics are empty", () => {

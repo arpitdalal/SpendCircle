@@ -125,6 +125,19 @@ export function DashboardComparisonChart({
         </ResponsiveContainer>
       </div>
 
+      <nav aria-label="Open monthly ledger" className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
+        {comparison.series.map((entry) => (
+          <Link
+            key={entry.month}
+            to={monthHref(entry.month)}
+            className="rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label={`View ${formatMonthLabel(entry.month)} in ledger`}
+          >
+            {formatMonthLabel(entry.month)}
+          </Link>
+        ))}
+      </nav>
+
       <table className="sr-only">
         <caption>Month-over-month Income, Expense, and Net</caption>
         <thead>
@@ -138,9 +151,7 @@ export function DashboardComparisonChart({
         <tbody>
           {comparison.series.map((entry) => (
             <tr key={entry.month}>
-              <th scope="row">
-                <Link to={monthHref(entry.month)}>{formatMonthLabel(entry.month)}</Link>
-              </th>
+              <th scope="row">{formatMonthLabel(entry.month)}</th>
               <td>{formatMinor(entry.incomeMinor)}</td>
               <td>{formatMinor(entry.expenseMinor)}</td>
               <td>{formatMinor(entry.netMinor)}</td>

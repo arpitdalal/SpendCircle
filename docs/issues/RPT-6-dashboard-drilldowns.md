@@ -90,12 +90,12 @@ reading is a separate DOM element." A drilldown must be reachable by **keyboard 
 not just a mouse click on a decorative SVG (CLAUDE.md / README a11y bar; ADR 0005).
 
 - **Month bars** — the comparison chart renders an `aria-hidden` SVG **and** an `sr-only` `<table>`
-  whose body has one row per month (`entry.month`). Make the accessible drilldown live in that
-  table: turn each row's month header cell into a real `<Link>` to `ledgerDrilldownHref({ month })`.
-  `sr-only` is visually hidden but still focusable, so the link is keyboard/SR reachable. For mouse
-  parity, add an `onClick` to the Recharts `<Bar>` (and `cursor-pointer`) that navigates to the same
-  href — the SVG stays `aria-hidden` (pointer affordance only), the table link is the a11y path.
-  Both must resolve to the **same** href so they can't drift.
+  whose body has one row per month (`entry.month`) with plain-text values (non-interactive). Add a
+  visible `<nav>` of `<Link>`s — one per month to `ledgerDrilldownHref({ month })` — so keyboard
+  users get a focus ring on screen; `sr-only` clips content off-screen, so links must not live
+  inside it. For mouse parity, add an `onClick` to the Recharts `<Bar>` (and `cursor-pointer`) that
+  navigates to the same href — the SVG stays `aria-hidden` (pointer affordance only). All paths must
+  resolve to the **same** href so they can't drift.
 - **Category rows** — each row is a `<li>`. Wrap the category **name** in a `<Link>` (mirroring how
   `RecentRow` wraps the Transaction title), with an `aria-label` like `View {name} transactions`.
   The bar stays `aria-hidden`. Native `<a>` = keyboard-operable for free.
@@ -124,7 +124,7 @@ Web route/render tests in `apps/web-app/app/routes/circle/*.test.ts(x)`, driving
 [`app/test/convex/dashboard.ts`](../../apps/web-app/app/test/convex/dashboard.ts) double — never
 redefine per-file scaffolding (CLAUDE.md). No new Convex tests (no backend change).
 
-- **Month-bar navigation:** the comparison table's month link points at
+- **Month-bar navigation:** the comparison nav's month link points at
   `/circles/:ref/transactions?month=<that month>` (assert the `href`); the destination Ledger reads
   that month from the URL. Cover a past month (the Dashboard has no month picker — this is the only
   path to it).
@@ -133,9 +133,10 @@ redefine per-file scaffolding (CLAUDE.md). No new Convex tests (no backend chang
   that Category.
 - **URL state round-trips:** the drilled-in Ledger reads its filter from the URL; reloading preserves
   it (true by construction — it's in the URL); Back returns to the Dashboard.
-- **Accessibility:** the month link and the category link are keyboard-focusable and have accessible
-  names; the chart SVGs remain `aria-hidden` (no interactive element trapped inside an `aria-hidden`
-  subtree). A mouse click on a Recharts month bar resolves to the same href as the table link.
+- **Accessibility:** the visible month nav link and the category link are keyboard-focusable with
+  on-screen focus; the chart SVG and the data table remain `aria-hidden` / `sr-only` with no
+  interactive elements inside them. A mouse click on a Recharts month bar resolves to the same href
+  as the nav link.
 - **Empty/loading states unchanged:** with no comparison series / no category rows, there is nothing
   to link and the existing empty/skeleton states still render (no crash building hrefs from an empty
   list).
