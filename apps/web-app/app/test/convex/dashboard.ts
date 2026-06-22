@@ -5,7 +5,7 @@ import {
   isComparisonRangeMonths,
 } from "@spend-circle/domain";
 import { getFunctionName } from "convex/server";
-import type { Dashboard, Member, MonthlyComparison } from "~/lib/data.js";
+import type { CategoryAnalytics, Dashboard, Member, MonthlyComparison } from "~/lib/data.js";
 import type { EntityDouble } from "./contract.js";
 import { resolveWith } from "./contract.js";
 
@@ -41,6 +41,12 @@ function emptyMonthlyComparison(args: Record<string, unknown>): MonthlyCompariso
   };
 }
 
+/** A zero category analytics result — the default for tests that don't drive RPT-5. */
+const EMPTY_CATEGORY_ANALYTICS: CategoryAnalytics = {
+  rows: [],
+  currency: "USD",
+};
+
 export interface DashboardState {
   /** `getDashboard` result; `undefined` ≡ loading, `null` ≡ inaccessible Circle.
    * Defaults to a zero Dashboard so the totals cards render. A function resolves per
@@ -57,6 +63,12 @@ export interface DashboardState {
     | ((args: Record<string, unknown>) => MonthlyComparison | null | undefined);
   /** `getPaidByFilterOptions` result; `undefined` ≡ loading, `null` ≡ inaccessible. */
   paidByFilterOptions?: Member[] | null;
+  /** `getCategoryAnalytics` result (RPT-5); `undefined` ≡ loading, `null` ≡ inaccessible
+   * Circle. Defaults to an empty ranked list so the section renders. */
+  categoryAnalytics?:
+    | CategoryAnalytics
+    | null
+    | ((args: Record<string, unknown>) => CategoryAnalytics | null | undefined);
 }
 
 export function dashboardDouble(state: DashboardState): EntityDouble {
@@ -64,6 +76,7 @@ export function dashboardDouble(state: DashboardState): EntityDouble {
     dashboard = EMPTY_DASHBOARD,
     monthlyComparison = emptyMonthlyComparison,
     paidByFilterOptions,
+    categoryAnalytics = EMPTY_CATEGORY_ANALYTICS,
   } = state;
   return {
     queries: {
@@ -71,6 +84,8 @@ export function dashboardDouble(state: DashboardState): EntityDouble {
       [getFunctionName(api.dashboard.getMonthlyComparison)]: (args) =>
         resolveWith(monthlyComparison, args),
       [getFunctionName(api.dashboard.getPaidByFilterOptions)]: () => paidByFilterOptions,
+      [getFunctionName(api.dashboard.getCategoryAnalytics)]: (args) =>
+        resolveWith(categoryAnalytics, args),
     },
   };
 }
