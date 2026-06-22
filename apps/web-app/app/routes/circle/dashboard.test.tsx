@@ -2,7 +2,13 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Dashboard, Member, MonthlyComparison, Transaction } from "~/lib/data.js";
+import type {
+  CategoryAnalytics,
+  Dashboard,
+  Member,
+  MonthlyComparison,
+  Transaction,
+} from "~/lib/data.js";
 import {
   configureConvex,
   makeCircleView,
@@ -64,7 +70,11 @@ describe("Dashboard totals", () => {
   it("shows skeletons while the dashboard loads", () => {
     // A function returning `undefined` models the reactive query still loading
     // (passing `dashboard: undefined` would hit the helper's EMPTY_DASHBOARD default).
-    configureConvex({ dashboard: () => undefined });
+    configureConvex({
+      dashboard: () => undefined,
+      monthlyComparison: () => undefined,
+      categoryAnalytics: () => undefined,
+    });
     renderInCircle(makeCircleView(), <CircleDashboard />);
 
     // The totals grid reads as busy and the recent feed shows its skeleton placeholder.
@@ -73,6 +83,7 @@ describe("Dashboard totals", () => {
       "true",
     );
     expect(screen.getByTestId("recent-skeleton")).toBeInTheDocument();
+    expect(screen.getByTestId("category-analytics-skeleton")).toBeInTheDocument();
     // Exactly ONE polite announcement covers the whole surface (not one per widget),
     // and the per-widget placeholders stay out of the a11y tree (aria-hidden).
     const statuses = screen.getAllByRole("status");
@@ -301,6 +312,127 @@ describe("Dashboard Paid By filter", () => {
   });
 });
 
+describe("Dashboard category analytics (RPT-5)", () => {
+  const SAMPLE: CategoryAnalytics = {
+    currency: "USD",
+    rows: [
+      {
+        categoryId: testId<CategoryAnalytics["rows"][number]["categoryId"]>("cat-groceries"),
+        name: "Groceries",
+        color: "green",
+        status: "active",
+        taggedTotalMinor: 7_350,
+        txnCount: 2,
+      },
+      {
+        categoryId: testId<CategoryAnalytics["rows"][number]["categoryId"]>("cat-dining"),
+        name: "Dining",
+        color: "orange",
+        status: "archived",
+        taggedTotalMinor: 4_200,
+        txnCount: 1,
+      },
+    ],
+  };
+
+  it("renders ranked tagged spend with money formatted and archived badge", () => {
+    configureConvex({ categoryAnalytics: SAMPLE });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    const section = screen.getByRole("region", { name: /tagged spend by category/i });
+    expect(within(section).getByText("Groceries")).toBeInTheDocument();
+    expect(within(section).getByText("$73.50")).toBeInTheDocument();
+    expect(within(section).getByText("Dining")).toBeInTheDocument();
+    expect(within(section).getByText("Archived")).toBeInTheDocument();
+    expect(within(section).getByText(/totals are not additive/i)).toBeInTheDocument();
+  });
+
+  it("defaults the type toggle to expenses and offers income", () => {
+    configureConvex({ categoryAnalytics: SAMPLE });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    const select = screen.getByLabelText(/^type$/i);
+    expect(select).toHaveValue("expense");
+    const labels = within(select)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(labels).toEqual(["Expenses", "Income"]);
+  });
+
+  it("re-queries category analytics for the selected type", async () => {
+    configureConvex({
+      categoryAnalytics: (args) =>
+        args.type === "income"
+          ? {
+              currency: "USD",
+              rows: [
+                {
+                  categoryId: testId<CategoryAnalytics["rows"][number]["categoryId"]>("cat-salary"),
+                  name: "Salary",
+                  color: "teal",
+                  status: "active",
+                  taggedTotalMinor: 500_000,
+                  txnCount: 1,
+                },
+              ],
+            }
+          : SAMPLE,
+    });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    expect(screen.getByText("$73.50")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText(/^type$/i), "income");
+    expect(screen.getByText("$5,000.00")).toBeInTheDocument();
+    expect(screen.queryByText("$73.50")).not.toBeInTheDocument();
+  });
+
+  it("shares the Paid By filter with category analytics", async () => {
+    const alex = makeMemberView({
+      id: testId<Member["id"]>("mem-alex"),
+      displayName: "Alex",
+      role: "member",
+      isSelf: false,
+    });
+    configureConvex({
+      paidByFilterOptions: [alex],
+      categoryAnalytics: (args) =>
+        args.paidByMemberId === "mem-alex"
+          ? {
+              currency: "USD",
+              rows: [
+                {
+                  categoryId: testId<CategoryAnalytics["rows"][number]["categoryId"]>("cat-dining"),
+                  name: "Dining",
+                  color: "orange",
+                  status: "active",
+                  taggedTotalMinor: 2_500,
+                  txnCount: 1,
+                },
+              ],
+            }
+          : SAMPLE,
+    });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+
+    expect(screen.getByText("$73.50")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), "mem-alex");
+    expect(screen.getByText("$25.00")).toBeInTheDocument();
+    expect(screen.queryByText("$73.50")).not.toBeInTheDocument();
+  });
+
+  it("shows a skeleton while category analytics loads", () => {
+    configureConvex({ categoryAnalytics: () => undefined });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+    expect(screen.getByTestId("category-analytics-skeleton")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when there is no tagged spend", () => {
+    configureConvex({ categoryAnalytics: { currency: "USD", rows: [] } });
+    renderInCircle(makeCircleView(), <CircleDashboard />);
+    expect(screen.getByText(/no tagged spend for this period/i)).toBeInTheDocument();
+  });
+});
+
 describe("Dashboard URL state (paidBy + range)", () => {
   const you = makeMemberView({ id: testId<Member["id"]>("mem-you"), displayName: "You" });
   const alex = makeMemberView({
@@ -394,7 +526,34 @@ describe("Dashboard URL state (paidBy + range)", () => {
       "true",
     );
     expect(screen.getByTestId("comparison-skeleton")).toBeInTheDocument();
+    expect(screen.getByTestId("category-analytics-skeleton")).toBeInTheDocument();
     expect(screen.getByTestId("recent-skeleton")).toBeInTheDocument();
     expect(screen.queryByText("$5,000.00")).not.toBeInTheDocument();
+  });
+
+  it("restores a deep-linked category analytics type and queries with it", () => {
+    configureConvex({
+      paidByFilterOptions: [you],
+      categoryAnalytics: (args) =>
+        args.type === "income"
+          ? {
+              currency: "USD",
+              rows: [
+                {
+                  categoryId: testId<CategoryAnalytics["rows"][number]["categoryId"]>("cat-salary"),
+                  name: "Salary",
+                  color: "teal",
+                  status: "active",
+                  taggedTotalMinor: 500_000,
+                  txnCount: 1,
+                },
+              ],
+            }
+          : { currency: "USD", rows: [] },
+    });
+    setup("?type=income");
+
+    expect(screen.getByLabelText(/^type$/i)).toHaveValue("income");
+    expect(screen.getByText("$5,000.00")).toBeInTheDocument();
   });
 });

@@ -1,9 +1,14 @@
 import { api } from "@spend-circle/convex";
-import type { ComparisonRangeMonths, PlainMonth } from "@spend-circle/domain";
+import type { ComparisonRangeMonths, PlainMonth, TransactionType } from "@spend-circle/domain";
 import { useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "../env.js";
-import { MOCK_DASHBOARD, MOCK_MEMBERS, mockMonthlyComparison } from "../fixtures.js";
+import {
+  MOCK_CATEGORY_ANALYTICS,
+  MOCK_DASHBOARD,
+  MOCK_MEMBERS,
+  mockMonthlyComparison,
+} from "../fixtures.js";
 import type { Circle } from "./circles.js";
 import type { Member } from "./members.js";
 
@@ -110,4 +115,49 @@ export function useMonthlyComparison(
 export function usePaidByFilterOptions(circleId: Circle["id"]): Member[] | null | undefined {
   const queried = useQuery(api.dashboard.getPaidByFilterOptions, MOCKS ? "skip" : { circleId });
   return MOCKS ? MOCK_MEMBERS : queried;
+}
+
+/**
+ * The Dashboard's category analytics view contract, derived from
+ * `getCategoryAnalytics` so it can't drift from the backend (ADR 0003): ranked
+ * tagged spend per Category in minor units plus the Circle Currency. `null` ≡
+ * inaccessible Circle (ADR 0016); `undefined` while loading.
+ */
+export type CategoryAnalytics = NonNullable<
+  FunctionReturnType<typeof api.dashboard.getCategoryAnalytics>
+>;
+export type CategoryAnalyticsRow = CategoryAnalytics["rows"][number];
+
+/**
+ * Ranked, non-additive category tagged spend for one month (RPT-5), optionally
+ * narrowed by transaction `type` and the same Paid By filter the totals use.
+ * `undefined` while loading; `null` for an inaccessible Circle. Mock mode returns
+ * fixtures and skips the backend (ADR 0006). `enabled: false` skips the query and
+ * reads as loading — see {@link useDashboard}.
+ */
+export function useCategoryAnalytics(
+  circleId: Circle["id"],
+  options?: {
+    month?: PlainMonth;
+    type?: TransactionType;
+    paidByMemberId?: Member["id"];
+    enabled?: boolean;
+  },
+) {
+  const enabled = options?.enabled ?? true;
+  const queried = useQuery(
+    api.dashboard.getCategoryAnalytics,
+    MOCKS || !enabled
+      ? "skip"
+      : {
+          circleId,
+          ...(options?.month ? { month: options.month } : {}),
+          ...(options?.type ? { type: options.type } : {}),
+          ...(options?.paidByMemberId ? { paidByMemberId: options.paidByMemberId } : {}),
+        },
+  );
+  if (!enabled) {
+    return undefined;
+  }
+  return MOCKS ? MOCK_CATEGORY_ANALYTICS : queried;
 }

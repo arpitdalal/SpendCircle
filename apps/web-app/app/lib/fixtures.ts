@@ -11,6 +11,7 @@ import {
 import type { InvitationPreview } from "./data/invitations.js";
 import type {
   Category,
+  CategoryAnalytics,
   CategoryHistoryEvent,
   Circle,
   Dashboard,
@@ -306,6 +307,32 @@ export const MOCK_DASHBOARD: Dashboard = {
   recent: MOCK_DASHBOARD_RECENT,
   currency: "USD",
   month: "2026-06",
+};
+
+/**
+ * Mock category analytics for offline UI dev (RPT-5). Ranked expense tagged spend
+ * with a non-additive-friendly mix; typed against {@link CategoryAnalytics}.
+ */
+export const MOCK_CATEGORY_ANALYTICS: CategoryAnalytics = {
+  currency: "USD",
+  rows: [
+    {
+      categoryId: "mock-cat-groceries" as Category["id"],
+      name: "Groceries",
+      color: "green",
+      status: "active",
+      taggedTotalMinor: 7_350,
+      txnCount: 1,
+    },
+    {
+      categoryId: "mock-cat-dining" as Category["id"],
+      name: "Dining",
+      color: "orange",
+      status: "active",
+      taggedTotalMinor: 4_200,
+      txnCount: 2,
+    },
+  ],
 };
 
 /**

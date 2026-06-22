@@ -1,11 +1,13 @@
 import { comparisonWindowMonths, currentMonth, isValidPlainMonth } from "@spend-circle/domain";
 import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel.js";
+import type { Doc, Id } from "./_generated/dataModel.js";
 import { query } from "./_generated/server.js";
 import { resolveCircleAccess } from "./guard.js";
 import { toMemberView } from "./members.js";
 import { collectMonthActiveTransactions, sumMonthTotals } from "./monthActivity.js";
 import { newViewCaches, toTransactionView } from "./transactions.js";
+
+const transactionType = v.union(v.literal("expense"), v.literal("income"));
 
 /**
  * How many recent Transactions the Dashboard surfaces (PRD story 75). A small,
@@ -167,6 +169,88 @@ export const getMonthlyComparison = query({
  * never a Transaction scan (README §4). Resolver query (ADR 0016): an inaccessible or
  * missing Circle returns `null`, identical to a non-member.
  */
+/**
+ * Ranked, non-additive category tagged spend for one month (RPT-5; PRD stories 58, 73).
+ * Each Category's total is the sum of full Transaction amounts for active Transactions
+ * tagged with it in the period — a multi-Category Transaction contributes its full
+ * amount to *each* of its Categories, so category totals are explicitly NOT additive.
+ * Archived Categories appear when in-period active Transactions still use them (PRD 58).
+ *
+ * Reads the same bounded active month set as `getDashboard` via
+ * {@link collectMonthActiveTransactions}, optionally narrowed by `paidByMemberId` and
+ * `type`. Returns rows sorted by `taggedTotalMinor` descending (name ascending on ties)
+ * plus the Circle Currency in minor units (ADR 0009).
+ *
+ * Anti-enumeration (ADR 0016): an inaccessible or missing Circle returns `null`.
+ */
+export const getCategoryAnalytics = query({
+  args: {
+    circleId: v.id("circles"),
+    month: v.optional(v.string()),
+    type: v.optional(transactionType),
+    paidByMemberId: v.optional(v.id("members")),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveCircleAccess(ctx, args.circleId);
+    if (!access) {
+      return null;
+    }
+
+    const month = args.month ?? currentMonth(new Date());
+    if (!isValidPlainMonth(month)) {
+      throw new Error("Invalid month");
+    }
+
+    const monthTxns = await collectMonthActiveTransactions(
+      ctx,
+      args.circleId,
+      month,
+      args.paidByMemberId,
+    );
+    const scopedTxns = args.type ? monthTxns.filter((txn) => txn.type === args.type) : monthTxns;
+
+    const accum = new Map<Id<"categories">, { taggedTotalMinor: number; txnCount: number }>();
+    for (const txn of scopedTxns) {
+      const links = await ctx.db
+        .query("transactionCategories")
+        .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
+        .collect();
+      for (const link of links) {
+        const existing = accum.get(link.categoryId) ?? { taggedTotalMinor: 0, txnCount: 0 };
+        existing.taggedTotalMinor += txn.amountMinorUnits;
+        existing.txnCount += 1;
+        accum.set(link.categoryId, existing);
+      }
+    }
+
+    const categoryDocs = new Map<Id<"categories">, Doc<"categories">>();
+    const rows = [];
+    for (const [categoryId, totals] of accum) {
+      let category = categoryDocs.get(categoryId);
+      if (!category) {
+        const doc = await ctx.db.get(categoryId);
+        if (!doc) {
+          continue;
+        }
+        category = doc;
+        categoryDocs.set(categoryId, doc);
+      }
+      rows.push({
+        categoryId,
+        name: category.name,
+        color: category.color,
+        status: category.status,
+        taggedTotalMinor: totals.taggedTotalMinor,
+        txnCount: totals.txnCount,
+      });
+    }
+
+    rows.sort((a, b) => b.taggedTotalMinor - a.taggedTotalMinor || a.name.localeCompare(b.name));
+
+    return { rows, currency: access.circle.currency };
+  },
+});
+
 export const getPaidByFilterOptions = query({
   args: { circleId: v.id("circles") },
   handler: async (ctx, args) => {

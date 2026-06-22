@@ -16,12 +16,14 @@ import {
   readDashboardSelection,
 } from "~/lib/dashboard-url.js";
 import {
+  type CategoryAnalytics,
   type Circle,
   type Dashboard,
   type DashboardTotals,
   type Member,
   type MonthlyComparison,
   type Transaction,
+  useCategoryAnalytics,
   useDashboard,
   useMonthlyComparison,
   usePaidByFilterOptions,
@@ -31,6 +33,7 @@ import { viewerLocale } from "~/lib/locale.js";
 import { useReturnToOrigin, withReturnTo } from "~/lib/return-to-url.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
+import { DashboardCategoryAnalytics } from "./dashboard-category-analytics.js";
 import { DashboardComparisonChart } from "./dashboard-comparison-chart.js";
 
 /**
@@ -96,6 +99,12 @@ export default function CircleDashboard() {
     paidByMemberId,
     enabled: !awaitingPaidBy,
   });
+  const categoryAnalytics = useCategoryAnalytics(circle.id, {
+    month,
+    type: selection.type,
+    paidByMemberId,
+    enabled: !awaitingPaidBy,
+  });
 
   const select = (next: DashboardSelection) => {
     setSearchParams(canonicalDashboardParams(next, searchParams), { replace: false });
@@ -107,7 +116,9 @@ export default function CircleDashboard() {
           recent widgets carry only presentational placeholders, so a screen reader
           hears "Loading…" once rather than once per widget (issue #121). */}
       <LoadingStatus
-        loading={dashboard === undefined || comparison === undefined}
+        loading={
+          dashboard === undefined || comparison === undefined || categoryAnalytics === undefined
+        }
         label="Loading dashboard…"
       />
       <div className="flex items-center justify-between gap-3">
@@ -124,6 +135,11 @@ export default function CircleDashboard() {
         comparison={comparison}
         rangeMonths={selection.range}
         onRangeChange={(range) => select({ ...selection, range })}
+      />
+      <CategoryAnalyticsSection
+        analytics={categoryAnalytics}
+        type={selection.type}
+        onTypeChange={(type) => select({ ...selection, type })}
       />
       <RecentTransactions dashboard={dashboard} circle={circle} />
     </div>
@@ -297,6 +313,61 @@ function MonthlyComparisonSection({
         </p>
       ) : (
         <DashboardComparisonChart comparison={comparison} />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Ranked category tagged spend (RPT-5). Shares the Dashboard's Paid By filter and
+ * month scope; the expense/income toggle is URL-owned via `dashboard-url.ts`.
+ */
+function CategoryAnalyticsSection({
+  analytics,
+  type,
+  onTypeChange,
+}: {
+  analytics: CategoryAnalytics | null | undefined;
+  type: DashboardSelection["type"];
+  onTypeChange: (type: DashboardSelection["type"]) => void;
+}) {
+  return (
+    <section className="space-y-3" aria-labelledby="dashboard-category-scope-heading">
+      <div className="flex items-center justify-between gap-3">
+        <h3 id="dashboard-category-scope-heading" className="sr-only">
+          Category analytics scope
+        </h3>
+        <div className="flex items-center gap-2">
+          <label htmlFor="dashboard-category-type" className="text-xs text-muted-foreground">
+            Type
+          </label>
+          <select
+            id="dashboard-category-type"
+            value={type}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next === "expense" || next === "income") {
+                onTypeChange(next);
+              }
+            }}
+            className="rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
+          >
+            <option value="expense">Expenses</option>
+            <option value="income">Income</option>
+          </select>
+        </div>
+      </div>
+
+      {analytics === undefined ? (
+        <div aria-hidden data-testid="category-analytics-skeleton">
+          <Skeleton className="h-40 w-full rounded-xl" />
+        </div>
+      ) : !analytics ? (
+        <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          No category analytics available.
+        </p>
+      ) : (
+        <DashboardCategoryAnalytics analytics={analytics} />
       )}
     </section>
   );

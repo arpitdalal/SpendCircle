@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done · [PR #213](https://github.com/arpitdalal/SpendCircle/pull/213) |
 | **Labels** | `area:reporting`, `backend`, `ui` |
 | **Depends on** | RPT-3 (Done · [PR #70](https://github.com/arpitdalal/SpendCircle/pull/70)) — also reuses RPT-4's chart/URL wiring (Done · [PR #86](https://github.com/arpitdalal/SpendCircle/pull/86)) |
 | **PRD stories** | 58, 73 |
