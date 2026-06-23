@@ -1,6 +1,7 @@
 import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { listNotificationsForUser } from "../test/notifications.js";
 import { addMember, makeUser, seedCircle } from "../test/seed.js";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
@@ -134,6 +135,10 @@ describe("transferOwnership — happy path and invariant", () => {
       const owners = members.filter((member) => member.role === "owner");
       expect(owners).toHaveLength(1);
       expect(owners[0]?.userId).toBe(circle?.ownerUserId);
+
+      const notifications = await listNotificationsForUser(ctx, maya.user._id);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]?.type).toBe("ownership.transferred");
     });
   });
 
@@ -363,6 +368,10 @@ describe("removeMember — permissions", () => {
       expect(row?.removedAt).toBeTypeOf("number");
       expect(row?.displayName).toBe("Maya Member");
       expect(row?.image).toBeUndefined();
+
+      const notifications = await listNotificationsForUser(ctx, maya.user._id);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]?.type).toBe("member.removed");
     });
   });
 

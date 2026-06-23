@@ -22,6 +22,7 @@ import {
 } from "./history.js";
 import { newActorCache, toHistoryEventView } from "./historyView.js";
 import { monthDateRange } from "./monthActivity.js";
+import { notifyPaidBySet, notifyTransactionLifecycleChange } from "./notify.js";
 import { syncTransactionSearchDocument } from "./transactionSearchDocuments.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
@@ -630,6 +631,16 @@ export const createTransaction = mutation({
       changes,
     });
 
+    if (paidByMember._id !== recordedByMemberId) {
+      await notifyPaidBySet(ctx, {
+        paidByUserId: paidByMember.userId,
+        actorUserId: access.user._id,
+        actorDisplayName: access.membership.displayName,
+        circle: access.circle,
+        transaction: createdTransaction,
+      });
+    }
+
     return transactionId;
   },
 });
@@ -903,6 +914,18 @@ export const archiveTransaction = mutation({
       changes: [],
     });
 
+    const recorder = await ctx.db.get(txn.recordedByMemberId);
+    if (recorder) {
+      await notifyTransactionLifecycleChange(ctx, {
+        recorderUserId: recorder.userId,
+        actorUserId: access.user._id,
+        actorDisplayName: access.membership.displayName,
+        circle: access.circle,
+        transaction: archivedTransaction,
+        action: "archived",
+      });
+    }
+
     return args.transactionId;
   },
 });
@@ -948,6 +971,18 @@ export const restoreTransaction = mutation({
       action: "restored",
       changes: [],
     });
+
+    const recorder = await ctx.db.get(txn.recordedByMemberId);
+    if (recorder) {
+      await notifyTransactionLifecycleChange(ctx, {
+        recorderUserId: recorder.userId,
+        actorUserId: access.user._id,
+        actorDisplayName: access.membership.displayName,
+        circle: access.circle,
+        transaction: restoredTransaction,
+        action: "restored",
+      });
+    }
 
     return args.transactionId;
   },

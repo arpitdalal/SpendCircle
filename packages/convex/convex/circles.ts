@@ -21,6 +21,7 @@ import type { HistoryChange } from "./history.js";
 import { circleEntity, recordEvent } from "./history.js";
 import { revokePendingInvitationsForCircle } from "./invitations.js";
 import { getPersonalCircleForOwner, reconcilePersonalCircleFromDisplayName } from "./model.js";
+import { notifyCircleLifecycleChange } from "./notify.js";
 
 const circleSetupAnswers = v.object({
   purpose: v.optional(
@@ -359,6 +360,13 @@ export const archiveCircle = mutation({
       changes: [],
     });
 
+    await notifyCircleLifecycleChange(ctx, {
+      circle: access.circle,
+      actorUserId: access.user._id,
+      actorDisplayName: access.membership.displayName,
+      action: "archived",
+    });
+
     return args.circleId;
   },
 });
@@ -432,6 +440,13 @@ export const restoreCircle = mutation({
       actor: access.membership,
       action: "restored",
       changes: [],
+    });
+
+    await notifyCircleLifecycleChange(ctx, {
+      circle: access.circle,
+      actorUserId: access.user._id,
+      actorDisplayName: access.membership.displayName,
+      action: "restored",
     });
 
     return args.circleId;

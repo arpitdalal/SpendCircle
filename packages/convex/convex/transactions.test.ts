@@ -6,6 +6,7 @@ import {
 } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { listNotificationsForUser } from "../test/notifications.js";
 import {
   addMember,
   firstPage,
@@ -430,6 +431,10 @@ describe("createTransaction — Paid By", () => {
         .withIndex("by_entity", (q) => q.eq("entityId", id))
         .collect();
       expect(events[0]?.changes.find((c) => c.field === "paidBy")?.to).toBe("Maya Member");
+
+      const notifications = await listNotificationsForUser(ctx, other.user._id);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]?.type).toBe("transaction.paid_by");
     });
   });
 
@@ -1446,6 +1451,10 @@ describe("archiveTransaction — permissions (TXN-3)", () => {
     await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
     await t.run(async (ctx) => {
       expect((await ctx.db.get(id))?.status).toBe("archived");
+
+      const notifications = await listNotificationsForUser(ctx, member.user._id);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]?.type).toBe("transaction.archived");
     });
   });
 

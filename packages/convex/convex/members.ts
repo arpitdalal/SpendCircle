@@ -4,6 +4,7 @@ import type { Doc } from "./_generated/dataModel.js";
 import { mutation, query } from "./_generated/server.js";
 import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import { circleEntity, recordEvent } from "./history.js";
+import { notifyOwnershipTransferred, notifyRemovedFromCircle } from "./notify.js";
 
 /**
  * A Member shaped for the client. Reads the per-Circle MATERIALIZED identity
@@ -119,6 +120,12 @@ export const transferOwnership = mutation({
         },
       ],
     });
+
+    await notifyOwnershipTransferred(ctx, {
+      newOwnerUserId: targetMember.userId,
+      actorUserId: access.user._id,
+      circle: access.circle,
+    });
   },
 });
 
@@ -165,6 +172,12 @@ export const removeMember = mutation({
       actor: access.membership,
       action: "member removed",
       changes: [{ field: "member", from: target.displayName }],
+    });
+
+    await notifyRemovedFromCircle(ctx, {
+      removedUserId: target.userId,
+      actorUserId: access.user._id,
+      circle: access.circle,
     });
   },
 });
