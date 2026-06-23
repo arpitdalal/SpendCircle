@@ -1,5 +1,5 @@
 import { COLOR_PALETTE, categoryUpdateSchema, LIMITS } from "@spend-circle/domain";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ColorPicker } from "~/components/category-form.js";
 import { HistoryList } from "~/components/history-list.js";
@@ -31,6 +31,7 @@ import {
 } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useReturnToOrigin, withReturnTo } from "~/lib/return-to-url.js";
+import { useCategoryRefHighlight } from "~/lib/use-category-ref-highlight.js";
 import { useDoubleCheck } from "~/lib/use-double-check.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
@@ -74,6 +75,7 @@ export default function CircleCategories() {
   const circle = useCircle();
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = readCategoriesFilters(searchParams);
+  const categoryRefRaw = searchParams.get("categoryRef") ?? undefined;
   const writable = circle.status === "active";
   // The list's full URL (its type, status, search) is the origin the New-category CTA
   // returns to via `returnTo` (#123), so a filtered view round-trips through the new page.
@@ -83,16 +85,27 @@ export default function CircleCategories() {
     status: filters.status,
     ...(filters.q ? { query: filters.q } : {}),
   });
+  const { highlightedId, categoryRefConsumed } = useCategoryRefHighlight({
+    categoryRefRaw,
+    categories: page.categories,
+    status: page.status,
+    loadMore: page.loadMore,
+  });
 
   // Canonicalize the address bar (replace) so a copied URL always carries
-  // type+status — the transactions route's contract applied here.
+  // type+status — the transactions route's contract applied here. When a
+  // one-shot `categoryRef` deep link is consumed, drop it here so canonicalize
+  // and strip never race (#202).
   // react-doctor-disable-next-line react-doctor/no-event-handler -- URL must self-heal on load and when reactive filters diverge from the bar; no single user event owns that.
   useEffect(() => {
     const next = canonicalCategoriesParams(filters, searchParams);
+    if (categoryRefConsumed) {
+      next.delete("categoryRef");
+    }
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [filters, searchParams, setSearchParams]);
+  }, [categoryRefConsumed, filters, searchParams, setSearchParams]);
 
   // Discrete control changes (type segment, status segment) PUSH a history entry.
   const applyFilters = (next: CategoriesFilters) => {
@@ -152,7 +165,12 @@ export default function CircleCategories() {
         </p>
       )}
 
-      <CategoryList page={page} narrowed={hasCategoriesNarrowing(filters)} circle={circle} />
+      <CategoryList
+        page={page}
+        narrowed={hasCategoriesNarrowing(filters)}
+        circle={circle}
+        highlightedId={highlightedId}
+      />
     </div>
   );
 }
@@ -182,10 +200,12 @@ function CategoryList({
   page,
   narrowed,
   circle,
+  highlightedId,
 }: {
   page: CategoriesPage;
   narrowed: boolean;
   circle: Circle;
+  highlightedId: Category["id"] | null;
 }) {
   const [editingId, setEditingId] = useState<Category["id"] | null>(null);
   const [historyId, setHistoryId] = useState<Category["id"] | null>(null);
@@ -234,6 +254,7 @@ function CategoryList({
             key={category.id}
             category={category}
             circle={circle}
+            highlighted={highlightedId === category.id}
             editing={editingId === category.id}
             onEditToggle={(open) => setEditingId(open ? category.id : null)}
             historyOpen={historyId === category.id}
@@ -256,6 +277,7 @@ function CategoryList({
 function CategoryRow({
   category,
   circle,
+  highlighted,
   editing,
   onEditToggle,
   historyOpen,
@@ -263,6 +285,7 @@ function CategoryRow({
 }: {
   category: Category;
   circle: Circle;
+  highlighted: boolean;
   editing: boolean;
   onEditToggle: (open: boolean) => void;
   historyOpen: boolean;
@@ -271,6 +294,25 @@ function CategoryRow({
   const writable = circle.status === "active";
   const swatch = COLOR_PALETTE.find((c) => c.id === category.color);
   const isArchived = category.status === "archived";
+  const scrolledRef = useRef(false);
+
+  useEffect(() => {
+    if (!highlighted) {
+      scrolledRef.current = false;
+    }
+  }, [highlighted]);
+
+  const rowRef = useCallback(
+    (node: HTMLLIElement | null) => {
+      if (!node || !highlighted || scrolledRef.current) {
+        return;
+      }
+      scrolledRef.current = true;
+      node.scrollIntoView({ block: "center", behavior: "smooth" });
+      node.focus({ preventScroll: true });
+    },
+    [highlighted],
+  );
 
   // Whether this row may edit is SERVER-derived data (the capability flag, the
   // row's status, the Circle's status) — `editing` alone is just UI state, so the
@@ -287,7 +329,15 @@ function CategoryRow({
   }, [editing, canEdit, onEditToggle]);
 
   return (
-    <li className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
+    <li
+      ref={rowRef}
+      tabIndex={highlighted ? -1 : undefined}
+      className={cn(
+        "rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm transition-colors duration-500 outline-none",
+        highlighted &&
+          "ring-2 ring-ring ring-offset-2 ring-offset-background animate-highlight-flash",
+      )}
+    >
       {editing && canEdit ? (
         <EditCategoryForm category={category} onClose={() => onEditToggle(false)} />
       ) : (

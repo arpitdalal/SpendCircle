@@ -136,6 +136,7 @@
   /* Loading skeleton pulse. The global prefers-reduced-motion rule freezes it to a
      static muted block, so the placeholder SHAPE is the cue — no motion required. */
   --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
+  --animate-highlight-flash: highlight-flash 2500ms var(--ease-out-quart);
 
   @keyframes pop-in {
     from {
@@ -188,6 +189,14 @@
     }
     50% {
       opacity: 0.45;
+    }
+  }
+  @keyframes highlight-flash {
+    0% {
+      background-color: color-mix(in oklab, var(--ring) 18%, transparent);
+    }
+    100% {
+      background-color: transparent;
     }
   }
 }
