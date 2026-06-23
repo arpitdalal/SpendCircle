@@ -9,6 +9,7 @@ import { emailPool } from "./email.js";
 import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import { circleEntity, recordEvent } from "./history.js";
 import { generateInvitationToken, hashInvitationToken } from "./invitationToken.js";
+import { notifyInvitationAccepted, notifyInvitationRevoked } from "./notify.js";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -313,6 +314,13 @@ export const acceptInvitation = mutation({
       changes: [{ field: "member", to: membership.displayName }],
     });
 
+    await notifyInvitationAccepted(ctx, {
+      inviterUserId: invitation.invitedByUserId,
+      acceptorUserId: user._id,
+      acceptorDisplayName: user.displayName,
+      circle,
+    });
+
     return { circleId: circle._id };
   },
 });
@@ -461,5 +469,17 @@ export const revokeInvitation = mutation({
       action: "invitation revoked",
       changes: [{ field: "email", from: invitation.emailLower }],
     });
+
+    const invitee = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", invitation.emailLower))
+      .unique();
+    if (invitee) {
+      await notifyInvitationRevoked(ctx, {
+        inviteeUserId: invitee._id,
+        actorUserId: access.user._id,
+        circleName: access.circle.name,
+      });
+    }
   },
 });

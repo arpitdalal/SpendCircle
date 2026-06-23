@@ -3,6 +3,7 @@ import { capturedRequests, resetCapturedRequests } from "@spend-circle/mocks";
 import { ConvexError } from "convex/values";
 import { convexTest as createConvexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { listNotificationsForUser } from "../test/notifications.js";
 import { registerEmailWorkpool } from "../test/registerEmailWorkpool.js";
 import {
   addMember,
@@ -1264,8 +1265,10 @@ describe("revokeInvitation", () => {
     await t.run((ctx) => completeSetup(ctx, circleId));
     mockCurrentUser.mockResolvedValue(owner);
 
+    const ada = await t.run((ctx) => makeUser(ctx, "ada@example.com", "Ada Lovelace"));
+
     const inviteId = await t.run((ctx) =>
-      seedInvitation(ctx, circleId, owner._id, { email: "ada@example.com" }),
+      seedInvitation(ctx, circleId, owner._id, { email: ada.email }),
     );
 
     await t.mutation(api.invitations.revokeInvitation, { invitationId: inviteId });
@@ -1277,6 +1280,10 @@ describe("revokeInvitation", () => {
       const events = await listEntityHistory(ctx, circleEntity(circleId));
       const revoked = events.find((event) => event.action === "invitation revoked");
       expect(revoked?.changes).toEqual([{ field: "email", from: "ada@example.com" }]);
+
+      const notifications = await listNotificationsForUser(ctx, ada._id);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]?.type).toBe("invitation.revoked");
     });
   });
 
@@ -1508,6 +1515,10 @@ describe("acceptInvitation — happy path", () => {
       const joined = events.find((event) => event.action === "member joined");
       expect(joined?.changes).toEqual([{ field: "member", to: "Ada Lovelace" }]);
       expect(JSON.stringify(joined?.changes)).not.toMatch(/[a-z0-9]{20,}/i);
+
+      const notifications = await listNotificationsForUser(ctx, owner._id);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]?.type).toBe("invitation.accepted");
     });
 
     mockCurrentUser.mockResolvedValue(ada);

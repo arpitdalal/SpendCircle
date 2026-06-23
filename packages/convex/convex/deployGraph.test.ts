@@ -28,12 +28,29 @@ function collectDeployGraphModules(dir: string): string[] {
 /** Import specifiers that reach test-only helpers outside the functions dir. */
 const forbiddenTestHelperImport = /from\s+["']\.\.\/test\//;
 
+/** Production notification rows must be written only through notify.ts. */
+const notificationInsertPattern = /ctx\.db\.insert\(\s*["']notifications["']/;
+
 describe("deploy graph", () => {
   it("non-test convex modules must not import from packages/convex/test/", () => {
     const violations: string[] = [];
     for (const file of collectDeployGraphModules(convexDir)) {
       const content = readFileSync(file, "utf8");
       if (forbiddenTestHelperImport.test(content)) {
+        violations.push(relative(convexDir, file));
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("notification inserts live only in notify.ts", () => {
+    const violations: string[] = [];
+    for (const file of collectDeployGraphModules(convexDir)) {
+      if (relative(convexDir, file) === "notify.ts") {
+        continue;
+      }
+      const content = readFileSync(file, "utf8");
+      if (notificationInsertPattern.test(content)) {
         violations.push(relative(convexDir, file));
       }
     }

@@ -2,6 +2,7 @@ import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { ConvexError } from "convex/values";
 import { convexTest, type TestConvex } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { listNotificationsForUser } from "../test/notifications.js";
 import { api } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { MutationCtx } from "./_generated/server.js";
@@ -879,7 +880,7 @@ describe("archiveCategory / restoreCategory — moderation", () => {
 
   it("lets the Owner archive and restore ANY member's category, with the Owner as actor", async () => {
     const t = convexTest(schema, modules);
-    const { owner, circleId, categoryId } = await seedCategoryScenario(t);
+    const { owner, creator, circleId, categoryId } = await seedCategoryScenario(t);
     mockCurrentUser.mockResolvedValue(owner);
 
     await t.mutation(api.categories.archiveCategory, { categoryId });
@@ -901,6 +902,17 @@ describe("archiveCategory / restoreCategory — moderation", () => {
       expect(events.map((event) => event.action)).toEqual(["created", "archived", "restored"]);
       expect(events[1]?.actorMemberId).toBe(ownerMember?._id);
       expect(events[2]?.actorMemberId).toBe(ownerMember?._id);
+
+      const creatorMember = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_user", (q) =>
+          q.eq("circleId", circleId).eq("userId", creator._id),
+        )
+        .unique();
+      expect(creatorMember).toBeTruthy();
+      const notifications = await listNotificationsForUser(ctx, creator._id);
+      expect(notifications.filter((row) => row.type === "category.archived")).toHaveLength(1);
+      expect(notifications.filter((row) => row.type === "category.restored")).toHaveLength(1);
     });
   });
 

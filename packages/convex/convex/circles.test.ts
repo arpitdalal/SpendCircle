@@ -2,6 +2,7 @@ import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { listNotificationsForUser } from "../test/notifications.js";
 import {
   addMember,
   makeCategory,
@@ -714,6 +715,7 @@ describe("archiveCircle", () => {
       });
       return seed;
     });
+    const member = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(owner);
 
     await t.mutation(api.circles.archiveCircle, { circleId });
@@ -740,6 +742,11 @@ describe("archiveCircle", () => {
         .collect();
       expect(events.at(-1)?.action).toBe("archived");
       expect(events.at(-1)?.changes).toEqual([]);
+
+      expect(await listNotificationsForUser(ctx, owner._id)).toHaveLength(0);
+      const memberNotifications = await listNotificationsForUser(ctx, member.user._id);
+      expect(memberNotifications).toHaveLength(1);
+      expect(memberNotifications[0]?.type).toBe("circle.archived");
     });
   });
 

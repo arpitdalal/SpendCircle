@@ -25,6 +25,7 @@ import {
   recordEvent,
 } from "./history.js";
 import { newActorCache, toHistoryEventView } from "./historyView.js";
+import { notifyCategoryLifecycleChange } from "./notify.js";
 import schema from "./schema.js";
 
 const transactionType = v.union(v.literal("expense"), v.literal("income"));
@@ -481,6 +482,15 @@ export const archiveCategory = mutation({
       changes: [],
     });
 
+    await notifyCategoryLifecycleChange(ctx, {
+      creatorUserId: category.creatorUserId,
+      actorUserId: access.user._id,
+      actorDisplayName: access.membership.displayName,
+      circle: access.circle,
+      category,
+      action: "archived",
+    });
+
     return args.categoryId;
   },
 });
@@ -538,6 +548,15 @@ export const restoreCategory = mutation({
       actor: access.membership, // the moderator who restored it
       action: "restored",
       changes: [],
+    });
+
+    await notifyCategoryLifecycleChange(ctx, {
+      creatorUserId: category.creatorUserId,
+      actorUserId: access.user._id,
+      actorDisplayName: access.membership.displayName,
+      circle: access.circle,
+      category,
+      action: "restored",
     });
 
     return args.categoryId;
