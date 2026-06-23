@@ -1,5 +1,5 @@
 import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { Route, useNavigate } from "react-router";
@@ -15,6 +15,7 @@ import {
   renderCircleRoutes,
   testId,
 } from "~/test/convex-react.js";
+import { archiveWithDoubleCheck, armArchive, confirmArchive } from "~/test/double-check.js";
 
 /**
  * Behavior test for the Categories surface (jsdom). The ONLY thing doubled is
@@ -116,6 +117,7 @@ function mixedRows() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -693,7 +695,7 @@ describe("CircleCategories — archive / restore (CAT-2)", () => {
     const user = userEvent.setup();
     setup({ categories: [makeCategoryView()] });
 
-    await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    await archiveWithDoubleCheck(user, "Groceries");
 
     expect(archiveCategory).toHaveBeenCalledWith({ categoryId: "cat-groceries" });
   });
@@ -720,11 +722,16 @@ describe("CircleCategories — archive / restore (CAT-2)", () => {
       new ConvexError(mutationErrorData(MUTATION_ERRORS.circleArchived)),
     );
 
-    await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    await archiveWithDoubleCheck(user, "Groceries");
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(MUTATION_ERRORS.circleArchived.message);
     expect(consoleError).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Archive Groceries" })).toBeInTheDocument();
+    archiveCategory.mockClear();
+    await armArchive(user, "Groceries");
+    await confirmArchive(user, "Groceries");
+    expect(archiveCategory).toHaveBeenCalledTimes(1);
     consoleError.mockRestore();
   });
 
@@ -734,13 +741,60 @@ describe("CircleCategories — archive / restore (CAT-2)", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     archiveCategory.mockRejectedValueOnce(new Error("Circle is archived"));
 
-    await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    await archiveWithDoubleCheck(user, "Groceries");
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/Couldn't archive the category/i);
     expect(alert).not.toHaveTextContent(/Circle is archived/);
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it("requires arm then confirm before archiving a category", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategoryView()] });
+
+    await armArchive(user, "Groceries");
+    expect(archiveCategory).not.toHaveBeenCalled();
+    const armed = screen.getByRole("button", { name: "Confirm archive Groceries" });
+    expect(armed).toHaveTextContent("Confirm archive");
+    expect(armed).toHaveClass("bg-destructive");
+
+    await confirmArchive(user, "Groceries");
+    expect(archiveCategory).toHaveBeenCalledWith({ categoryId: "cat-groceries" });
+  });
+
+  it("auto-resets armed archive after the timeout", () => {
+    vi.useFakeTimers();
+    setup({ categories: [makeCategoryView()] });
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    act(() => {
+      vi.advanceTimersByTime(10_001);
+    });
+    expect(screen.getByRole("button", { name: "Archive Groceries" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    expect(archiveCategory).not.toHaveBeenCalled();
+  });
+
+  it("resets armed archive on blur", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategoryView()] });
+
+    await armArchive(user, "Groceries");
+    fireEvent.blur(screen.getByRole("button", { name: "Confirm archive Groceries" }));
+    expect(screen.getByRole("button", { name: "Archive Groceries" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    expect(archiveCategory).not.toHaveBeenCalled();
+  });
+
+  it("resets armed archive on Escape", async () => {
+    const user = userEvent.setup();
+    setup({ categories: [makeCategoryView()] });
+
+    await armArchive(user, "Groceries");
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Archive Groceries" })).toBeInTheDocument();
   });
 });
 

@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
+  archiveWithDoubleCheck,
   clickCircleChromeTab,
   createCategoryViaForm,
   expect,
@@ -334,7 +335,7 @@ test("a member archives and restores a transaction", async ({ page }, testInfo) 
 
   // Archive it — the default (status=all) view keeps the row reactively but now distinguishes
   // it: an "Archived" marker, a Restore action, and no Edit affordance (frozen).
-  await row.getByRole("button", { name: `Archive ${title}` }).click();
+  await archiveWithDoubleCheck(row, title);
   await expect(row.getByText("Archived", { exact: true })).toBeVisible();
   await expect(row.getByRole("button", { name: `Restore ${title}` })).toBeVisible();
   await expect(row.getByRole("link", { name: `Edit ${title}` })).toHaveCount(0);
@@ -472,7 +473,7 @@ test("the transaction detail shows audit metadata and history reflecting an edit
 
   // Archive it → an "archived" event. The default (status=all) view keeps the row but marks
   // it archived: a Restore action replaces Archive.
-  await editedRow.getByRole("button", { name: `Archive ${title}` }).click();
+  await archiveWithDoubleCheck(editedRow, title);
   await expect(editedRow.getByRole("button", { name: `Restore ${title}` })).toBeVisible();
 
   // Open the archived Transaction's detail (via its title link, available on archived rows

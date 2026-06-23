@@ -1,6 +1,6 @@
 import { api } from "@spend-circle/convex";
 import { addMonths, currentMonth, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
@@ -31,6 +31,7 @@ import {
   renderCircleRoutes,
   testId,
 } from "~/test/convex-react.js";
+import { archiveWithDoubleCheck, armArchive, confirmArchive } from "~/test/double-check.js";
 
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 vi.mock(
@@ -129,6 +130,7 @@ function makeFilterOptions(): TransactionFilterOptions {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -341,7 +343,7 @@ describe("CircleTransactions", () => {
       filteredTransactions: rows,
     });
 
-    await user.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    await archiveWithDoubleCheck(user, "Weekly shop");
     expect(archiveTransaction).toHaveBeenCalledWith({
       transactionId: testId<Transaction["id"]>("t1"),
     });
@@ -453,11 +455,84 @@ describe("CircleTransactions", () => {
       ],
     });
     archiveTransaction.mockRejectedValue(ARCHIVED_CIRCLE_ERROR);
-    await user.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    await archiveWithDoubleCheck(user, "Weekly shop");
     expect(await screen.findByText(MUTATION_ERRORS.circleArchived.message)).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Archive Weekly shop" })).toBeEnabled(),
     );
+    archiveTransaction.mockClear();
+    await armArchive(user, "Weekly shop");
+    await confirmArchive(user, "Weekly shop");
+    expect(archiveTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires arm then confirm before archiving a transaction", async () => {
+    const user = userEvent.setup();
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: [
+        makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
+      ],
+    });
+
+    await armArchive(user, "Weekly shop");
+    expect(archiveTransaction).not.toHaveBeenCalled();
+    const armed = screen.getByRole("button", { name: "Confirm archive Weekly shop" });
+    expect(armed).toHaveTextContent("Confirm archive");
+    expect(armed).toHaveClass("bg-destructive");
+
+    await confirmArchive(user, "Weekly shop");
+    expect(archiveTransaction).toHaveBeenCalledWith({
+      transactionId: testId<Transaction["id"]>("t1"),
+    });
+  });
+
+  it("auto-resets armed archive after the timeout", () => {
+    vi.useFakeTimers();
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: [
+        makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    act(() => {
+      vi.advanceTimersByTime(10_001);
+    });
+    expect(screen.getByRole("button", { name: "Archive Weekly shop" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    expect(archiveTransaction).not.toHaveBeenCalled();
+  });
+
+  it("resets armed archive on blur", async () => {
+    const user = userEvent.setup();
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: [
+        makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
+      ],
+    });
+
+    await armArchive(user, "Weekly shop");
+    fireEvent.blur(screen.getByRole("button", { name: "Confirm archive Weekly shop" }));
+    expect(screen.getByRole("button", { name: "Archive Weekly shop" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Archive Weekly shop" }));
+    expect(archiveTransaction).not.toHaveBeenCalled();
+  });
+
+  it("resets armed archive on Escape", async () => {
+    const user = userEvent.setup();
+    setup({
+      initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
+      filteredTransactions: [
+        makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
+      ],
+    });
+
+    await armArchive(user, "Weekly shop");
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Archive Weekly shop" })).toBeInTheDocument();
   });
 
   it("surfaces archived-circle rejection on restore and re-enables the button", async () => {

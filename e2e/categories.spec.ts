@@ -1,4 +1,5 @@
 import {
+  archiveWithDoubleCheck,
   clickCircleChromeTab,
   createCategoryViaForm,
   createRegularCircleAndFinishSetup,
@@ -129,7 +130,7 @@ test("a member edits, archives, and restores a category and sees its history", a
 
   // Archive: under the default `all` scope the row stays, badge flipped in place
   // (CAT-4 — archived rows are distinguished, not hidden).
-  await page.getByRole("button", { name: `Archive ${renamed}` }).click();
+  await archiveWithDoubleCheck(page, renamed);
   const archivedRow = page.getByRole("listitem").filter({ hasText: renamed });
   await expect(archivedRow.getByText("Archived")).toBeVisible();
 
@@ -212,7 +213,7 @@ test("the category filter searches, scopes by status, reloads from the URL, and 
   await expect(page2Row).toBeVisible({ timeout: 15_000 });
 
   // Archive one row, then scope to active: it reactively leaves the list.
-  await page.getByRole("button", { name: `Archive ${matchName(25)}` }).click();
+  await archiveWithDoubleCheck(page, matchName(25));
   await expect(
     page
       .getByRole("listitem")
