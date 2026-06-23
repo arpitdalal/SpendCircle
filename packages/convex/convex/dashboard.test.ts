@@ -705,6 +705,31 @@ describe("getCategoryAnalytics — tagged spend (RPT-5)", () => {
     expect(byName.get("Groceries")).toMatchObject({ taggedTotalMinor: 3_000, txnCount: 3 });
   });
 
+  it("aggregates correctly when transaction count exceeds link-read concurrency (RPT-5)", async () => {
+    const t = convexTest(schema, modules);
+    const f = await t.run((ctx) => seedFixture(ctx));
+    mockCurrentUser.mockResolvedValue(f.owner);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 30; i++) {
+        await seedTransaction(ctx, f, {
+          amountMinorUnits: 1_000,
+          date: `2026-06-${String(i + 1).padStart(2, "0")}`,
+          categoryIds: i % 2 === 0 ? [f.diningId] : [f.groceriesId],
+        });
+      }
+    });
+
+    const analytics = await t.query(api.dashboard.getCategoryAnalytics, {
+      circleId: f.circleId,
+      month: "2026-06",
+      type: "expense",
+    });
+
+    const byName = new Map(analytics?.rows.map((r) => [r.name, r]));
+    expect(byName.get("Dining")).toMatchObject({ taggedTotalMinor: 15_000, txnCount: 15 });
+    expect(byName.get("Groceries")).toMatchObject({ taggedTotalMinor: 15_000, txnCount: 15 });
+  });
+
   it("is non-additive: a multi-category transaction contributes its full amount to each category", async () => {
     const t = convexTest(schema, modules);
     const f = await t.run((ctx) => seedFixture(ctx));
