@@ -8,6 +8,7 @@ import {
   transactionSearchText,
   transactionTextMatches,
 } from "@spend-circle/domain";
+import { testId } from "../test/convex/ids.js";
 import type { InvitationPreview } from "./data/invitations.js";
 import type {
   Category,
@@ -486,14 +487,14 @@ export const MOCK_CATEGORY_HISTORY: CategoryHistoryEvent[] = [
  */
 export const MOCK_CIRCLE_HISTORY: CircleHistoryEvent[] = [
   {
-    id: "mock-circle-hist-transfer" as CircleHistoryEvent["id"],
+    id: testId<CircleHistoryEvent["id"]>("mock-circle-hist-transfer"),
     action: "ownership transferred",
     createdAt: Date.UTC(2026, 5, 10, 16, 45),
     actor: { displayName: "You", image: undefined },
     changes: [{ field: "owner", from: "Olive Owner", to: "Maya Member" }],
   },
   {
-    id: "mock-circle-hist-create" as CircleHistoryEvent["id"],
+    id: testId<CircleHistoryEvent["id"]>("mock-circle-hist-create"),
     action: "created",
     createdAt: Date.UTC(2026, 5, 1, 9, 0),
     actor: { displayName: "You", image: undefined },
