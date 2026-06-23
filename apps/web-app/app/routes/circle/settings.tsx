@@ -7,6 +7,7 @@ import {
   colorLabel,
   LIMITS,
   RESIDENCE_TYPES,
+  SUPPORTED_CURRENCIES,
 } from "@spend-circle/domain";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { href, Navigate, useNavigate } from "react-router";
@@ -22,6 +23,7 @@ import {
   useMembers,
   useRenameCircle,
   useRestoreCircle,
+  useSetCurrency,
   useSetPersonalCircleNameAutoSync,
   useUpdateCircleSettings,
 } from "~/lib/data.js";
@@ -59,6 +61,7 @@ export default function CircleSettings() {
   const members = useMembers(circle.id);
   const hasTransactions = useCircleHasTransactions(circle.id);
   const renameCircle = useRenameCircle();
+  const setCurrency = useSetCurrency();
   const archiveCircle = useArchiveCircle();
   const restoreCircle = useRestoreCircle();
   const deleteCircle = useDeleteCircle();
@@ -79,6 +82,7 @@ export default function CircleSettings() {
   const [savingName, setSavingName] = useState(false);
   const [syncingName, setSyncingName] = useState(false);
   const [savingColor, setSavingColor] = useState(false);
+  const [savingCurrency, setSavingCurrency] = useState(false);
   const [savingSetup, setSavingSetup] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -107,6 +111,8 @@ export default function CircleSettings() {
   if (!viewerIsOwner(members)) {
     return <Navigate to={dashboardPath} replace />;
   }
+
+  const currencyLocked = circle.currencyLocked || hasTransactions === true;
 
   const nameDirty = name.trim() !== circle.name;
   const setupDirty = setupAnswersChanged(circle.setupAnswers, setupAnswers(purpose, residenceType));
@@ -173,6 +179,22 @@ export default function CircleSettings() {
       setNameError("Couldn't save the name. Please try again.");
     } finally {
       setSavingName(false);
+    }
+  }
+
+  async function onPickCurrency(nextCurrency: string) {
+    if (nextCurrency === circle.currency) {
+      return;
+    }
+    setSavingCurrency(true);
+    try {
+      await setCurrency({ circleId: circle.id, currency: nextCurrency });
+      show("Circle currency updated.");
+    } catch (caught) {
+      console.error("setCurrency failed", caught);
+      show(mutationErrorMessageForUser(caught, "Couldn't save the currency. Please try again."));
+    } finally {
+      setSavingCurrency(false);
     }
   }
 
@@ -339,6 +361,48 @@ export default function CircleSettings() {
           </Button>
         </fieldset>
       </form>
+
+      <fieldset
+        disabled={!writable || savingCurrency}
+        className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
+      >
+        <legend className="text-sm font-medium">Currency</legend>
+        {currencyLocked ? (
+          <>
+            <p className="text-sm">{currencyOptionLabel(circle.currency)}</p>
+            <p className="text-xs text-muted-foreground">
+              Locked once the circle has a transaction.
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <label
+                htmlFor="circle-settings-currency"
+                className="block text-sm text-muted-foreground"
+              >
+                Circle currency
+              </label>
+              <select
+                id="circle-settings-currency"
+                value={circle.currency}
+                onChange={(event) => void onPickCurrency(event.target.value)}
+                className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:ring-2 focus:ring-ring/30"
+              >
+                {SUPPORTED_CURRENCIES.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.code} · {option.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Every transaction in this circle uses this currency. It locks once the circle has a
+              transaction.
+            </p>
+          </>
+        )}
+      </fieldset>
 
       <fieldset
         disabled={!writable || savingColor}
@@ -764,4 +828,9 @@ function normalizeResidenceType(value: string) {
 
 function setupAnswersChanged(before: CircleSetupAnswers | undefined, after: CircleSetupAnswers) {
   return before?.purpose !== after.purpose || before?.residenceType !== after.residenceType;
+}
+
+function currencyOptionLabel(code: string) {
+  const match = SUPPORTED_CURRENCIES.find((option) => option.code === code);
+  return match ? `${match.code} · ${match.name}` : code;
 }

@@ -5,10 +5,12 @@ import {
   colorLabel,
   DEFAULT_COLOR_ID,
   initials,
+  isSupportedCurrency,
   MUTATION_ERRORS,
   mutationErrorData,
   parseCircleSettingsUpdate,
   starterCategories,
+  toCurrencyCode,
 } from "@spend-circle/domain";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -243,6 +245,43 @@ export const setPersonalCircleNameAutoSync = mutation({
     if (personalCircle.personalNameCustomizedAt === undefined) {
       await ctx.db.patch(personalCircle._id, { personalNameCustomizedAt: Date.now() });
     }
+  },
+});
+
+/** Changes a Circle's currency before the first Transaction (CS-3). */
+export const setCurrency = mutation({
+  args: { circleId: v.id("circles"), currency: v.string() },
+  handler: async (ctx, args) => {
+    const access = await requireCircleAccess(ctx, args.circleId);
+    if (!access.isOwner) {
+      throw new Error("Only the owner can change the currency");
+    }
+    access.assertWritable();
+
+    const hasTransaction = await ctx.db
+      .query("transactions")
+      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+      .first();
+    if (access.circle.currencyLocked || hasTransaction) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.currencyLocked));
+    }
+
+    if (!isSupportedCurrency(args.currency)) {
+      throw new Error("Unsupported currency");
+    }
+    const currency = toCurrencyCode(args.currency);
+    if (currency === access.circle.currency) {
+      return;
+    }
+
+    const from = access.circle.currency;
+    await ctx.db.patch(access.circle._id, { currency });
+    await recordEvent(ctx, {
+      entity: circleEntity(access.circle._id),
+      actor: access.membership,
+      action: "settings_changed",
+      changes: [{ field: "currency", from, to: currency }],
+    });
   },
 });
 

@@ -42,6 +42,7 @@ const FIELD_LABEL: Record<string, string> = {
   name: "Name",
   color: "Color",
   // Circle Settings fields (CS-2).
+  currency: "Currency",
   "setup.purpose": "Circle use",
   "setup.residenceType": "Residence type",
 };
