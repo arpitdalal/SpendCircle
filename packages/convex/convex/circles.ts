@@ -256,7 +256,7 @@ export const setCurrency = mutation({
   handler: async (ctx, args) => {
     const access = await requireCircleAccess(ctx, args.circleId);
     if (!access.isOwner) {
-      throw new Error("Only the owner can change the currency");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.currencyForbidden));
     }
     access.assertWritable();
 
@@ -269,7 +269,7 @@ export const setCurrency = mutation({
     }
 
     if (!isSupportedCurrency(args.currency)) {
-      throw new Error("Unsupported currency");
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.currencyUnsupported));
     }
     const currency = toCurrencyCode(args.currency);
     if (currency === access.circle.currency) {
@@ -479,6 +479,7 @@ export const deleteCircle = mutation({
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleDeletePersonal));
     }
 
+    // Gate counts active members only (owner must be sole active member); cascade deletes all rows.
     const activeMembers = await ctx.db
       .query("members")
       .withIndex("by_circle_and_status", (q) =>

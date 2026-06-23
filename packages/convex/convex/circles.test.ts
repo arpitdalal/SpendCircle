@@ -661,7 +661,9 @@ describe("setCurrency", () => {
 
     await expect(
       t.mutation(api.circles.setCurrency, { circleId, currency: "EUR" }),
-    ).rejects.toThrow(/Only the owner can change the currency/);
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.currencyForbidden),
+    });
   });
 
   it("rejects an archived circle", async () => {
@@ -681,7 +683,9 @@ describe("setCurrency", () => {
 
     await expect(
       t.mutation(api.circles.setCurrency, { circleId, currency: "XYZ" }),
-    ).rejects.toThrow(/Unsupported currency/);
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.currencyUnsupported),
+    });
   });
 });
 
