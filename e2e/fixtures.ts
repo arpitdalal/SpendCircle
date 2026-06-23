@@ -207,6 +207,23 @@ export async function clickCircleChromeTab(page: Page, tab: CircleChromeTab) {
 }
 
 /**
+ * Issue #207: destructive archive is a two-step confirm (arm → confirm within 10s).
+ * `scope` is the page or a row locator that contains the archive button.
+ */
+export async function armArchive(scope: Page | Locator, itemName: string) {
+  await scope.getByRole("button", { name: `Archive ${itemName}` }).click();
+}
+
+export async function confirmArchive(scope: Page | Locator, itemName: string) {
+  await scope.getByRole("button", { name: `Confirm archive ${itemName}` }).click();
+}
+
+export async function archiveWithDoubleCheck(scope: Page | Locator, itemName: string) {
+  await armArchive(scope, itemName);
+  await confirmArchive(scope, itemName);
+}
+
+/**
  * Pick from a "Categories" combobox inside `scope` (a form or filter dialog).
  * Base UI portals options to `body`; never scope the option lookup to `scope`.
  */
