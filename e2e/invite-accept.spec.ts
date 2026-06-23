@@ -76,7 +76,8 @@ test("an invited user accepts and lands in the Circle member list", async ({
 
       await clickCircleChromeTab(ownerPage, "Members");
       await expect(memberListItems(ownerPage)).toHaveCount(2);
-      await expect(ownerPage.getByText("E2E Tester")).toHaveCount(2);
+      // Scope to member rows — Circle history (CS-4) also renders display names.
+      await expect(memberListItems(ownerPage).filter({ hasText: "E2E Tester" })).toHaveCount(2);
     } finally {
       await inviteeContext.close();
     }

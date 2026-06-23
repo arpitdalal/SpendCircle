@@ -8,12 +8,14 @@ import {
   transactionSearchText,
   transactionTextMatches,
 } from "@spend-circle/domain";
+import { testId } from "../test/convex/ids.js";
 import type { InvitationPreview } from "./data/invitations.js";
 import type {
   Category,
   CategoryAnalytics,
   CategoryHistoryEvent,
   Circle,
+  CircleHistoryEvent,
   Dashboard,
   Member,
   MonthlyComparison,
@@ -475,6 +477,28 @@ export const MOCK_CATEGORY_HISTORY: CategoryHistoryEvent[] = [
       { field: "color", to: "Teal" },
       { field: "type", to: "expense" },
     ],
+  },
+];
+
+/**
+ * Mock Circle History (CS-4), typed against the derived {@link CircleHistoryEvent}
+ * contract so a shape change to the shared history event view fails typecheck here
+ * (ADR 0003). Newest-first: an ownership transfer over the original create.
+ */
+export const MOCK_CIRCLE_HISTORY: CircleHistoryEvent[] = [
+  {
+    id: testId<CircleHistoryEvent["id"]>("mock-circle-hist-transfer"),
+    action: "ownership transferred",
+    createdAt: Date.UTC(2026, 5, 10, 16, 45),
+    actor: { displayName: "You", image: undefined },
+    changes: [{ field: "owner", from: "Olive Owner", to: "Maya Member" }],
+  },
+  {
+    id: testId<CircleHistoryEvent["id"]>("mock-circle-hist-create"),
+    action: "created",
+    createdAt: Date.UTC(2026, 5, 1, 9, 0),
+    actor: { displayName: "You", image: undefined },
+    changes: [{ field: "name", to: "Trip Circle" }],
   },
 ];
 

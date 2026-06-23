@@ -43,6 +43,10 @@ const FIELD_LABEL: Record<string, string> = {
   color: "Color",
   // Circle Settings fields (CS-2).
   currency: "Currency",
+  // Circle History fields (CS-4).
+  owner: "Owner",
+  member: "Member",
+  email: "Email",
   "setup.purpose": "Circle use",
   "setup.residenceType": "Residence type",
 };
@@ -56,6 +60,15 @@ const ACTION_LABEL: Record<string, string> = {
   restored: "restored",
   settings_changed: "updated settings",
   setup_completed: "completed setup",
+  // Circle History verbs (CS-4).
+  renamed: "renamed",
+  "ownership transferred": "transferred ownership",
+  "member invited": "invited",
+  "member joined": "joined",
+  "member removed": "removed",
+  "member left": "left",
+  "invitation resent": "resent invitation to",
+  "invitation revoked": "revoked invitation for",
 };
 
 /** Renders one frozen value — a typed money value in the viewer locale (ADR 0021), or a

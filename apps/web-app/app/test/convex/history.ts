@@ -2,6 +2,7 @@ import { api } from "@spend-circle/convex";
 import { getFunctionName } from "convex/server";
 import type {
   CategoryHistoryEvent,
+  CircleHistoryEvent,
   PaginationStatus,
   TransactionHistoryEvent,
 } from "~/lib/data.js";
@@ -20,6 +21,9 @@ export interface HistoryState {
    * `historyLoadMore` with the Transaction History double — the two queries never
    * render in one surface, so one status knob serves both. */
   categoryHistory?: CategoryHistoryEvent[];
+  /** `listCircleHistory` page (paginated, CS-4) — the Members surface's Circle
+   * History panel; defaults to empty. Shares the same status/loadMore knobs. */
+  circleHistory?: CircleHistoryEvent[];
 }
 
 export function historyDouble(state: HistoryState): EntityDouble {
@@ -28,6 +32,7 @@ export function historyDouble(state: HistoryState): EntityDouble {
     historyStatus = "Exhausted",
     historyLoadMore = () => {},
     categoryHistory = [],
+    circleHistory = [],
   } = state;
   return {
     paginatedQueries: {
@@ -38,6 +43,11 @@ export function historyDouble(state: HistoryState): EntityDouble {
       }),
       [getFunctionName(api.categories.listCategoryHistory)]: () => ({
         results: categoryHistory,
+        status: historyStatus,
+        loadMore: historyLoadMore,
+      }),
+      [getFunctionName(api.circles.listCircleHistory)]: () => ({
+        results: circleHistory,
         status: historyStatus,
         loadMore: historyLoadMore,
       }),
