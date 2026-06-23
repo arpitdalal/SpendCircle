@@ -4,8 +4,11 @@ import {
   buildRef,
   buildTransactionNotificationLink,
 } from "@spend-circle/domain";
+import { v } from "convex/values";
+import { internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { MutationCtx } from "./_generated/server.js";
+import { internalMutation } from "./_generated/server.js";
 
 /** Closed set of v1 notification types — a typo can't create an unknown type. */
 export const NOTIFICATION_TYPES = [
@@ -24,32 +27,114 @@ export const NOTIFICATION_TYPES = [
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
-interface NotifyUserArgs {
+const notificationTypeValidator = v.union(
+  v.literal("invitation.accepted"),
+  v.literal("invitation.revoked"),
+  v.literal("member.removed"),
+  v.literal("ownership.transferred"),
+  v.literal("circle.archived"),
+  v.literal("circle.restored"),
+  v.literal("transaction.paid_by"),
+  v.literal("transaction.archived"),
+  v.literal("transaction.restored"),
+  v.literal("category.archived"),
+  v.literal("category.restored"),
+);
+
+const deliverOneArgsValidator = {
+  recipientUserId: v.id("users"),
+  actorUserId: v.id("users"),
+  type: notificationTypeValidator,
+  title: v.string(),
+  body: v.optional(v.string()),
+  link: v.optional(v.string()),
+};
+
+type DeliverOneArgs = {
   recipientUserId: Id<"users">;
   actorUserId: Id<"users">;
   type: NotificationType;
   title: string;
   body?: string;
   link?: string;
-}
+};
 
 /**
- * The sole writer of `notifications` (NTF-2). Centralizes row shape, type set,
- * and the actor-skip rule: when recipient === actor, no row is inserted.
+ * Single-recipient delivery seam (NTF-2 / ADR 0027). The sole writer of
+ * `notifications` — actor-skip is enforced at enqueue time; this guard is a
+ * backstop for direct internal calls.
  */
-export async function notifyUser(ctx: MutationCtx, args: NotifyUserArgs) {
+export const deliverOne = internalMutation({
+  args: deliverOneArgsValidator,
+  handler: async (ctx, args) => {
+    if (args.recipientUserId === args.actorUserId) {
+      return;
+    }
+
+    const injectedFailureUserId = process.env.NOTIFY_TEST_INJECT_FAILURE_USER_ID;
+    if (injectedFailureUserId && args.recipientUserId === injectedFailureUserId) {
+      throw new Error("Injected notification delivery failure");
+    }
+
+    await ctx.db.insert("notifications", {
+      userId: args.recipientUserId,
+      type: args.type,
+      title: args.title,
+      body: args.body,
+      link: args.link,
+      read: false,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/** Fan-out coordinator for circle archive/restore — schedules one deliverOne per Member. */
+export const fanOutCircleLifecycle = internalMutation({
+  args: {
+    circleId: v.id("circles"),
+    actorUserId: v.id("users"),
+    actorDisplayName: v.string(),
+    action: v.union(v.literal("archived"), v.literal("restored")),
+  },
+  handler: async (ctx, args) => {
+    const circle = await ctx.db.get(args.circleId);
+    if (!circle) {
+      return;
+    }
+
+    const members = await ctx.db
+      .query("members")
+      .withIndex("by_circle_and_status", (q) =>
+        q.eq("circleId", args.circleId).eq("status", "active"),
+      )
+      .collect();
+
+    const link = buildCircleNotificationLink(circleRef(circle));
+    const archived = args.action === "archived";
+    const type = archived ? "circle.archived" : "circle.restored";
+    const title = archived ? "Circle archived" : "Circle restored";
+    const body = archived
+      ? `${args.actorDisplayName} archived ${circle.name}.`
+      : `${args.actorDisplayName} restored ${circle.name}.`;
+
+    for (const member of members) {
+      await scheduleDeliverOne(ctx, {
+        recipientUserId: member.userId,
+        actorUserId: args.actorUserId,
+        type,
+        title,
+        body,
+        link,
+      });
+    }
+  },
+});
+
+async function scheduleDeliverOne(ctx: MutationCtx, args: DeliverOneArgs) {
   if (args.recipientUserId === args.actorUserId) {
     return;
   }
-  await ctx.db.insert("notifications", {
-    userId: args.recipientUserId,
-    type: args.type,
-    title: args.title,
-    body: args.body,
-    link: args.link,
-    read: false,
-    createdAt: Date.now(),
-  });
+  await ctx.scheduler.runAfter(0, internal.notify.deliverOne, args);
 }
 
 function circleRef(circle: Doc<"circles">) {
@@ -65,7 +150,7 @@ export async function notifyInvitationAccepted(
     circle: Doc<"circles">;
   },
 ) {
-  await notifyUser(ctx, {
+  await scheduleDeliverOne(ctx, {
     recipientUserId: opts.inviterUserId,
     actorUserId: opts.acceptorUserId,
     type: "invitation.accepted",
@@ -83,7 +168,7 @@ export async function notifyInvitationRevoked(
     circleName: string;
   },
 ) {
-  await notifyUser(ctx, {
+  await scheduleDeliverOne(ctx, {
     recipientUserId: opts.inviteeUserId,
     actorUserId: opts.actorUserId,
     type: "invitation.revoked",
@@ -100,7 +185,7 @@ export async function notifyRemovedFromCircle(
     circle: Doc<"circles">;
   },
 ) {
-  await notifyUser(ctx, {
+  await scheduleDeliverOne(ctx, {
     recipientUserId: opts.removedUserId,
     actorUserId: opts.actorUserId,
     type: "member.removed",
@@ -118,7 +203,7 @@ export async function notifyOwnershipTransferred(
     circle: Doc<"circles">;
   },
 ) {
-  await notifyUser(ctx, {
+  await scheduleDeliverOne(ctx, {
     recipientUserId: opts.newOwnerUserId,
     actorUserId: opts.actorUserId,
     type: "ownership.transferred",
@@ -137,31 +222,12 @@ export async function notifyCircleLifecycleChange(
     action: "archived" | "restored";
   },
 ) {
-  const members = await ctx.db
-    .query("members")
-    .withIndex("by_circle_and_status", (q) =>
-      q.eq("circleId", opts.circle._id).eq("status", "active"),
-    )
-    .collect();
-
-  const link = buildCircleNotificationLink(circleRef(opts.circle));
-  const archived = opts.action === "archived";
-  const type = archived ? "circle.archived" : "circle.restored";
-  const title = archived ? "Circle archived" : "Circle restored";
-  const body = archived
-    ? `${opts.actorDisplayName} archived ${opts.circle.name}.`
-    : `${opts.actorDisplayName} restored ${opts.circle.name}.`;
-
-  for (const member of members) {
-    await notifyUser(ctx, {
-      recipientUserId: member.userId,
-      actorUserId: opts.actorUserId,
-      type,
-      title,
-      body,
-      link,
-    });
-  }
+  await ctx.scheduler.runAfter(0, internal.notify.fanOutCircleLifecycle, {
+    circleId: opts.circle._id,
+    actorUserId: opts.actorUserId,
+    actorDisplayName: opts.actorDisplayName,
+    action: opts.action,
+  });
 }
 
 export async function notifyPaidBySet(
@@ -174,7 +240,7 @@ export async function notifyPaidBySet(
     transaction: Doc<"transactions">;
   },
 ) {
-  await notifyUser(ctx, {
+  await scheduleDeliverOne(ctx, {
     recipientUserId: opts.paidByUserId,
     actorUserId: opts.actorUserId,
     type: "transaction.paid_by",
@@ -199,7 +265,7 @@ export async function notifyTransactionLifecycleChange(
   },
 ) {
   const archived = opts.action === "archived";
-  await notifyUser(ctx, {
+  await scheduleDeliverOne(ctx, {
     recipientUserId: opts.recorderUserId,
     actorUserId: opts.actorUserId,
     type: archived ? "transaction.archived" : "transaction.restored",
@@ -226,7 +292,7 @@ export async function notifyCategoryLifecycleChange(
   },
 ) {
   const archived = opts.action === "archived";
-  await notifyUser(ctx, {
+  await scheduleDeliverOne(ctx, {
     recipientUserId: opts.creatorUserId,
     actorUserId: opts.actorUserId,
     type: archived ? "category.archived" : "category.restored",

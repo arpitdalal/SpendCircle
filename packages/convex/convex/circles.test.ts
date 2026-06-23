@@ -2,6 +2,7 @@ import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mutateAndDrain } from "../test/mutateAndDrain.js";
 import { listNotificationsForUser } from "../test/notifications.js";
 import {
   addMember,
@@ -821,7 +822,7 @@ describe("archiveCircle", () => {
     const member = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.circles.archiveCircle, { circleId });
+    await mutateAndDrain(t, () => t.mutation(api.circles.archiveCircle, { circleId }));
 
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(circleId);
