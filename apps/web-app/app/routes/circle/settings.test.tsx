@@ -385,3 +385,61 @@ describe("Circle delete", () => {
     expect(screen.queryByText(/Delete circle/)).not.toBeInTheDocument();
   });
 });
+
+describe("Circle settings — currency", () => {
+  it("lets the owner pick a currency when unlocked", async () => {
+    const user = userEvent.setup();
+    const setCurrency = vi.fn().mockResolvedValue(undefined);
+    const circle = makeCircleView({ ref: "trip-c1", currency: "USD", currencyLocked: false });
+    configureConvex({
+      members: [ownerMember],
+      circleHasTransactions: false,
+      setCurrency,
+    });
+    renderCircleRoutes(
+      circle,
+      <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    await user.selectOptions(screen.getByLabelText("Circle currency"), "EUR");
+
+    expect(setCurrency).toHaveBeenCalledWith({ circleId: circle.id, currency: "EUR" });
+    expect(await screen.findByText(/Circle currency updated/)).toBeInTheDocument();
+  });
+
+  it("shows currency read-only when locked via currencyLocked", () => {
+    const circle = makeCircleView({
+      ref: "trip-c1",
+      currency: "USD",
+      currencyLocked: true,
+    });
+    configureConvex({ members: [ownerMember], circleHasTransactions: false });
+    renderCircleRoutes(
+      circle,
+      <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    expect(screen.getByText("USD · US Dollar")).toBeInTheDocument();
+    expect(screen.getByText(/Locked once the circle has a transaction/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Circle currency")).not.toBeInTheDocument();
+  });
+
+  it("shows currency read-only when the circle has transactions", () => {
+    const circle = makeCircleView({
+      ref: "trip-c1",
+      currency: "CAD",
+      currencyLocked: false,
+    });
+    configureConvex({ members: [ownerMember], circleHasTransactions: true });
+    renderCircleRoutes(
+      circle,
+      <Route path="/circles/:circleRef/settings" element={<CircleSettings />} />,
+      { initialEntries: [`/circles/${circle.ref}/settings`] },
+    );
+
+    expect(screen.getByText("CAD · Canadian Dollar")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Circle currency")).not.toBeInTheDocument();
+  });
+});

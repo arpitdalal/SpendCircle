@@ -581,6 +581,109 @@ describe("renameCircle", () => {
   });
 });
 
+describe("setCurrency", () => {
+  it("lets the owner change currency before any Transaction", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { currency: "USD" }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.setCurrency, { circleId, currency: "EUR" });
+
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(circleId))?.currency).toBe("EUR");
+      const events = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+        .collect();
+      expect(events).toHaveLength(1);
+      expect(events[0]?.action).toBe("settings_changed");
+      expect(events[0]?.changes).toEqual([{ field: "currency", from: "USD", to: "EUR" }]);
+    });
+  });
+
+  it("no-ops when the currency is unchanged", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { currency: "USD" }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await t.mutation(api.circles.setCurrency, { circleId, currency: "USD" });
+
+    await t.run(async (ctx) => {
+      const events = await ctx.db
+        .query("histories")
+        .withIndex("by_entity", (q) => q.eq("entityId", circleId))
+        .collect();
+      expect(events).toHaveLength(0);
+    });
+  });
+
+  it("rejects after the first Transaction with a coded currency.locked error", async () => {
+    const t = convexTest(schema, modules);
+    const fixture = await t.run(async (ctx) => {
+      const seeded = await seedFixture(ctx);
+      await seedTransaction(ctx, seeded);
+      return seeded;
+    });
+    mockCurrentUser.mockResolvedValue(fixture.owner);
+
+    await expect(
+      t.mutation(api.circles.setCurrency, { circleId: fixture.circleId, currency: "EUR" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.currencyLocked),
+    });
+  });
+
+  it("rejects when currencyLocked is false but a Transaction exists (defensive check)", async () => {
+    const t = convexTest(schema, modules);
+    const fixture = await t.run(async (ctx) => {
+      const seeded = await seedFixture(ctx);
+      await seedTransaction(ctx, seeded);
+      await ctx.db.patch(seeded.circleId, { currencyLocked: false });
+      return seeded;
+    });
+    mockCurrentUser.mockResolvedValue(fixture.owner);
+
+    await expect(
+      t.mutation(api.circles.setCurrency, { circleId: fixture.circleId, currency: "EUR" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.currencyLocked),
+    });
+  });
+
+  it("rejects a non-owner member", async () => {
+    const t = convexTest(schema, modules);
+    const { circleId } = await t.run((ctx) => seedCircle(ctx));
+    const member = await t.run((ctx) =>
+      addMember(ctx, circleId, "member@example.com", "Maya Member"),
+    );
+    mockCurrentUser.mockResolvedValue(member.user);
+
+    await expect(
+      t.mutation(api.circles.setCurrency, { circleId, currency: "EUR" }),
+    ).rejects.toThrow(/Only the owner can change the currency/);
+  });
+
+  it("rejects an archived circle", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx, { archived: true }));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.circles.setCurrency, { circleId, currency: "EUR" }),
+    ).rejects.toThrow(/archived/);
+  });
+
+  it("rejects an unsupported currency code", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.circles.setCurrency, { circleId, currency: "XYZ" }),
+    ).rejects.toThrow(/Unsupported currency/);
+  });
+});
+
 describe("setPersonalCircleNameAutoSync", () => {
   it("re-enables auto-sync and re-derives name + mark from the current Display Name", async () => {
     const t = convexTest(schema, modules);

@@ -18,6 +18,7 @@ export interface CirclesState {
   createCircle?: Mock;
   completeCircleSetup?: Mock;
   renameCircle?: Mock;
+  setCurrency?: Mock;
   updateCircleSettings?: Mock;
   setPersonalCircleNameAutoSync?: Mock;
   archiveCircle?: Mock;
@@ -33,6 +34,7 @@ export function circlesDouble(state: CirclesState): EntityDouble {
     createCircle,
     completeCircleSetup,
     renameCircle,
+    setCurrency,
     updateCircleSettings,
     setPersonalCircleNameAutoSync,
     archiveCircle,
@@ -50,6 +52,7 @@ export function circlesDouble(state: CirclesState): EntityDouble {
       [getFunctionName(api.circles.createCircle)]: createCircle,
       [getFunctionName(api.circles.completeCircleSetup)]: completeCircleSetup,
       [getFunctionName(api.circles.renameCircle)]: renameCircle,
+      [getFunctionName(api.circles.setCurrency)]: setCurrency,
       [getFunctionName(api.circles.updateCircleSettings)]: updateCircleSettings,
       [getFunctionName(api.circles.setPersonalCircleNameAutoSync)]: setPersonalCircleNameAutoSync,
       [getFunctionName(api.circles.archiveCircle)]: archiveCircle,

@@ -45,6 +45,11 @@ export function useRenameCircle() {
   return useMutation(api.circles.renameCircle);
 }
 
+/** Changes a Circle's currency before the first Transaction (CS-3). */
+export function useSetCurrency() {
+  return useMutation(api.circles.setCurrency);
+}
+
 /** Enables or disables Personal Circle name auto-sync with Display Name (USR-2). */
 export function useSetPersonalCircleNameAutoSync() {
   return useMutation(api.circles.setPersonalCircleNameAutoSync);

@@ -122,6 +122,10 @@ const mutationErrors = defineMutationErrorCatalog({
     "circle.delete.notEmpty",
     "This circle has transactions — archive it instead of deleting",
   ),
+  currencyLocked: defineMutationError(
+    "currency.locked",
+    "Currency is locked once the circle has a transaction",
+  ),
 });
 
 export const MUTATION_ERRORS = mutationErrors.errors;
