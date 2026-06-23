@@ -1249,3 +1249,152 @@ describe("deleteCircle", () => {
     }
   });
 });
+
+describe("listCircleHistory", () => {
+  async function seedCircleHistoryScenario(t: ReturnType<typeof convexTest>) {
+    const owner = await t.run((ctx) => makeUser(ctx, "owner@example.com", "Olive Owner"));
+    mockCurrentUser.mockResolvedValue(owner);
+    const circleId = await t.mutation(api.circles.createCircle, {
+      name: "Trip",
+      currency: "USD",
+      color: "blue",
+      mark: "T",
+    });
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "maya@example.com", "Maya Member"));
+    const bystander = await t.run((ctx) =>
+      addMember(ctx, circleId, "bystander@example.com", "Bo Bystander"),
+    );
+    await t.run((ctx) => ctx.db.patch(circleId, { setupCompletedAt: Date.now() }));
+    return { owner, maya, bystander, circleId };
+  }
+
+  it("returns the full lifecycle newest-first with actors, labels, and no raw ids", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, maya, bystander, circleId } = await seedCircleHistoryScenario(t);
+
+    mockCurrentUser.mockResolvedValue(owner);
+    await t.mutation(api.circles.renameCircle, { circleId, name: "Summer Trip" });
+    await t.mutation(api.circles.setCurrency, { circleId, currency: "EUR" });
+    await t.mutation(api.members.transferOwnership, { circleId, toMemberId: maya.memberId });
+
+    mockCurrentUser.mockResolvedValue(maya.user);
+    await t.mutation(api.members.removeMember, { circleId, memberId: bystander.memberId });
+    await t.mutation(api.circles.archiveCircle, { circleId });
+    await t.mutation(api.circles.restoreCircle, { circleId });
+
+    // Any current Member may read Circle History — a non-owner before removal would work too.
+    mockCurrentUser.mockResolvedValue(maya.user);
+    const result = await t.query(api.circles.listCircleHistory, {
+      circleId,
+      paginationOpts: { numItems: 20, cursor: null },
+    });
+
+    expect(result.page.map((event) => event.action)).toEqual([
+      "restored",
+      "archived",
+      "member removed",
+      "ownership transferred",
+      "settings_changed",
+      "renamed",
+      "created",
+    ]);
+    expect(result.page.map((event) => event.actor?.displayName)).toEqual([
+      "Maya Member",
+      "Maya Member",
+      "Maya Member",
+      "Olive Owner",
+      "Olive Owner",
+      "Olive Owner",
+      "Olive Owner",
+    ]);
+    const transferred = result.page[3];
+    expect(transferred?.changes).toEqual([
+      { field: "owner", from: "Olive Owner", to: "Maya Member" },
+    ]);
+    const removed = result.page[2];
+    expect(removed?.changes).toEqual([{ field: "member", from: "Bo Bystander" }]);
+    for (const event of result.page) {
+      for (const change of event.changes) {
+        expect(change.from ?? "").not.toMatch(/^[a-z0-9]{20,}/);
+        expect(change.to ?? "").not.toMatch(/^[a-z0-9]{20,}/);
+      }
+    }
+  });
+
+  it("paginates at the source: a bounded first page and a cursor to the next", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await seedCircleHistoryScenario(t);
+    mockCurrentUser.mockResolvedValue(owner);
+
+    for (const name of ["A", "B", "C", "D"]) {
+      await t.mutation(api.circles.renameCircle, { circleId, name });
+    }
+
+    const first = await t.query(api.circles.listCircleHistory, {
+      circleId,
+      paginationOpts: { numItems: 2, cursor: null },
+    });
+    expect(first.page).toHaveLength(2);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.circles.listCircleHistory, {
+      circleId,
+      paginationOpts: { numItems: 2, cursor: first.continueCursor },
+    });
+    expect(second.page).toHaveLength(2);
+    expect(second.page[0]?.id).not.toBe(first.page[0]?.id);
+  });
+
+  it("collapses missing, inaccessible, malformed, and non-member to the same empty page", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await seedCircleHistoryScenario(t);
+    const emptyPage = { page: [], isDone: true, continueCursor: "" };
+    const paginationOpts = { numItems: 10, cursor: null };
+
+    const stranger = await t.run((ctx) => makeUser(ctx, "s@example.com", "Sam Stranger"));
+    mockCurrentUser.mockResolvedValue(stranger);
+    expect(await t.query(api.circles.listCircleHistory, { circleId, paginationOpts })).toEqual(
+      emptyPage,
+    );
+
+    mockCurrentUser.mockResolvedValue(null);
+    expect(await t.query(api.circles.listCircleHistory, { circleId, paginationOpts })).toEqual(
+      emptyPage,
+    );
+
+    mockCurrentUser.mockResolvedValue(owner);
+    expect(
+      await t.query(api.circles.listCircleHistory, {
+        circleId: "nonsense",
+        paginationOpts,
+      }),
+    ).toEqual(emptyPage);
+  });
+
+  it("remains readable for an ARCHIVED circle (history is a read surface)", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, maya, circleId } = await seedCircleHistoryScenario(t);
+    mockCurrentUser.mockResolvedValue(owner);
+    await t.mutation(api.circles.archiveCircle, { circleId });
+
+    mockCurrentUser.mockResolvedValue(maya.user);
+    const result = await t.query(api.circles.listCircleHistory, {
+      circleId,
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(result.page.map((event) => event.action)).toContain("archived");
+    expect(result.page.map((event) => event.action)).toContain("created");
+  });
+
+  it("lets a non-owner member read history", async () => {
+    const t = convexTest(schema, modules);
+    const { maya, circleId } = await seedCircleHistoryScenario(t);
+    mockCurrentUser.mockResolvedValue(maya.user);
+    const result = await t.query(api.circles.listCircleHistory, {
+      circleId,
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(result.page.length).toBeGreaterThan(0);
+    expect(result.page.at(-1)?.action).toBe("created");
+  });
+});

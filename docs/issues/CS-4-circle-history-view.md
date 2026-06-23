@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
+| **Status** | Done |
 | **Labels** | `area:circles`, `backend`, `ui` |
-| **Depends on** | CS-0 (consumes events from CS-2, CS-3, MEM-*) |
+| **Depends on** | CS-0 (Done), CS-2 (Done), MEM membership/ownership events (landed). CS-3 currency event (Todo) — see note below |
 | **PRD stories** | 79, 80 |
 | **ADRs** | 0016, 0018 |
 | **Glossary** | Circle History |
@@ -12,42 +12,80 @@
 ## Intent
 
 The read surface over a Circle's audit (PRD 79): ownership transfers, Members added/removed,
-Circle archived/restored, and Circle Settings changes (name, Color, Currency, Setup answers),
-showing old/new values and actor + affected Member — with **no raw internal IDs** (PRD 80).
-The events themselves are written by F0 (create/rename), CS-2, CS-3, and the MEM-* slices via
-`recordEvent`; this slice surfaces them. Any current Member can view Circle History.
+Circle archived/restored, Circle renamed, and Circle Settings changes (color, Currency, Setup
+answers), showing old/new values and actor + affected Member — with **no raw internal IDs**
+(PRD 80). The events themselves are already written by `circles.ts`, `members.ts`, and
+`invitations.ts` via `recordEvent`; **this slice only surfaces them** (a pure read). Any current
+Member can view Circle History, including for an Archived Circle (history is view-only).
+
+## What already exists (don't rebuild)
+
+The audit and its read primitives are landed and reused as-is:
+
+- **Write side** — `recordEvent` / `circleEntity` in [`history.ts`](../../packages/convex/convex/history.ts).
+  Events recorded against the Circle entity today:
+  - `circles.ts`: `created`, `renamed`, `settings_changed` (color + `setup.*` answers),
+    `setup_completed`, `archived`, `restored`.
+  - `members.ts`: `ownership transferred` (`field: owner`), `member removed` /
+    `member left` (`field: member`, frozen Display Name).
+  - `invitations.ts`: `member invited` / `invitation resent` / `invitation revoked`
+    (`field: email`), `member joined` (`field: member`).
+- **Read primitive** — `paginateEntityHistory` + `newActorCache` / `toHistoryEventView`
+  ([`historyView.ts`](../../packages/convex/convex/historyView.ts)) freeze the actor to a
+  Display Name + image and pass `changes` straight through (already ID-free, ADR 0018/0021).
+- **Shared UI** — `HistoryList` ([`history-list.tsx`](../../apps/web-app/app/components/history-list.tsx))
+  renders any entity's paginated events newest-first with a "Load more" control.
+
+**Implemented mirroring Category History (CAT-2):** `listCircleHistory` in
+[`circles.ts`](../../packages/convex/convex/circles.ts), `useCircleHistory` in
+[`lib/data/history.ts`](../../apps/web-app/app/lib/data/history.ts), Circle History panel on the
+member-accessible [`members.tsx`](../../apps/web-app/app/routes/circle/members.tsx) route, and
+tests in [`circles.test.ts`](../../packages/convex/convex/circles.test.ts) /
+[`members.test.tsx`](../../apps/web-app/app/routes/circle/members.test.tsx).
+
+> **CS-3 note:** Currency is **not** an audited field yet — `updateCircleSettings` only records
+> `color` + `setup.*`. The currency-change event lands with CS-3 (Todo). Don't block CS-4 on it:
+> build the surface against the events that exist; the currency line renders for free once CS-3
+> emits a `currency` field (add the field label per below).
 
 ## Implement
 
-- **Convex** (`circles.ts`): `listCircleHistory` query → `resolveCircleAccess` → `null` if no
-  access → `listEntityHistory(ctx, circleEntity(circleId))`. (Membership/ownership events from
-  MEM-* must record `actorMemberId` + the affected Member's display name in `changes` — note
-  this contract in the MEM slices.)
-- **Web:** Circle History panel (reuse the shared `HistoryList` from CAT-2) on a Circle
-  Settings/History surface, available to all current Members, newest-first.
+- **Convex** (`circles.ts`): `listCircleHistory` paginated query — mirror of `listCategoryHistory`,
+  swapping Category resolution for Circle access via `resolveCircleAccess`.
+- **Web data hook** ([`lib/data/history.ts`](../../apps/web-app/app/lib/data/history.ts)):
+  `useCircleHistory(circleId)` + `CircleHistoryEvent` derived type; `MOCK_CIRCLE_HISTORY` in
+  [`fixtures.ts`](../../apps/web-app/app/lib/fixtures.ts).
+- **Web label maps** ([`history-list.tsx`](../../apps/web-app/app/components/history-list.tsx)):
+  Circle membership/ownership/lifecycle `ACTION_LABEL` / `FIELD_LABEL` entries.
+- **Web surface:** Circle History panel on [`members.tsx`](../../apps/web-app/app/routes/circle/members.tsx)
+  (member-accessible; Settings redirects non-owners).
 
 ## Why this way
 
-- Pure read reusing `listEntityHistory`; all formatting/freezing already done at write time.
-- Membership/ownership events carry the affected Member's **frozen display name** in
-  `changes` (not an id), satisfying PRD 80 — verify the MEM slices follow this when they land.
+- Pure read reusing `paginateEntityHistory`; all formatting/freezing already done at write time,
+  so the query adds only access-gating + view mapping.
+- Membership/ownership events already carry the affected Member's **frozen Display Name** in
+  `changes` (`members.ts` writes `target.displayName`, not an id), so PRD 80 is satisfied by the
+  existing writers — CS-4 inherits it, no new write contract needed.
+- Paginated (not `.collect()`) because a Circle's audit grows unbounded over its life (README §4).
 
 ## How to test
 
-- **Access:** any current Member can read ✓; non-member → `null`; archived Circle still
-  readable by current Members (history is view-only, not a write).
-- **Content:** after a rename, color change, currency change, ownership transfer, member
-  add/remove, archive/restore — each appears with correct action, actor, affected Member by
-  name, and old/new values; **assert no raw `Id` strings** in rendered output.
+- **Access:** any current Member reads the page ✓ (owner and non-owner); non-member → empty
+  exhausted page; archived Circle still readable by current Members.
+- **Content:** drive real mutations then assert each event appears with the correct `action`,
+  `actor.displayName`, affected Member **by name**, and old/new values. **Assert no raw `Id`
+  strings** in any rendered `from`/`to`.
 - **Order:** newest-first.
+- **Pagination:** a bounded first page with `isDone === false` and a usable `continueCursor`.
 
 ## Done when
 
-- Current Members can view a complete, ID-free Circle History reflecting settings, membership,
-  ownership, and lifecycle events, newest-first; tests green; gates pass.
+- Current Members (owner or not) can view a complete, ID-free Circle History reflecting settings,
+  membership, ownership, rename, and lifecycle events, newest-first and paginated, on a member-
+  accessible surface; new action/field labels render human text; tests green; gates pass.
 
 ## Out of scope
 
-Writing the events (done by the slices that perform each action); exporting history
-(explicitly out of scope for v1).
-</content>
+Writing the events (already done by the slices that perform each action); the CS-3 currency event
+itself; exporting history (explicitly out of scope for v1).

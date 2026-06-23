@@ -26,6 +26,7 @@ import type * as members from "../members.js";
 import type * as model from "../model.js";
 import type * as monthActivity from "../monthActivity.js";
 import type * as notifications from "../notifications.js";
+import type * as notify from "../notify.js";
 import type * as search from "../search.js";
 import type * as transactionSearchDocuments from "../transactionSearchDocuments.js";
 import type * as transactions from "../transactions.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   model: typeof model;
   monthActivity: typeof monthActivity;
   notifications: typeof notifications;
+  notify: typeof notify;
   search: typeof search;
   transactionSearchDocuments: typeof transactionSearchDocuments;
   transactions: typeof transactions;

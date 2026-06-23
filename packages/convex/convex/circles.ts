@@ -12,6 +12,7 @@ import {
   starterCategories,
   toCurrencyCode,
 } from "@spend-circle/domain";
+import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { MutationCtx } from "./_generated/server.js";
@@ -20,7 +21,8 @@ import { requireCurrentUser } from "./auth.js";
 import { createCategoryForMember } from "./categories.js";
 import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import type { HistoryChange } from "./history.js";
-import { circleEntity, recordEvent } from "./history.js";
+import { circleEntity, paginateEntityHistory, recordEvent } from "./history.js";
+import { newActorCache, toHistoryEventView } from "./historyView.js";
 import { revokePendingInvitationsForCircle } from "./invitations.js";
 import { getPersonalCircleForOwner, reconcilePersonalCircleFromDisplayName } from "./model.js";
 import { notifyCircleLifecycleChange } from "./notify.js";
@@ -407,6 +409,45 @@ export const archiveCircle = mutation({
     });
 
     return args.circleId;
+  },
+});
+
+/**
+ * One newest-first page of a Circle's **Circle History** (CS-4; PRD stories 79–80)
+ * — ownership transfers, membership changes, lifecycle, rename, and settings
+ * events with the acting Member and frozen old/new values. Any current Member
+ * may view it, for an Archived Circle too (history is a read surface).
+ *
+ * The exact mirror of `listCategoryHistory` (CAT-2), reusing the same
+ * `paginateEntityHistory` read over the `by_entity` index (README §4: history is
+ * unbounded-growth, so it must never `.collect()` the whole audit) and the same
+ * shared event view, so the web's `HistoryList` renders both.
+ *
+ * Anti-enumeration (ADR 0016): a malformed id or an inaccessible Circle return
+ * the same empty, exhausted page — indistinguishable from a Circle with no
+ * history, so nothing leaks.
+ */
+export const listCircleHistory = query({
+  args: {
+    circleId: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const emptyPage = { page: [], isDone: true, continueCursor: "" };
+    const circleId = ctx.db.normalizeId("circles", args.circleId);
+    if (!circleId) {
+      return emptyPage;
+    }
+    const access = await resolveCircleAccess(ctx, circleId);
+    if (!access) {
+      return emptyPage;
+    }
+    const result = await paginateEntityHistory(ctx, circleEntity(circleId), args.paginationOpts);
+    const cache = newActorCache();
+    const page = await Promise.all(
+      result.page.map((event) => toHistoryEventView(ctx, event, cache)),
+    );
+    return { ...result, page };
   },
 });
 

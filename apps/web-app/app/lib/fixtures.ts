@@ -14,6 +14,7 @@ import type {
   CategoryAnalytics,
   CategoryHistoryEvent,
   Circle,
+  CircleHistoryEvent,
   Dashboard,
   Member,
   MonthlyComparison,
@@ -475,6 +476,28 @@ export const MOCK_CATEGORY_HISTORY: CategoryHistoryEvent[] = [
       { field: "color", to: "Teal" },
       { field: "type", to: "expense" },
     ],
+  },
+];
+
+/**
+ * Mock Circle History (CS-4), typed against the derived {@link CircleHistoryEvent}
+ * contract so a shape change to the shared history event view fails typecheck here
+ * (ADR 0003). Newest-first: an ownership transfer over the original create.
+ */
+export const MOCK_CIRCLE_HISTORY: CircleHistoryEvent[] = [
+  {
+    id: "mock-circle-hist-transfer" as CircleHistoryEvent["id"],
+    action: "ownership transferred",
+    createdAt: Date.UTC(2026, 5, 10, 16, 45),
+    actor: { displayName: "You", image: undefined },
+    changes: [{ field: "owner", from: "Olive Owner", to: "Maya Member" }],
+  },
+  {
+    id: "mock-circle-hist-create" as CircleHistoryEvent["id"],
+    action: "created",
+    createdAt: Date.UTC(2026, 5, 1, 9, 0),
+    actor: { displayName: "You", image: undefined },
+    changes: [{ field: "name", to: "Trip Circle" }],
   },
 ];
 

@@ -2,7 +2,11 @@ import { api } from "@spend-circle/convex";
 import { usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MOCKS } from "../env.js";
-import { MOCK_CATEGORY_HISTORY, MOCK_TRANSACTION_HISTORY } from "../fixtures.js";
+import {
+  MOCK_CATEGORY_HISTORY,
+  MOCK_CIRCLE_HISTORY,
+  MOCK_TRANSACTION_HISTORY,
+} from "../fixtures.js";
 import type { Category } from "./categories.js";
 import type { Circle } from "./circles.js";
 import type {
@@ -82,6 +86,37 @@ export function useCategoryHistory(
   );
   if (MOCKS) {
     return { events: MOCK_CATEGORY_HISTORY, status: "Exhausted", loadMore: () => {} };
+  }
+  return {
+    events: paginated.results,
+    status: paginated.status,
+    loadMore: () => paginated.loadMore(HISTORY_PAGE_SIZE),
+  };
+}
+
+/**
+ * One Circle History event (CS-4), derived from `listCircleHistory` so it cannot
+ * drift from the shared `toHistoryEventView` (ADR 0003).
+ */
+export type CircleHistoryEvent = FunctionReturnType<
+  typeof api.circles.listCircleHistory
+>["page"][number];
+
+/**
+ * A Circle's History, newest first, paginated at the source so the panel never
+ * holds an unbounded audit (CS-4; README §4). Any current Member may read it;
+ * the backend still returns an empty page for an inaccessible Circle
+ * (anti-enumeration parity). Mock mode returns fixtures and skips the backend so
+ * E2E/offline render without a live deployment (ADR 0006).
+ */
+export function useCircleHistory(circleId: Circle["id"]): PaginatedHistory<CircleHistoryEvent> {
+  const paginated = usePaginatedQuery(
+    api.circles.listCircleHistory,
+    MOCKS ? "skip" : { circleId },
+    { initialNumItems: HISTORY_PAGE_SIZE },
+  );
+  if (MOCKS) {
+    return { events: MOCK_CIRCLE_HISTORY, status: "Exhausted", loadMore: () => {} };
   }
   return {
     events: paginated.results,

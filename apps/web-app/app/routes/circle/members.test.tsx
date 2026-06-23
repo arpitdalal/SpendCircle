@@ -3,11 +3,18 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import type { Circle, Member, PendingInvitation } from "~/lib/data.js";
+import type {
+  Circle,
+  CircleHistoryEvent,
+  Member,
+  PaginationStatus,
+  PendingInvitation,
+} from "~/lib/data.js";
 import { MOCK_PENDING_INVITATIONS } from "~/lib/fixtures.js";
 import {
   configureConvex,
   makeCircleView,
+  makeHistoryEventView,
   makeMemberView,
   renderInCircle,
   testId,
@@ -41,6 +48,9 @@ function setup(
     revokeInvitation?: Mock;
     leaveCircle?: Mock;
     circle?: Circle;
+    circleHistory?: CircleHistoryEvent[];
+    historyStatus?: PaginationStatus;
+    historyLoadMore?: () => void;
   } = {},
 ) {
   configureConvex({
@@ -52,6 +62,9 @@ function setup(
     resendInvitation: opts.resendInvitation,
     revokeInvitation: opts.revokeInvitation,
     leaveCircle: opts.leaveCircle,
+    circleHistory: opts.circleHistory,
+    historyStatus: opts.historyStatus,
+    historyLoadMore: opts.historyLoadMore,
   });
   return renderInCircle(opts.circle ?? makeCircleView(), <CircleMembers />);
 }
@@ -767,5 +780,74 @@ describe("CircleMembers — leave circle", () => {
     await user.click(screen.getByRole("button", { name: "Confirm Leave" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't leave. Please try again.");
+  });
+});
+
+describe("CircleMembers — history panel (CS-4)", () => {
+  it("renders circle history newest-first with actor, action, and field changes", () => {
+    setup({
+      members: [owner, maya],
+      circleHistory: [
+        makeHistoryEventView({
+          id: testId<CircleHistoryEvent["id"]>("h2"),
+          action: "ownership transferred",
+          actor: { displayName: "Olive Owner", image: undefined },
+          changes: [{ field: "owner", from: "Olive Owner", to: "Maya Member" }],
+        }),
+        makeHistoryEventView({
+          id: testId<CircleHistoryEvent["id"]>("h1"),
+          action: "created",
+          changes: [{ field: "name", to: "Trip" }],
+        }),
+      ],
+    });
+
+    const panel = screen.getByRole("region", { name: "Circle history" });
+    expect(within(panel).getAllByText("Olive Owner").length).toBeGreaterThan(0);
+    expect(within(panel).getByText("transferred ownership")).toBeInTheDocument();
+    expect(within(panel).getByText("Owner:")).toBeInTheDocument();
+    expect(within(panel).getByText("Maya Member")).toBeInTheDocument();
+    expect(within(panel).getByText("created")).toBeInTheDocument();
+    expect(within(panel).getByText("Name:")).toBeInTheDocument();
+  });
+
+  it("shows the empty history state when there are no events", () => {
+    setup({ members: [owner, maya], circleHistory: [] });
+    const panel = screen.getByRole("region", { name: "Circle history" });
+    expect(within(panel).getByText("No history yet.")).toBeInTheDocument();
+  });
+
+  it("keeps a manual Load more control when more pages exist", async () => {
+    const user = userEvent.setup();
+    const historyLoadMore = vi.fn();
+    setup({
+      members: [owner, maya],
+      circleHistory: [makeHistoryEventView({ action: "created" })],
+      historyStatus: "CanLoadMore",
+      historyLoadMore,
+    });
+
+    const panel = screen.getByRole("region", { name: "Circle history" });
+    await user.click(within(panel).getByRole("button", { name: "Load more" }));
+    expect(historyLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows circle history for a non-owner member", () => {
+    setup({
+      members: [
+        owner,
+        makeMemberView({ ...maya, isSelf: true, role: "member", displayName: "Maya Member" }),
+      ],
+      circleHistory: [
+        makeHistoryEventView({
+          id: testId<CircleHistoryEvent["id"]>("h1"),
+          action: "member joined",
+          changes: [{ field: "member", to: "Maya Member" }],
+        }),
+      ],
+    });
+
+    expect(screen.getByRole("region", { name: "Circle history" })).toBeInTheDocument();
+    expect(screen.getByText("joined")).toBeInTheDocument();
   });
 });
