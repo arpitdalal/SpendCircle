@@ -100,7 +100,6 @@ export default function CircleDashboard() {
         comparison={comparison}
         rangeMonths={selection.range}
         onRangeChange={(range) => select({ ...selection, range })}
-        circleRef={circle.ref}
       />
       <CategoryAnalyticsSection
         analytics={categoryAnalytics}
@@ -183,12 +182,10 @@ function MonthlyComparisonSection({
   comparison,
   rangeMonths,
   onRangeChange,
-  circleRef,
 }: {
   comparison: MonthlyComparison | null | undefined;
   rangeMonths: ComparisonRangeMonths;
   onRangeChange: (rangeMonths: ComparisonRangeMonths) => void;
-  circleRef: string;
 }) {
   return (
     <section className="space-y-3" aria-labelledby="dashboard-comparison-heading">
@@ -232,7 +229,7 @@ function MonthlyComparisonSection({
           No comparison available.
         </p>
       ) : (
-        <DashboardComparisonChart comparison={comparison} circleRef={circleRef} />
+        <DashboardComparisonChart comparison={comparison} />
       )}
     </section>
   );

@@ -14,21 +14,30 @@
 Charts should lead to the underlying records (PRD 74): clicking a Dashboard chart navigates to
 the **Monthly Ledger** with a **Ledger Filter** pre-filled to match — turning a summary into a
 list you can act on. This is a **pure UI-wiring slice**: no new backend, no new query. The data
-and both destinations already exist (RPT-1's Ledger, RPT-2's filter codec, RPT-4's month bars,
-RPT-5's category rows).
+and both destinations already exist (RPT-1's Ledger, RPT-2's filter codec, RPT-5's category rows).
 
-Two drilldown sources exist on the Dashboard today
-([`dashboard.tsx`](../../apps/web-app/app/routes/circle/dashboard.tsx)) — wire each to the Ledger:
+One drilldown source remains on the Dashboard today
+([`dashboard.tsx`](../../apps/web-app/app/routes/circle/dashboard.tsx)) — wire it to the Ledger:
 
-1. **A month bar** in the month-over-month comparison chart (RPT-4,
-   [`dashboard-comparison-chart.tsx`](../../apps/web-app/app/routes/circle/dashboard-comparison-chart.tsx))
-   → the **Monthly Ledger for that month**. This is especially valuable because the Dashboard
-   hardcodes the current month (`currentMonth(new Date())`, no month picker) — a month bar is the
-   only path from the Dashboard to a *past* month's Ledger.
-2. **A category row** in the category analytics list (RPT-5,
+1. **A category row** in the category analytics list (RPT-5,
    [`dashboard-category-analytics.tsx`](../../apps/web-app/app/routes/circle/dashboard-category-analytics.tsx))
    → the **current-month Ledger narrowed to that Category** (and the same Income/Expense `type`
    the analytics list is currently showing).
+
+### Month-over-month comparison chart — no drilldown
+
+The month-over-month comparison chart (RPT-4,
+[`dashboard-comparison-chart.tsx`](../../apps/web-app/app/routes/circle/dashboard-comparison-chart.tsx))
+is **read-only**. It renders an `aria-hidden` Recharts SVG plus an `sr-only` data table (one row per
+month) so screen readers get the same numbers as sighted users. There is **no** month-bar
+drilldown — no visible month links, no `onClick` on bars, no pointer cursor.
+
+**Why:** RPT-6 originally shipped a month-bar drilldown (visible `<nav>` links + mouse `onClick` on
+bars). That duplicated the Ledger's **MonthNavigator** for reaching past months, and the two
+affordances drifted (mouse-only bar clicks vs keyboard/SR paths). Removing all comparison-chart
+navigation gives **mouse = keyboard = SR** (none drill down from the chart), eliminates the WCAG
+parity gap, and keeps the chart purely presentational. Users open the Ledger tab and use
+MonthNavigator when they need another month.
 
 ### Not in this slice (already shipped or no such element)
 
@@ -69,8 +78,6 @@ function ledgerDrilldownHref(circle, { month, categoryId, type }) {
 }
 ```
 
-- A **month-bar** drilldown: `{ month: entry.month }` — `type` stays the Ledger default (`all`);
-  both Income and Expense for that month are what the user wants to inspect.
 - A **category-row** drilldown: `{ month: currentMonth(new Date()), categoryId: row.categoryId,
   type: selection.type }` — `selection.type` comes from `readDashboardSelection(searchParams)` and
   matches the analytics query.
@@ -83,25 +90,17 @@ Router `<Link>` and **no `returnTo`** — browser Back returns to the Dashboard 
 `returnTo` is only for object routes that need an explicit close target (the recent-row → detail
 link, already shipped).
 
-### Make each source an accessible affordance (don't bolt onClick onto an aria-hidden SVG)
+### Accessible affordances
 
-Both chart surfaces follow the codebase pattern "the Recharts SVG is `aria-hidden`; the accessible
-reading is a separate DOM element." A drilldown must be reachable by **keyboard and screen reader**,
-not just a mouse click on a decorative SVG (CLAUDE.md / README a11y bar; ADR 0005).
-
-- **Month bars** — the comparison chart renders an `aria-hidden` SVG **and** an `sr-only` `<table>`
-  whose body has one row per month (`entry.month`) with plain-text values (non-interactive). Add a
-  visible `<nav>` of `<Link>`s — one per month to `ledgerDrilldownHref({ month })` — so keyboard
-  users get a focus ring on screen; `sr-only` clips content off-screen, so links must not live
-  inside it. For mouse parity, add an `onClick` to the Recharts `<Bar>` (and `cursor-pointer`) that
-  navigates to the same href — the SVG stays `aria-hidden` (pointer affordance only). All paths must
-  resolve to the **same** href so they can't drift.
+- **Month-over-month comparison** — presentational only. The Recharts surface is `aria-hidden`; the
+  `sr-only` table is a non-interactive data equivalent for screen readers. Do not add links or
+  `onClick` handlers to the chart.
 - **Category rows** — each row is a `<li>`. Wrap the category **name** in a `<Link>` (mirroring how
   `RecentRow` wraps the Transaction title), with an `aria-label` like `View {name} transactions`.
   The bar stays `aria-hidden`. Native `<a>` = keyboard-operable for free.
 
 Keep money formatting, archived badges, and non-additive copy exactly as RPT-4/RPT-5 left them —
-this slice only adds links, it does not restyle the charts.
+this slice only adds links (category rows), it does not restyle the charts.
 
 ## Why this way
 
@@ -112,9 +111,8 @@ this slice only adds links, it does not restyle the charts.
   `canonicalLedgerParams` are the single home for the Ledger param vocabulary; building the href
   through them means a drilldown URL can never diverge from a URL the Ledger itself would produce
   (defaults omitted, ids in the canonical array shape).
-- **Accessible affordance, not an `onClick` on `aria-hidden`.** The chart SVGs are intentionally
-  `aria-hidden` with an accessible twin; the drilldown rides the twin so keyboard/SR users get the
-  same capability as mouse users.
+- **Comparison chart stays presentational.** Drilldown on `aria-hidden` SVG bars created unequal
+  mouse vs keyboard/SR paths; past-month navigation belongs on the Ledger's MonthNavigator.
 - **No backend.** The destinations already serve these filters (RPT-1/RPT-2); adding a query would
   duplicate them.
 
@@ -124,19 +122,13 @@ Web route/render tests in `apps/web-app/app/routes/circle/*.test.ts(x)`, driving
 [`app/test/convex/dashboard.ts`](../../apps/web-app/app/test/convex/dashboard.ts) double — never
 redefine per-file scaffolding (CLAUDE.md). No new Convex tests (no backend change).
 
-- **Month-bar navigation:** the comparison nav's month link points at
-  `/circles/:ref/transactions?month=<that month>` (assert the `href`); the destination Ledger reads
-  that month from the URL. Cover a past month (the Dashboard has no month picker — this is the only
-  path to it).
 - **Category-row navigation:** the category name link points at the current-month Ledger with
   `categories=<id>` and the current analytics `type` (`expense`/`income`); the destination filters to
   that Category.
+- **Comparison chart accessibility:** the chart SVG is `aria-hidden`; the `sr-only` data table has
+  one row per month with formatted values and **no** interactive elements (no links, no buttons).
 - **URL state round-trips:** the drilled-in Ledger reads its filter from the URL; reloading preserves
   it (true by construction — it's in the URL); Back returns to the Dashboard.
-- **Accessibility:** the visible month nav link and the category link are keyboard-focusable with
-  on-screen focus; the chart SVG and the data table remain `aria-hidden` / `sr-only` with no
-  interactive elements inside them. A mouse click on a Recharts month bar resolves to the same href
-  as the nav link.
 - **Empty/loading states unchanged:** with no comparison series / no category rows, there is nothing
   to link and the existing empty/skeleton states still render (no crash building hrefs from an empty
   list).
@@ -145,16 +137,18 @@ redefine per-file scaffolding (CLAUDE.md). No new Convex tests (no backend chang
 
 ## Done when
 
-- A month bar drills into the Monthly Ledger for that month, and a category row drills into the
-  current-month Ledger filtered to that Category and analytics type; filters live in the URL
-  (deep-linkable, reload-safe, Back-friendly); the drilldown affordances are keyboard/screen-reader
-  accessible; tests green; gates pass
+- A category row drills into the current-month Ledger filtered to that Category and analytics type;
+  the comparison chart has no drilldown (presentational SVG + non-interactive `sr-only` table);
+  filters live in the URL (deep-linkable, reload-safe, Back-friendly); category drilldown is
+  keyboard/screen-reader accessible; tests green; gates pass
   (`pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm test:e2e`).
 
 ## Out of scope
 
 - The chart math and surfaces themselves (RPT-3 totals, RPT-4 comparison, RPT-5 category analytics),
   and the Monthly Ledger + Ledger Filter (RPT-1/RPT-2) — all reused, not rebuilt.
+- **Month-bar drilldown from the comparison chart** — removed; use Ledger MonthNavigator for other
+  months ([issue #218](https://github.com/arpitdalal/SpendCircle/issues/218), [PR #221](https://github.com/arpitdalal/SpendCircle/pull/221)).
 - **Recent Transaction → detail** — already shipped in `RecentRow` (`dashboard.tsx`).
 - Member-specific Dashboard reporting.
 - Any new backend query, fixture, or `data.ts` hook — this slice wires existing reads.

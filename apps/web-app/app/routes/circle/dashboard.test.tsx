@@ -438,10 +438,11 @@ describe("Dashboard drilldowns (RPT-6)", () => {
       section.querySelector('[aria-hidden="true"] .recharts-responsive-container'),
     ).toBeTruthy();
     expect(within(section).queryAllByRole("link")).toHaveLength(0);
-    const dataTable = section.querySelector("table.sr-only");
-    expect(dataTable).toBeTruthy();
-    expect(within(dataTable as HTMLElement).queryByRole("link")).toBeNull();
-    expect(within(dataTable as HTMLElement).getByRole("row", { name: /may 2026/i })).toBeTruthy();
+    const dataTable = within(section).getByRole("table", {
+      name: /month-over-month income, expense, and net/i,
+    });
+    expect(within(dataTable).queryByRole("link")).toBeNull();
+    expect(within(dataTable).getByRole("row", { name: /may 2026/i })).toBeTruthy();
   });
 
   it("renders no drilldown links when comparison or category analytics are empty", () => {
