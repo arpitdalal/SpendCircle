@@ -30,6 +30,24 @@ export function useCategoryRefHighlight(args: {
   const [categoryRefConsumed, setCategoryRefConsumed] = useState(false);
   const consumedRef = useRef(false);
   const autoLoadCountRef = useRef(0);
+  const lastCategoryRefRaw = useRef(categoryRefRaw);
+
+  // Each distinct `categoryRef` is its own resolution session. React Router reuses this
+  // route when a second notification arrives, so stale consumed/target state must reset.
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- URL-driven session reset, not a click handler.
+  useEffect(() => {
+    if (categoryRefRaw === lastCategoryRefRaw.current) {
+      return;
+    }
+    lastCategoryRefRaw.current = categoryRefRaw;
+    consumedRef.current = false;
+    autoLoadCountRef.current = 0;
+    setTargetId(undefined);
+    setHighlightedId(null);
+    if (categoryRefRaw != null) {
+      setCategoryRefConsumed(false);
+    }
+  }, [categoryRefRaw]);
 
   // react-doctor-disable-next-line react-doctor/no-event-handler -- deep-link must self-heal on load; no single user event owns it.
   useEffect(() => {

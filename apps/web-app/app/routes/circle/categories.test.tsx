@@ -51,6 +51,24 @@ function GoBack() {
   );
 }
 
+/** Captures `useNavigate` so tests can simulate a second in-app notification link. */
+function makeNavigateCapture() {
+  const holder: { current?: ReturnType<typeof useNavigate> } = {};
+  function Capture() {
+    holder.current = useNavigate();
+    return null;
+  }
+  return {
+    Capture,
+    navigate: (to: string) => {
+      if (holder.current == null) {
+        throw new Error("Router navigate function unavailable.");
+      }
+      return act(() => holder.current?.(to));
+    },
+  };
+}
+
 function setup(
   opts: {
     circle?: Partial<Circle>;
@@ -886,6 +904,44 @@ describe("CircleCategories — categoryRef deep link (#202)", () => {
     await waitFor(() => expect(view.location()).not.toContain("categoryRef"));
     expect(rowFor("Groceries")).not.toHaveClass("animate-highlight-flash");
     expect(screen.queryByText("That link isn't available.")).not.toBeInTheDocument();
+  });
+
+  it("highlights a second categoryRef when already on the route", async () => {
+    const salaryId = testId<Category["id"]>("catsalary");
+    const salaryRef = buildRef("Salary", salaryId);
+    const nav = makeNavigateCapture();
+    const view = renderCircleRoutes(
+      makeCircleView(),
+      <Route path="/" element={<CircleCategories />} />,
+      {
+        initialEntries: [`/?categoryRef=${groceriesRef}`],
+        chrome: (
+          <>
+            <GoBack />
+            <nav.Capture />
+          </>
+        ),
+      },
+    );
+    configureConvex({
+      categories: [
+        makeCategoryView({ id: groceriesId }),
+        makeCategoryView({ id: salaryId, name: "Salary", type: "income" }),
+      ],
+      createCategory,
+      updateCategory,
+      archiveCategory,
+      restoreCategory,
+    });
+
+    await waitFor(() => expect(rowFor("Groceries")).toHaveClass("animate-highlight-flash"));
+    await waitFor(() => expect(view.location()).not.toContain("categoryRef"));
+
+    await nav.navigate(`/?type=all&status=all&categoryRef=${salaryRef}`);
+
+    await waitFor(() => expect(rowFor("Salary")).toHaveClass("animate-highlight-flash"));
+    expect(rowFor("Groceries")).not.toHaveClass("animate-highlight-flash");
+    await waitFor(() => expect(view.location()).not.toContain("categoryRef"));
   });
 });
 
