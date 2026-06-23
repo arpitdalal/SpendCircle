@@ -126,6 +126,11 @@ const mutationErrors = defineMutationErrorCatalog({
     "currency.locked",
     "Currency is locked once the circle has a transaction",
   ),
+  currencyForbidden: defineMutationError(
+    "currency.forbidden",
+    "Only the Circle owner can change the currency",
+  ),
+  currencyUnsupported: defineMutationError("currency.unsupported", "That currency isn't supported"),
 });
 
 export const MUTATION_ERRORS = mutationErrors.errors;
