@@ -165,12 +165,21 @@ export const getCategoryAnalytics = query({
     const monthTxns = await collectMonthActiveTransactions(ctx, args.circleId, month);
     const scopedTxns = args.type ? monthTxns.filter((txn) => txn.type === args.type) : monthTxns;
 
+    // Fan the per-transaction link reads out in one batch instead of awaiting them
+    // serially: the set is already bounded to one month by collectMonthActiveTransactions,
+    // so this is a bounded parallel read (RPT-5).
+    const linkLoads = await Promise.all(
+      scopedTxns.map(async (txn) => ({
+        txn,
+        links: await ctx.db
+          .query("transactionCategories")
+          .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
+          .collect(),
+      })),
+    );
+
     const accum = new Map<Id<"categories">, { taggedTotalMinor: number; txnCount: number }>();
-    for (const txn of scopedTxns) {
-      const links = await ctx.db
-        .query("transactionCategories")
-        .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
-        .collect();
+    for (const { txn, links } of linkLoads) {
       for (const link of links) {
         const existing = accum.get(link.categoryId) ?? { taggedTotalMinor: 0, txnCount: 0 };
         existing.taggedTotalMinor += txn.amountMinorUnits;
