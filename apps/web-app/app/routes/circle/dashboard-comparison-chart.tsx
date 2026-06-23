@@ -1,6 +1,6 @@
 import { formatMoney, getCurrency, money, toCurrencyCode } from "@spend-circle/domain";
 import { useMemo } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import {
   Bar,
   CartesianGrid,
@@ -124,19 +124,6 @@ export function DashboardComparisonChart({
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-
-      <nav aria-label="Open monthly ledger" className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
-        {comparison.series.map((entry) => (
-          <Link
-            key={entry.month}
-            to={monthHref(entry.month)}
-            className="rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            aria-label={`View ${formatMonthLabel(entry.month)} in ledger`}
-          >
-            {formatMonthLabel(entry.month)}
-          </Link>
-        ))}
-      </nav>
 
       <table className="sr-only">
         <caption>Month-over-month Income, Expense, and Net</caption>

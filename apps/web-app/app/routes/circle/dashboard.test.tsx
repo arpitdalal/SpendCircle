@@ -417,18 +417,6 @@ describe("Dashboard drilldowns (RPT-6)", () => {
     return new URL(link.getAttribute("href") ?? "", "http://t");
   }
 
-  it("links each comparison month row to that month's Ledger", () => {
-    configureConvex({ monthlyComparison: THREE_MONTHS, categoryAnalytics: SAMPLE });
-    renderInCircle(makeCircleView(), <CircleDashboard />);
-
-    const section = screen.getByRole("region", { name: /month-over-month/i });
-    const april = within(section).getByRole("link", { name: /view april 2026 in ledger/i });
-    expect(hrefOf(april).pathname).toBe("/circles/trip-c1/transactions");
-    expect(hrefOf(april).searchParams.get("month")).toBe("2026-04");
-    expect(hrefOf(april).searchParams.get("type")).toBe("all");
-    expect(hrefOf(april).searchParams.get("categories")).toBeNull();
-  });
-
   it("links a category name to the current-month Ledger filtered by category and type", () => {
     configureConvex({ categoryAnalytics: SAMPLE });
     renderInCircle(makeCircleView(), <CircleDashboard />);
@@ -441,7 +429,7 @@ describe("Dashboard drilldowns (RPT-6)", () => {
     expect(url.searchParams.get("type")).toBe("expense");
   });
 
-  it("keeps the comparison chart SVG aria-hidden while visible month links are keyboard-focusable", () => {
+  it("keeps the comparison chart aria-hidden with a non-interactive sr-only data table", () => {
     configureConvex({ monthlyComparison: THREE_MONTHS });
     renderInCircle(makeCircleView(), <CircleDashboard />);
 
@@ -449,15 +437,11 @@ describe("Dashboard drilldowns (RPT-6)", () => {
     expect(
       section.querySelector('[aria-hidden="true"] .recharts-responsive-container'),
     ).toBeTruthy();
-    const monthLink = within(section).getByRole("link", { name: /view may 2026 in ledger/i });
-    expect(monthLink).toBeVisible();
-    expect(monthLink.closest(".sr-only")).toBeNull();
-    expect(monthLink).toHaveAttribute("href");
-    monthLink.focus();
-    expect(monthLink).toHaveFocus();
+    expect(within(section).queryAllByRole("link")).toHaveLength(0);
     const dataTable = section.querySelector("table.sr-only");
     expect(dataTable).toBeTruthy();
     expect(within(dataTable as HTMLElement).queryByRole("link")).toBeNull();
+    expect(within(dataTable as HTMLElement).getByRole("row", { name: /may 2026/i })).toBeTruthy();
   });
 
   it("renders no drilldown links when comparison or category analytics are empty", () => {
