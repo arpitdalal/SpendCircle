@@ -31,6 +31,7 @@ import {
 } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useReturnToOrigin, withReturnTo } from "~/lib/return-to-url.js";
+import { useDoubleCheck } from "~/lib/use-double-check.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -454,7 +455,12 @@ function EditCategoryFormFields({
 }
 
 const LIFECYCLE_COPY = {
-  archive: { idle: "Archive", busy: "Archiving…", error: "Couldn't archive the category." },
+  archive: {
+    idle: "Archive",
+    confirm: "Confirm archive",
+    busy: "Archiving…",
+    error: "Couldn't archive the category.",
+  },
   restore: { idle: "Restore", busy: "Restoring…", error: "Couldn't restore the category." },
 };
 
@@ -471,20 +477,70 @@ function LifecycleButton({
   category: Category;
   action: "archive" | "restore";
 }) {
+  if (action === "restore") {
+    return <RestoreLifecycleButton category={category} />;
+  }
+  return <ArchiveLifecycleButton category={category} />;
+}
+
+function ArchiveLifecycleButton({ category }: { category: Category }) {
   const archiveCategory = useArchiveCategory();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const copy = LIFECYCLE_COPY.archive;
+
+  const runArchive = async () => {
+    setPending(true);
+    setError(null);
+    try {
+      await archiveCategory({ categoryId: category.id });
+    } catch (caught) {
+      console.error("archiveCategory failed", caught);
+      setError(mutationErrorMessageForUser(caught, `${copy.error} Please try again.`));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const { armed, getButtonProps } = useDoubleCheck({ onConfirm: runArchive });
+  const idleAriaLabel = `${copy.idle} ${category.name}`;
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant={armed && !pending ? "destructive" : "outline"}
+        size="sm"
+        disabled={pending}
+        aria-label={
+          pending ? idleAriaLabel : armed ? `${copy.confirm} ${category.name}` : idleAriaLabel
+        }
+        {...getButtonProps()}
+      >
+        {pending ? copy.busy : armed ? copy.confirm : copy.idle}
+      </Button>
+      {error ? (
+        <p role="alert" className="w-full text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function RestoreLifecycleButton({ category }: { category: Category }) {
   const restoreCategory = useRestoreCategory();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const copy = LIFECYCLE_COPY[action];
+  const copy = LIFECYCLE_COPY.restore;
 
   const onClick = async () => {
     setPending(true);
     setError(null);
     try {
-      const run = action === "archive" ? archiveCategory : restoreCategory;
-      await run({ categoryId: category.id });
+      await restoreCategory({ categoryId: category.id });
     } catch (caught) {
-      console.error(`${action}Category failed`, caught);
+      console.error("restoreCategory failed", caught);
       setError(mutationErrorMessageForUser(caught, `${copy.error} Please try again.`));
     } finally {
       // Always clear the in-flight flag: on success the row stays mounted in the

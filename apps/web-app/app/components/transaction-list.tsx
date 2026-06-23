@@ -17,6 +17,7 @@ import { viewerLocale } from "~/lib/locale.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useReturnToOrigin, withReturnTo } from "~/lib/return-to-url.js";
 import { useSnackbar } from "~/lib/snackbar.js";
+import { useDoubleCheck } from "~/lib/use-double-check.js";
 import { cn } from "~/lib/utils.js";
 
 export function TransactionList({
@@ -141,7 +142,12 @@ export function TransactionList({
 }
 
 const LIFECYCLE_COPY = {
-  archive: { idle: "Archive", busy: "Archiving…", error: "Couldn't archive the transaction." },
+  archive: {
+    idle: "Archive",
+    confirm: "Confirm archive",
+    busy: "Archiving…",
+    error: "Couldn't archive the transaction.",
+  },
   restore: { idle: "Restore", busy: "Restoring…", error: "Couldn't restore the transaction." },
 };
 
@@ -152,19 +158,61 @@ function LifecycleButton({
   transaction: Transaction;
   action: "archive" | "restore";
 }) {
+  if (action === "restore") {
+    return <RestoreLifecycleButton transaction={transaction} />;
+  }
+  return <ArchiveLifecycleButton transaction={transaction} />;
+}
+
+function ArchiveLifecycleButton({ transaction }: { transaction: Transaction }) {
   const archiveTransaction = useArchiveTransaction();
+  const { show } = useSnackbar();
+  const [pending, setPending] = useState(false);
+  const copy = LIFECYCLE_COPY.archive;
+
+  const runArchive = async () => {
+    setPending(true);
+    try {
+      await archiveTransaction({ transactionId: transaction.id });
+    } catch (error) {
+      console.error("archiveTransaction failed", error);
+      show(mutationErrorMessageForUser(error, `${copy.error} Please try again.`));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const { armed, getButtonProps } = useDoubleCheck({ onConfirm: runArchive });
+  const idleAriaLabel = `${copy.idle} ${transaction.title}`;
+
+  return (
+    <Button
+      type="button"
+      variant={armed && !pending ? "destructive" : "outline"}
+      size="sm"
+      disabled={pending}
+      aria-label={
+        pending ? idleAriaLabel : armed ? `${copy.confirm} ${transaction.title}` : idleAriaLabel
+      }
+      {...getButtonProps()}
+    >
+      {pending ? copy.busy : armed ? copy.confirm : copy.idle}
+    </Button>
+  );
+}
+
+function RestoreLifecycleButton({ transaction }: { transaction: Transaction }) {
   const restoreTransaction = useRestoreTransaction();
   const { show } = useSnackbar();
   const [pending, setPending] = useState(false);
-  const copy = LIFECYCLE_COPY[action];
+  const copy = LIFECYCLE_COPY.restore;
 
   const onClick = async () => {
     setPending(true);
     try {
-      const run = action === "archive" ? archiveTransaction : restoreTransaction;
-      await run({ transactionId: transaction.id });
+      await restoreTransaction({ transactionId: transaction.id });
     } catch (error) {
-      console.error(`${action}Transaction failed`, error);
+      console.error("restoreTransaction failed", error);
       show(mutationErrorMessageForUser(error, `${copy.error} Please try again.`));
     } finally {
       // Always clear the in-flight flag. On success the row stays mounted in a mixed
