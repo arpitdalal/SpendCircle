@@ -6,6 +6,7 @@ import {
 } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mutateAndDrain } from "../test/mutateAndDrain.js";
 import { listNotificationsForUser } from "../test/notifications.js";
 import {
   addMember,
@@ -417,11 +418,13 @@ describe("createTransaction — Paid By", () => {
     const other = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(f.owner);
 
-    const id = await t.mutation(api.transactions.createTransaction, {
-      circleId: f.circleId,
-      ...baseExpense([f.groceriesId]),
-      paidByMemberId: other.memberId,
-    });
+    const id = await mutateAndDrain(t, () =>
+      t.mutation(api.transactions.createTransaction, {
+        circleId: f.circleId,
+        ...baseExpense([f.groceriesId]),
+        paidByMemberId: other.memberId,
+      }),
+    );
     await t.run(async (ctx) => {
       const txn = await ctx.db.get(id);
       expect(txn?.recordedByMemberId).toBe(f.ownerMemberId);
@@ -1448,7 +1451,9 @@ describe("archiveTransaction — permissions (TXN-3)", () => {
       seedTransaction(ctx, f, { recordedByMemberId: member.memberId }),
     );
     mockCurrentUser.mockResolvedValue(f.owner);
-    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    );
     await t.run(async (ctx) => {
       expect((await ctx.db.get(id))?.status).toBe("archived");
 

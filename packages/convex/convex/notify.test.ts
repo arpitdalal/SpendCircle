@@ -6,7 +6,8 @@ import {
   parseNotificationLinkPath,
 } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mutateAndDrain } from "../test/mutateAndDrain.js";
 import { listNotificationsForUser } from "../test/notifications.js";
 import {
   addMember,
@@ -16,11 +17,10 @@ import {
   seedInvitation,
   seedTransaction,
 } from "../test/seed.js";
-import { api } from "./_generated/api.js";
+import { api, internal } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import type { MutationCtx } from "./_generated/server.js";
 import { generateInvitationToken, hashInvitationToken } from "./invitationToken.js";
-import { notifyUser } from "./notify.js";
 import schema from "./schema.js";
 
 const { mockCurrentUser } = vi.hoisted(() => ({ mockCurrentUser: vi.fn() }));
@@ -40,6 +40,11 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 beforeEach(() => {
   mockCurrentUser.mockReset();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 async function completeSetup(ctx: MutationCtx, circleId: Id<"circles">) {
@@ -89,21 +94,21 @@ function isValidIdFromCtx(ctx: MutationCtx) {
     ctx.db.normalizeId("categories", candidate) !== null;
 }
 
-describe("notifyUser", () => {
+describe("deliverOne", () => {
   it("inserts an unread notification for another User", async () => {
     const t = convexTest(schema, modules);
     const { owner } = await t.run((ctx) => seedCircle(ctx));
     const member = await t.run((ctx) => makeUser(ctx, "m@example.com", "Maya Member"));
 
-    await t.run(async (ctx) => {
-      await notifyUser(ctx, {
+    await mutateAndDrain(t, () =>
+      t.mutation(internal.notify.deliverOne, {
         recipientUserId: member._id,
         actorUserId: owner._id,
         type: "member.removed",
         title: "Removed from Circle",
         body: "You were removed from Trip.",
-      });
-    });
+      }),
+    );
 
     const rows = await t.run(async (ctx) => listNotificationsForUser(ctx, member._id));
     expect(rows).toHaveLength(1);
@@ -119,17 +124,123 @@ describe("notifyUser", () => {
     const t = convexTest(schema, modules);
     const { owner } = await t.run((ctx) => seedCircle(ctx));
 
-    await t.run(async (ctx) => {
-      await notifyUser(ctx, {
+    await mutateAndDrain(t, () =>
+      t.mutation(internal.notify.deliverOne, {
         recipientUserId: owner._id,
         actorUserId: owner._id,
         type: "circle.archived",
         title: "Circle archived",
-      });
-    });
+      }),
+    );
 
     const rows = await t.run(async (ctx) => listNotificationsForUser(ctx, owner._id));
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("scheduler decoupling (ADR 0027)", () => {
+  it("commits the business mutation before notifications are delivered", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      await ctx.db.patch(seed.circleId, { setupCompletedAt: Date.now() });
+      return seed;
+    });
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    vi.useFakeTimers();
+    try {
+      await t.mutation(api.circles.archiveCircle, { circleId });
+
+      await t.run(async (ctx) => {
+        const circle = await ctx.db.get(circleId);
+        expect(circle?.status).toBe("archived");
+        expect(await listNotificationsForUser(ctx, maya.user._id)).toHaveLength(0);
+      });
+
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+      await t.run(async (ctx) => {
+        expect(await listNotificationsForUser(ctx, maya.user._id)).toHaveLength(1);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not roll back archiveCircle when one recipient delivery fails", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      await ctx.db.patch(seed.circleId, { setupCompletedAt: Date.now() });
+      return seed;
+    });
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    mockCurrentUser.mockResolvedValue(owner);
+    vi.stubEnv("NOTIFY_TEST_INJECT_FAILURE_USER_ID", maya.user._id);
+
+    await mutateAndDrain(t, () => t.mutation(api.circles.archiveCircle, { circleId }));
+
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(circleId))?.status).toBe("archived");
+      expect(await listNotificationsForUser(ctx, maya.user._id)).toHaveLength(0);
+    });
+  });
+
+  it("isolates fan-out failures so other recipients still receive notifications", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      await ctx.db.patch(seed.circleId, { setupCompletedAt: Date.now() });
+      return seed;
+    });
+    const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
+    const ada = await t.run((ctx) => addMember(ctx, circleId, "ada@example.com", "Ada Lovelace"));
+    vi.stubEnv("NOTIFY_TEST_INJECT_FAILURE_USER_ID", maya.user._id);
+
+    await mutateAndDrain(t, () =>
+      t.mutation(internal.notify.fanOutCircleLifecycle, {
+        circleId,
+        actorUserId: owner._id,
+        actorDisplayName: "Olive Owner",
+        action: "archived",
+      }),
+    );
+
+    await t.run(async (ctx) => {
+      expect(await listNotificationsForUser(ctx, maya.user._id)).toHaveLength(0);
+      const adaRows = await listNotificationsForUser(ctx, ada.user._id);
+      expect(adaRows).toHaveLength(1);
+      expect(adaRows[0]).toMatchObject({
+        type: "circle.archived",
+        title: "Circle archived",
+        body: "Olive Owner archived Trip.",
+      });
+      expect(await listNotificationsForUser(ctx, owner._id)).toHaveLength(0);
+    });
+  });
+
+  it("does not schedule delivery jobs for actor-skip recipients at enqueue time", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, circleId } = await t.run(async (ctx) => {
+      const seed = await seedCircle(ctx);
+      await ctx.db.patch(seed.circleId, { setupCompletedAt: Date.now() });
+      return seed;
+    });
+    mockCurrentUser.mockResolvedValue(owner);
+
+    vi.useFakeTimers();
+    try {
+      await t.mutation(api.circles.archiveCircle, { circleId });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await t.run(async (ctx) => {
+      expect(await listNotificationsForUser(ctx, owner._id)).toHaveLength(0);
+    });
   });
 });
 
@@ -144,7 +255,7 @@ describe("notification creation on events (NTF-2)", () => {
     );
     mockCurrentUser.mockResolvedValue(ada);
 
-    await t.mutation(api.invitations.acceptInvitation, { token });
+    await mutateAndDrain(t, () => t.mutation(api.invitations.acceptInvitation, { token }));
 
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(circleId);
@@ -179,8 +290,10 @@ describe("notification creation on events (NTF-2)", () => {
       seedInvitation(ctx, circleId, owner._id, { email: "ghost@example.com" }),
     );
 
-    await t.mutation(api.invitations.revokeInvitation, { invitationId: knownInviteId });
-    await t.mutation(api.invitations.revokeInvitation, { invitationId: unknownInviteId });
+    await mutateAndDrain(t, async () => {
+      await t.mutation(api.invitations.revokeInvitation, { invitationId: knownInviteId });
+      await t.mutation(api.invitations.revokeInvitation, { invitationId: unknownInviteId });
+    });
 
     await t.run(async (ctx) => {
       const adaRows = await listNotificationsForUser(ctx, ada._id);
@@ -202,7 +315,9 @@ describe("notification creation on events (NTF-2)", () => {
     const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.members.removeMember, { circleId, memberId: maya.memberId });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.members.removeMember, { circleId, memberId: maya.memberId }),
+    );
 
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(circleId);
@@ -224,7 +339,9 @@ describe("notification creation on events (NTF-2)", () => {
     const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.members.transferOwnership, { circleId, toMemberId: maya.memberId });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.members.transferOwnership, { circleId, toMemberId: maya.memberId }),
+    );
 
     await t.run(async (ctx) => {
       const rows = await listNotificationsForUser(ctx, maya.user._id);
@@ -246,7 +363,7 @@ describe("notification creation on events (NTF-2)", () => {
     const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.circles.archiveCircle, { circleId });
+    await mutateAndDrain(t, () => t.mutation(api.circles.archiveCircle, { circleId }));
 
     await t.run(async (ctx) => {
       expect(await listNotificationsForUser(ctx, owner._id)).toHaveLength(0);
@@ -259,7 +376,7 @@ describe("notification creation on events (NTF-2)", () => {
       });
     });
 
-    await t.mutation(api.circles.restoreCircle, { circleId });
+    await mutateAndDrain(t, () => t.mutation(api.circles.restoreCircle, { circleId }));
 
     await t.run(async (ctx) => {
       const mayaRows = await listNotificationsForUser(ctx, maya.user._id);
@@ -279,7 +396,7 @@ describe("notification creation on events (NTF-2)", () => {
     });
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.circles.archiveCircle, { circleId });
+    await mutateAndDrain(t, () => t.mutation(api.circles.archiveCircle, { circleId }));
 
     await t.run(async (ctx) => {
       expect(await listNotificationsForUser(ctx, owner._id)).toHaveLength(0);
@@ -292,11 +409,13 @@ describe("notification creation on events (NTF-2)", () => {
     const maya = await t.run((ctx) => addMember(ctx, f.circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(f.owner);
 
-    const id = await t.mutation(api.transactions.createTransaction, {
-      circleId: f.circleId,
-      ...baseExpense([f.groceriesId]),
-      paidByMemberId: maya.memberId,
-    });
+    const id = await mutateAndDrain(t, () =>
+      t.mutation(api.transactions.createTransaction, {
+        circleId: f.circleId,
+        ...baseExpense([f.groceriesId]),
+        paidByMemberId: maya.memberId,
+      }),
+    );
 
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(f.circleId);
@@ -323,10 +442,12 @@ describe("notification creation on events (NTF-2)", () => {
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
 
-    await t.mutation(api.transactions.createTransaction, {
-      circleId: f.circleId,
-      ...baseExpense([f.groceriesId]),
-    });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.transactions.createTransaction, {
+        circleId: f.circleId,
+        ...baseExpense([f.groceriesId]),
+      }),
+    );
 
     await t.run(async (ctx) => {
       expect(await listNotificationsForUser(ctx, f.owner._id)).toHaveLength(0);
@@ -340,7 +461,9 @@ describe("notification creation on events (NTF-2)", () => {
     const id = await t.run((ctx) => seedTransaction(ctx, f, { recordedByMemberId: maya.memberId }));
     mockCurrentUser.mockResolvedValue(f.owner);
 
-    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    );
 
     await t.run(async (ctx) => {
       const rows = await listNotificationsForUser(ctx, maya.user._id);
@@ -361,7 +484,9 @@ describe("notification creation on events (NTF-2)", () => {
     const id = await t.run((ctx) => seedTransaction(ctx, f, { recordedByMemberId: maya.memberId }));
     mockCurrentUser.mockResolvedValue(maya.user);
 
-    await t.mutation(api.transactions.archiveTransaction, { transactionId: id });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.transactions.archiveTransaction, { transactionId: id }),
+    );
 
     await t.run(async (ctx) => {
       expect(await listNotificationsForUser(ctx, maya.user._id)).toHaveLength(0);
@@ -377,7 +502,9 @@ describe("notification creation on events (NTF-2)", () => {
     );
     mockCurrentUser.mockResolvedValue(f.owner);
 
-    await t.mutation(api.transactions.restoreTransaction, { transactionId: id });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.transactions.restoreTransaction, { transactionId: id }),
+    );
 
     await t.run(async (ctx) => {
       const rows = await listNotificationsForUser(ctx, maya.user._id);
@@ -405,7 +532,7 @@ describe("notification creation on events (NTF-2)", () => {
     );
     mockCurrentUser.mockResolvedValue(f.owner);
 
-    await t.mutation(api.categories.archiveCategory, { categoryId });
+    await mutateAndDrain(t, () => t.mutation(api.categories.archiveCategory, { categoryId }));
 
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(f.circleId);
@@ -431,7 +558,9 @@ describe("notification creation on events (NTF-2)", () => {
     const f = await t.run((ctx) => seedFixture(ctx));
     mockCurrentUser.mockResolvedValue(f.owner);
 
-    await t.mutation(api.categories.archiveCategory, { categoryId: f.groceriesId });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.categories.archiveCategory, { categoryId: f.groceriesId }),
+    );
 
     await t.run(async (ctx) => {
       expect(await listNotificationsForUser(ctx, f.owner._id)).toHaveLength(0);
@@ -458,7 +587,7 @@ describe("notification creation on events (NTF-2)", () => {
     });
     mockCurrentUser.mockResolvedValue(f.owner);
 
-    await t.mutation(api.categories.restoreCategory, { categoryId });
+    await mutateAndDrain(t, () => t.mutation(api.categories.restoreCategory, { categoryId }));
 
     await t.run(async (ctx) => {
       const rows = await listNotificationsForUser(ctx, maya.user._id);

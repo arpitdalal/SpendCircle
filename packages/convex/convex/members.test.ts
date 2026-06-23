@@ -1,6 +1,7 @@
 import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mutateAndDrain } from "../test/mutateAndDrain.js";
 import { listNotificationsForUser } from "../test/notifications.js";
 import { addMember, makeUser, seedCircle } from "../test/seed.js";
 import { api } from "./_generated/api.js";
@@ -115,10 +116,12 @@ describe("transferOwnership — happy path and invariant", () => {
     const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.members.transferOwnership, {
-      circleId,
-      toMemberId: maya.memberId,
-    });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.members.transferOwnership, {
+        circleId,
+        toMemberId: maya.memberId,
+      }),
+    );
 
     await t.run(async (ctx) => {
       const circle = await ctx.db.get(circleId);
@@ -360,7 +363,9 @@ describe("removeMember — permissions", () => {
     const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.members.removeMember, { circleId, memberId: maya.memberId });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.members.removeMember, { circleId, memberId: maya.memberId }),
+    );
 
     await t.run(async (ctx) => {
       const row = await ctx.db.get(maya.memberId);

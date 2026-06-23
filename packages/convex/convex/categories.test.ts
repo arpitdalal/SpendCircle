@@ -2,6 +2,7 @@ import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { ConvexError } from "convex/values";
 import { convexTest, type TestConvex } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mutateAndDrain } from "../test/mutateAndDrain.js";
 import { listNotificationsForUser } from "../test/notifications.js";
 import { api } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -883,8 +884,10 @@ describe("archiveCategory / restoreCategory — moderation", () => {
     const { owner, creator, circleId, categoryId } = await seedCategoryScenario(t);
     mockCurrentUser.mockResolvedValue(owner);
 
-    await t.mutation(api.categories.archiveCategory, { categoryId });
-    await t.mutation(api.categories.restoreCategory, { categoryId });
+    await mutateAndDrain(t, async () => {
+      await t.mutation(api.categories.archiveCategory, { categoryId });
+      await t.mutation(api.categories.restoreCategory, { categoryId });
+    });
 
     await t.run(async (ctx) => {
       const category = await ctx.db.get(categoryId);

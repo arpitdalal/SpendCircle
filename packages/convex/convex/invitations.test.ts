@@ -3,6 +3,7 @@ import { capturedRequests, resetCapturedRequests } from "@spend-circle/mocks";
 import { ConvexError } from "convex/values";
 import { convexTest as createConvexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mutateAndDrain } from "../test/mutateAndDrain.js";
 import { listNotificationsForUser } from "../test/notifications.js";
 import { registerEmailWorkpool } from "../test/registerEmailWorkpool.js";
 import {
@@ -1271,7 +1272,9 @@ describe("revokeInvitation", () => {
       seedInvitation(ctx, circleId, owner._id, { email: ada.email }),
     );
 
-    await t.mutation(api.invitations.revokeInvitation, { invitationId: inviteId });
+    await mutateAndDrain(t, () =>
+      t.mutation(api.invitations.revokeInvitation, { invitationId: inviteId }),
+    );
 
     await t.run(async (ctx) => {
       const invite = await ctx.db.get(inviteId);
@@ -1491,9 +1494,9 @@ describe("acceptInvitation — happy path", () => {
     );
     mockCurrentUser.mockResolvedValue(ada);
 
-    const { circleId: returnedCircleId } = await t.mutation(api.invitations.acceptInvitation, {
-      token,
-    });
+    const { circleId: returnedCircleId } = await mutateAndDrain(t, () =>
+      t.mutation(api.invitations.acceptInvitation, { token }),
+    );
     expect(returnedCircleId).toBe(circleId);
 
     await t.run(async (ctx) => {
