@@ -206,6 +206,14 @@ export async function clickCircleChromeTab(page: Page, tab: CircleChromeTab) {
   await waitForCircleRouteReady(page);
 }
 
+/** Ledger Transactions filter: Active vs Archived status. */
+export async function applyLedgerStatus(page: Page, status: "active" | "archived") {
+  await page.getByRole("button", { name: /Filters/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Filters" });
+  await dialog.getByRole("button", { name: status === "active" ? "Active" : "Archived" }).click();
+  await dialog.getByRole("button", { name: "Apply" }).click();
+}
+
 /**
  * Issue #207: destructive archive is a two-step confirm (arm → confirm within 10s).
  * `scope` is the page or a row locator that contains the archive button.

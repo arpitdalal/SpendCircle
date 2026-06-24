@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
+  applyLedgerStatus,
   archiveWithDoubleCheck,
   clickCircleChromeTab,
   createCategoryViaForm,
@@ -13,13 +14,6 @@ import {
 } from "./fixtures.js";
 
 const E2E_PASSWORD = "e2e-Password-123";
-
-async function applyLedgerStatus(page: Page, status: "active" | "archived") {
-  await page.getByRole("button", { name: /Filters/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Filters" });
-  await dialog.getByRole("button", { name: status === "active" ? "Active" : "Archived" }).click();
-  await dialog.getByRole("button", { name: "Apply" }).click();
-}
 
 async function recordExpenseAsMember(
   memberPage: Page,
