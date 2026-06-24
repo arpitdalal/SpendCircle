@@ -23,9 +23,19 @@ function chainHandlers<E>(...handlers: Array<((event: E) => void) | undefined>) 
  */
 export function useDoubleCheck({
   onConfirm,
+  identity,
   timeoutMs = 10_000,
 }: {
   onConfirm: () => void;
+  /**
+   * Stable identity of the entity this button acts on (e.g. `transaction.id`).
+   * MUST be a primitive that is referentially stable across renders for the same
+   * entity — pass the id string, never a freshly-built object/array, or the
+   * armed state will be cleared on every render. When this changes (the list
+   * reordered and React recycled this instance for a different row), the hook
+   * drops any armed state so a confirm can't fire against the wrong onConfirm.
+   */
+  identity: string;
   timeoutMs?: number;
 }) {
   const [armed, setArmed] = useState(false);
@@ -46,6 +56,12 @@ export function useDoubleCheck({
   }, [clearTimer]);
 
   useEffect(() => () => clearTimer(), [clearTimer]);
+
+  // Self-protection against list reordering / key recycling (#207 follow-up):
+  // if the entity this instance represents changes, abandon any armed state.
+  useEffect(() => {
+    disarm();
+  }, [identity, disarm]);
 
   function getButtonProps({
     onClick,

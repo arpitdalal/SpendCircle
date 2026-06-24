@@ -182,7 +182,10 @@ function ArchiveLifecycleButton({ transaction }: { transaction: Transaction }) {
     }
   };
 
-  const { armed, getButtonProps } = useDoubleCheck({ onConfirm: runArchive });
+  const { armed, getButtonProps } = useDoubleCheck({
+    onConfirm: runArchive,
+    identity: transaction.id,
+  });
   const idleAriaLabel = `${copy.idle} ${transaction.title}`;
 
   return (

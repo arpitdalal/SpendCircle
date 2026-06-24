@@ -552,7 +552,10 @@ function ArchiveLifecycleButton({ category }: { category: Category }) {
     }
   };
 
-  const { armed, getButtonProps } = useDoubleCheck({ onConfirm: runArchive });
+  const { armed, getButtonProps } = useDoubleCheck({
+    onConfirm: runArchive,
+    identity: category.id,
+  });
   const idleAriaLabel = `${copy.idle} ${category.name}`;
 
   return (
