@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useValueChange } from "./use-value-change.js";
 
 function chainHandlers<E>(...handlers: Array<((event: E) => void) | undefined>) {
   return (event: E) => {
@@ -38,7 +39,8 @@ export function useDoubleCheck({
   identity: string;
   timeoutMs?: number;
 }) {
-  const [armed, setArmed] = useState(false);
+  const [armedForIdentity, setArmedForIdentity] = useState<string | null>(null);
+  const armed = armedForIdentity === identity;
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onConfirmRef = useRef(onConfirm);
   onConfirmRef.current = onConfirm;
@@ -52,17 +54,16 @@ export function useDoubleCheck({
 
   const disarm = useCallback(() => {
     clearTimer();
-    setArmed(false);
+    setArmedForIdentity(null);
   }, [clearTimer]);
 
   useEffect(() => () => clearTimer(), [clearTimer]);
 
-  // Self-protection against list reordering / key recycling (#207 follow-up):
-  // if the entity this instance represents changes, abandon any armed state.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: identity is the intentional trigger.
-  useEffect(() => {
-    disarm();
-  }, [identity, disarm]);
+  // Synchronous reset on identity change (ADR 0025) — not a post-paint Effect, so
+  // no committed frame can show armed UI bound to a different entity's onConfirm.
+  useValueChange(identity, () => {
+    setArmedForIdentity(null);
+  });
 
   function getButtonProps({
     onClick,
@@ -76,10 +77,11 @@ export function useDoubleCheck({
     return {
       onClick: chainHandlers<MouseEvent<HTMLButtonElement>>(onClick, () => {
         if (!armed) {
-          setArmed(true);
+          const armedIdentity = identity;
+          setArmedForIdentity(armedIdentity);
           timerRef.current = setTimeout(() => {
             timerRef.current = undefined;
-            setArmed(false);
+            setArmedForIdentity((current) => (current === armedIdentity ? null : current));
           }, timeoutMs);
           return;
         }

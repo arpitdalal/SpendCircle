@@ -145,4 +145,21 @@ describe("useDoubleCheck", () => {
     expect(onConfirmA).not.toHaveBeenCalled();
     expect(onConfirmB).toHaveBeenCalledTimes(1);
   });
+
+  it("does not restore armed state when identity returns to a previously armed entity", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirm} label="A" identity="txn-a" />,
+    );
+    await user.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+
+    rerender(<DoubleCheckButton onConfirm={onConfirm} label="B" identity="txn-b" />);
+    rerender(<DoubleCheckButton onConfirm={onConfirm} label="A" identity="txn-a" />);
+
+    expect(screen.getByRole("button")).toHaveTextContent("Archive");
+    await user.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });
