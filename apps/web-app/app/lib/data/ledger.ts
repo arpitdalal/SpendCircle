@@ -1,6 +1,6 @@
 import { api } from "@spend-circle/convex";
 import type { PlainMonth, TransactionType } from "@spend-circle/domain";
-import { formatMoneyAmount, money } from "@spend-circle/domain";
+import { formatMoneyAmount, money, toCurrencyCode } from "@spend-circle/domain";
 import { useConvex, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 // The stream-pagination variant of usePaginatedQuery. Queries that paginate a
@@ -200,8 +200,8 @@ export function useTransactionSearchOptions(
 
 function mockExportRows(
   filters: TransactionSearchFilters,
-  currency = MOCK_MONTHLY_SUMMARY.currency,
-): ExportTransactionsResult {
+): Extract<ExportTransactionsResult, { ok: true }> {
+  const currency = toCurrencyCode(MOCK_MONTHLY_SUMMARY.currency);
   const rows = mockFilterTransactions(filters).map((transaction) => ({
     date: transaction.date,
     type: transaction.type,

@@ -86,12 +86,10 @@ async function gatherExportTransactions(
     circleId: Doc<"transactions">["circleId"];
     amountMin?: number;
     amountMax?: number;
-    dateFrom?: string;
-    dateTo?: string;
   },
   access: NonNullable<Awaited<ReturnType<typeof resolveCircleAccess>>>,
   filters: ReturnType<typeof normalizeCommonFilters>,
-  window: Extract<ReturnType<typeof resolveSearchWindow>, { ok: true }>,
+  window: { start?: string; endExclusive?: string },
 ) {
   const collectArgs = {
     circleId: args.circleId,
@@ -100,8 +98,8 @@ async function gatherExportTransactions(
     status: filters.status,
     paidByMemberIds: filters.paidByMemberIds.ids,
     recordedByMemberIds: filters.recordedByMemberIds.ids,
-    start: "empty" in window ? undefined : window.start,
-    endExclusive: "empty" in window ? undefined : window.endExclusive,
+    start: window.start,
+    endExclusive: window.endExclusive,
     filters: {
       type: filters.type,
       categoryIds: filters.categoryIds.ids,
@@ -174,7 +172,7 @@ export const exportTransactions = query({
   handler: async (ctx, args) => {
     const access = await resolveCircleAccess(ctx, args.circleId);
     if (!access) {
-      return { ok: false, reason: "inaccessible" };
+      return { ok: false as const, reason: "inaccessible" as const };
     }
 
     const window = resolveSearchWindow(args);
@@ -187,7 +185,7 @@ export const exportTransactions = query({
     }
     if ("empty" in window && window.empty) {
       return {
-        ok: true,
+        ok: true as const,
         rows: [],
         currency: toCurrencyCode(access.circle.currency),
       };
@@ -198,7 +196,7 @@ export const exportTransactions = query({
       args.amountMin > args.amountMax
     ) {
       return {
-        ok: true,
+        ok: true as const,
         rows: [],
         currency: toCurrencyCode(access.circle.currency),
       };
@@ -207,12 +205,15 @@ export const exportTransactions = query({
     const filters = normalizeCommonFilters(ctx, args);
     const currency = toCurrencyCode(access.circle.currency);
     if (filters.hasOnlyUnknownIds) {
-      return { ok: true, rows: [], currency };
+      return { ok: true as const, rows: [], currency };
     }
 
-    const gathered = await gatherExportTransactions(ctx, args, access, filters, window);
+    const gathered = await gatherExportTransactions(ctx, args, access, filters, {
+      start: window.start,
+      endExclusive: window.endExclusive,
+    });
     if ("refused" in gathered && gathered.refused) {
-      return { ok: false, reason: "tooMany", limit: gathered.limit };
+      return { ok: false as const, reason: "tooMany" as const, limit: gathered.limit };
     }
 
     const viewCaches = newViewCaches();
@@ -220,6 +221,6 @@ export const exportTransactions = query({
     const rows = await Promise.all(
       gathered.transactions.map((txn) => toExportRow(ctx, txn, currency, viewCaches, searchCaches)),
     );
-    return { ok: true, rows, currency };
+    return { ok: true as const, rows, currency };
   },
 });
