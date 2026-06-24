@@ -142,8 +142,10 @@ the canonical two-context owner+member interleaving against the real backend. He
 - `archiveWithDoubleCheck(scope, name)` — TXN-3/CAT-2's two-step arm→confirm archive. For a **Category**
   the button is page-level: pass the **page** and the category name, exactly as
   [`e2e/categories.spec.ts:133`](../../e2e/categories.spec.ts) does (`archiveWithDoubleCheck(page, renamed)`).
-- `applyLedgerStatus(page, "active" | "archived")` — Transactions ledger status filter, to assert the
-  blocked Transaction never appears.
+- `applyLedgerStatus(page, "active" | "archived")` — Transactions ledger status filter; waits for
+  `transactions-skeleton` to clear after Apply.
+- `assertLedgerRowStaysAbsent(page, titleText)` — after a blocked write attempt, waits for the ledger
+  query to settle then polls so a late reactive insert can't false-pass a one-shot `toHaveCount(0)`.
 
 **Stamp every email/circle/category/title with `testInfo.project.name`** (QA-1 pattern:
 `const stamp = ${Date.now()}-${testInfo.project.name}`) so the parallel desktop + mobile projects
@@ -199,8 +201,8 @@ The spec's assertions:
   `CatPick · archived`; the selection is **not** silently emptied (the `Remove CatPick` chip is still
   present). Assert via `aForm.getByText(/CatPick · archived/)` and the `Remove CatPick` button.
 - **Blocked** — pressing Add expense with the archived Category selected creates nothing: assert the
-  `role="alert"` persists and that, under `applyLedgerStatus(page, "active")` (B's or A's ledger), no
-  row with the Transaction title appears.
+  `role="alert"` persists and `assertLedgerRowStaysAbsent(page, title)` on B's active ledger (after
+  `applyLedgerStatus`) — not a one-shot `toHaveCount(0)`, which can pass before a late write lands.
 - **Explains** — the `role="alert"` message names the archived Category with the exact copy
   `"CatPick" was archived and can't be added to a expense. Remove it to continue.`
 - **Recoverable** — removing the archived chip clears the alert; selecting **CatSpare** (active) and

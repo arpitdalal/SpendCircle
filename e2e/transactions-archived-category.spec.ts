@@ -1,6 +1,7 @@
 import {
   applyLedgerStatus,
   archiveWithDoubleCheck,
+  assertLedgerRowStaysAbsent,
   clickCircleChromeTab,
   createCategoryViaForm,
   createRegularCircleAndFinishSetup,
@@ -83,7 +84,7 @@ test("category archived mid-creation — keep visible, block, recover", async ({
   );
   await clickCircleChromeTab(page, "Transactions");
   await applyLedgerStatus(page, "active");
-  await expect(page.getByRole("listitem").filter({ hasText: title })).toHaveCount(0);
+  await assertLedgerRowStaysAbsent(page, title);
 
   // A: recover — remove archived chip; blocking alert clears, then pick CatSpare and submit.
   await aForm.getByRole("button", { name: `Remove ${catPick}` }).click();
