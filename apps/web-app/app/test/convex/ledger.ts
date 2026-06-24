@@ -1,5 +1,10 @@
 import { api } from "@spend-circle/convex";
-import { clampSearchPage, clampSearchPageSize } from "@spend-circle/domain";
+import {
+  clampSearchPage,
+  clampSearchPageSize,
+  formatMoneyAmount,
+  money,
+} from "@spend-circle/domain";
 import { getFunctionName } from "convex/server";
 import type {
   MonthlySummary,
@@ -27,6 +32,43 @@ export interface LedgerState {
   searchTransactions?:
     | Transaction[]
     | ((args: Record<string, unknown>) => Transaction[] | undefined);
+  /** {@link api.export.exportTransactions} result; a function resolves per query args. */
+  exportTransactions?:
+    | {
+        ok: true;
+        rows: Array<{
+          date: string;
+          type: "expense" | "income";
+          title: string;
+          note: string;
+          amount: string;
+          currency: string;
+          categories: string;
+          recordedBy: string;
+          paidBy: string;
+          status: "active" | "archived";
+        }>;
+        currency: string;
+      }
+    | { ok: false; reason: "tooMany" | "inaccessible"; limit?: number }
+    | ((args: Record<string, unknown>) =>
+        | {
+            ok: true;
+            rows: Array<{
+              date: string;
+              type: "expense" | "income";
+              title: string;
+              note: string;
+              amount: string;
+              currency: string;
+              categories: string;
+              recordedBy: string;
+              paidBy: string;
+              status: "active" | "archived";
+            }>;
+            currency: string;
+          }
+        | { ok: false; reason: "tooMany" | "inaccessible"; limit?: number });
   /** When true, doubles {@link api.search.searchTransactions} `totalCountCapped`. */
   searchTotalCountCapped?: boolean;
   /** `getLedgerFilterOptions` / `getTransactionSearchOptions` result; `undefined` ≡ loading,
@@ -51,6 +93,7 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
     ledgerFilterTransactions = [],
     ledgerFilterStatus = "Exhausted",
     searchTransactions = [],
+    exportTransactions,
     searchTotalCountCapped = false,
     ledgerFilterOptions,
     transactionSearchOptions,
@@ -81,6 +124,31 @@ export function ledgerDouble(state: LedgerState): EntityDouble {
           pageSize,
           totalCount: rows.length,
           totalCountCapped: searchTotalCountCapped,
+        };
+      },
+      [getFunctionName(api.export.exportTransactions)]: (args) => {
+        if (exportTransactions !== undefined) {
+          return resolveWith(exportTransactions, args);
+        }
+        const rows = resolveWith(searchTransactions, args);
+        if (!rows) {
+          return { ok: false, reason: "inaccessible" };
+        }
+        return {
+          ok: true,
+          rows: rows.map((transaction) => ({
+            date: transaction.date,
+            type: transaction.type,
+            title: transaction.title,
+            note: transaction.note ?? "",
+            amount: formatMoneyAmount(money(transaction.amountMinorUnits, "USD")),
+            currency: "USD",
+            categories: transaction.categories.map((category) => category.name).join(", "),
+            recordedBy: transaction.recordedBy.displayName,
+            paidBy: transaction.paidBy.displayName,
+            status: transaction.status,
+          })),
+          currency: "USD",
         };
       },
     },

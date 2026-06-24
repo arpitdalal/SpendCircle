@@ -1,6 +1,7 @@
 import { api } from "@spend-circle/convex";
 import type { PlainMonth, TransactionType } from "@spend-circle/domain";
-import { useQuery } from "convex/react";
+import { formatMoneyAmount, money, toCurrencyCode } from "@spend-circle/domain";
+import { useConvex, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 // The stream-pagination variant of usePaginatedQuery. Queries that paginate a
 // convex-helpers STREAM (Category Filter, Ledger Filter) have no journal to pin page
@@ -31,6 +32,12 @@ export type TransactionSearchPage = NonNullable<
 >;
 
 export type TransactionSearchResult = TransactionSearchPage & { isLoading: boolean };
+
+export type ExportTransactionsResult = NonNullable<
+  FunctionReturnType<typeof api.export.exportTransactions>
+>;
+
+export type ExportTransactionRow = Extract<ExportTransactionsResult, { ok: true }>["rows"][number];
 
 /**
  * The Monthly Ledger's per-month financial summary, derived from `getMonthlyLedger`
@@ -189,4 +196,34 @@ export function useTransactionSearchOptions(
     MOCKS ? "skip" : { circleId, type },
   );
   return MOCKS ? { categories: MOCK_CATEGORIES, members: MOCK_MEMBERS } : queried;
+}
+
+function mockExportRows(
+  filters: TransactionSearchFilters,
+): Extract<ExportTransactionsResult, { ok: true }> {
+  const currency = toCurrencyCode(MOCK_MONTHLY_SUMMARY.currency);
+  const rows = mockFilterTransactions(filters).map((transaction) => ({
+    date: transaction.date,
+    type: transaction.type,
+    title: transaction.title,
+    note: transaction.note ?? "",
+    amount: formatMoneyAmount(money(transaction.amountMinorUnits, currency)),
+    currency,
+    categories: transaction.categories.map((category) => category.name).join(", "),
+    recordedBy: transaction.recordedBy.displayName,
+    paidBy: transaction.paidBy.displayName,
+    status: transaction.status,
+  }));
+  return { ok: true, rows, currency };
+}
+
+/** One-shot export of the current Transaction Search filters (EXP-1). */
+export function useExportTransactions(circleId: Circle["id"]) {
+  const convex = useConvex();
+  return async (filters: TransactionSearchFilters) => {
+    if (MOCKS) {
+      return mockExportRows(filters);
+    }
+    return await convex.query(api.export.exportTransactions, { circleId, ...filters });
+  };
 }

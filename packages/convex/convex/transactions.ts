@@ -79,6 +79,25 @@ async function memberRef(
   return ref;
 }
 
+/** Member display name for export surfaces — same frozen-on-removal read as {@link toTransactionView}. */
+export async function memberDisplayName(
+  ctx: QueryCtx,
+  memberId: Id<"members">,
+  caches: ViewCaches,
+) {
+  return (await memberRef(ctx, memberId, caches)).displayName;
+}
+
+/** Category name for export surfaces — preserves archived attachments. */
+export async function categoryDisplayName(
+  ctx: QueryCtx,
+  categoryId: Id<"categories">,
+  caches: ViewCaches,
+) {
+  const category = await categoryRef(ctx, categoryId, caches);
+  return category?.name ?? null;
+}
+
 /** Resolves a Category to its display fields, memoized per query. */
 async function categoryRef(
   ctx: QueryCtx,

@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as asyncBatch from "../asyncBatch.js";
 import type * as auth from "../auth.js";
 import type * as categories from "../categories.js";
 import type * as circles from "../circles.js";
@@ -15,6 +16,7 @@ import type * as dashboard from "../dashboard.js";
 import type * as e2e from "../e2e.js";
 import type * as e2eTesting from "../e2eTesting.js";
 import type * as email from "../email.js";
+import type * as export_ from "../export.js";
 import type * as guard from "../guard.js";
 import type * as history from "../history.js";
 import type * as historyView from "../historyView.js";
@@ -39,6 +41,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  asyncBatch: typeof asyncBatch;
   auth: typeof auth;
   categories: typeof categories;
   circles: typeof circles;
@@ -46,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   e2e: typeof e2e;
   e2eTesting: typeof e2eTesting;
   email: typeof email;
+  export: typeof export_;
   guard: typeof guard;
   history: typeof history;
   historyView: typeof historyView;
