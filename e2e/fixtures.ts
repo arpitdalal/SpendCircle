@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Browser, Locator, Page } from "@playwright/test";
+import type { Browser, BrowserContext, Locator, Page, TestInfo } from "@playwright/test";
 import { test as base, expect } from "@playwright/test";
 
 const SM_BREAKPOINT_PX = 640;
@@ -132,6 +132,18 @@ export async function inviteMemberByEmail(page: Page, memberEmail: string): Prom
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Extra browser session for a second User: inherits the active project's device
+ * settings (desktop-chromium vs mobile-chromium viewport/UA) but not the
+ * per-worker `storageState` — pair with `establishE2ESession` on `newPage()`.
+ */
+export function createSecondaryBrowserContext(
+  browser: Browser,
+  testInfo: TestInfo,
+): Promise<BrowserContext> {
+  return browser.newContext(testInfo.project.use);
 }
 
 /** Signs in a second User and accepts an invitation via the E2E-only backend helper. */

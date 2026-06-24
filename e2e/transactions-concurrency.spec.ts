@@ -5,6 +5,7 @@ import {
   clickCircleChromeTab,
   createCategoryViaForm,
   createRegularCircleAndFinishSetup,
+  createSecondaryBrowserContext,
   establishE2ESession,
   expect,
   memberListItems,
@@ -54,7 +55,7 @@ test("owner archives while recorder is mid-edit — live eject, no corruption", 
   const title = `E2E QT ${stamp}`;
   const unsavedTitle = `${title} x`;
 
-  const memberContext = await browser.newContext();
+  const memberContext = await createSecondaryBrowserContext(browser, testInfo);
   const memberPage = await memberContext.newPage();
   await establishE2ESession(memberPage, {
     baseURL: baseURL ?? "http://127.0.0.1:5173",
@@ -110,7 +111,7 @@ test("paid by target removed mid-edit — client blocks save", async ({
   const categoryName = `E2E QP ${stamp}`; // ≤ 40 chars (categoryNameMax)
   const title = `E2E QPB ${stamp}`;
 
-  const memberContext = await browser.newContext();
+  const memberContext = await createSecondaryBrowserContext(browser, testInfo);
   const memberPage = await memberContext.newPage();
   await establishE2ESession(memberPage, {
     baseURL: baseURL ?? "http://127.0.0.1:5173",
