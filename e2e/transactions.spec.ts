@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
+  applyLedgerStatus,
   archiveWithDoubleCheck,
   clickCircleChromeTab,
   createCategoryViaForm,
@@ -20,13 +21,6 @@ async function selectMonth(page: Page, month: string) {
   const input = page.getByLabel("Month", { exact: true });
   await input.fill(month);
   await input.blur();
-}
-
-async function applyLedgerStatus(page: Page, status: "active" | "archived") {
-  await page.getByRole("button", { name: /Filters/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Filters" });
-  await dialog.getByRole("button", { name: status === "active" ? "Active" : "Archived" }).click();
-  await dialog.getByRole("button", { name: "Apply" }).click();
 }
 
 /**
