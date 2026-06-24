@@ -135,7 +135,9 @@ describe("useDoubleCheck", () => {
     const user = userEvent.setup();
     const onConfirmA = vi.fn();
     const onConfirmB = vi.fn();
-    const { rerender } = render(<DoubleCheckButton onConfirm={onConfirmA} identity="a" label="A" />);
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirmA} identity="a" label="A" />,
+    );
     await user.click(screen.getByRole("button", { name: "Archive A" }));
     rerender(<DoubleCheckButton onConfirm={onConfirmB} identity="b" label="B" />);
     await user.click(screen.getByRole("button", { name: "Archive B" }));

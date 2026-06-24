@@ -59,6 +59,7 @@ export function useDoubleCheck({
 
   // Self-protection against list reordering / key recycling (#207 follow-up):
   // if the entity this instance represents changes, abandon any armed state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identity is the intentional trigger.
   useEffect(() => {
     disarm();
   }, [identity, disarm]);
