@@ -415,4 +415,20 @@ describe("CircleSearch", () => {
       ).toBeInTheDocument(),
     );
   });
+
+  it("shows an error when the export query rejects", async () => {
+    const user = userEvent.setup();
+    setup({
+      exportTransactions: () => {
+        throw new Error("network");
+      },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(
+      await screen.findByText("Couldn't export the search results. Please try again."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+  });
 });

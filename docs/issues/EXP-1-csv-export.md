@@ -184,5 +184,3 @@ builders `search.test.ts` uses so filter-parity assertions can't drift. Web test
 
 Importing (out of scope for v1); exporting histories (out of scope for v1); exporting from the
 Monthly Ledger; background/async export jobs; chunked or multi-request export beyond the caps.
-</content>
-</invoke>

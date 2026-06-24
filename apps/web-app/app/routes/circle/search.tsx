@@ -17,6 +17,7 @@ import {
   useTransactionSearch,
   useTransactionSearchOptions,
 } from "~/lib/data.js";
+import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useSnackbar } from "~/lib/snackbar.js";
 import {
   activeFilterCount,
@@ -143,6 +144,10 @@ export default function CircleSearch() {
       }
       const filename = `spend-circle-${circle.ref}-${toPlainDate(new Date())}.csv`;
       downloadCsv(filename, buildTransactionExportCsv(result.rows));
+    } catch (error) {
+      show(
+        mutationErrorMessageForUser(error, "Couldn't export the search results. Please try again."),
+      );
     } finally {
       setExporting(false);
     }
