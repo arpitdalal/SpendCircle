@@ -218,12 +218,38 @@ export async function clickCircleChromeTab(page: Page, tab: CircleChromeTab) {
   await waitForCircleRouteReady(page);
 }
 
+/** Ledger list finished its reactive fetch (filter/month changes show transactions-skeleton). */
+export async function waitForTransactionsLedgerReady(page: Page) {
+  await expect(page.getByTestId("transactions-skeleton")).toHaveCount(0);
+}
+
 /** Ledger Transactions filter: Active vs Archived status. */
 export async function applyLedgerStatus(page: Page, status: "active" | "archived") {
   await page.getByRole("button", { name: /Filters/ }).click();
   const dialog = page.getByRole("dialog", { name: "Filters" });
   await dialog.getByRole("button", { name: status === "active" ? "Active" : "Archived" }).click();
   await dialog.getByRole("button", { name: "Apply" }).click();
+  await waitForTransactionsLedgerReady(page);
+}
+
+/**
+ * After a blocked write attempt, assert a Transaction row never lands on the ledger.
+ * Waits for the list query to settle, then polls so a late reactive insert can't slip through.
+ */
+export async function assertLedgerRowStaysAbsent(
+  page: Page,
+  titleText: string,
+  { stableMs = 2_000, intervalMs = 200 } = {},
+) {
+  const row = page.getByRole("listitem").filter({ hasText: titleText });
+  await waitForTransactionsLedgerReady(page);
+  await expect(row).toHaveCount(0);
+
+  const deadline = Date.now() + stableMs;
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(intervalMs);
+    await expect(row).toHaveCount(0);
+  }
 }
 
 /**
