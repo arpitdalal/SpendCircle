@@ -1,5 +1,7 @@
 import { reactRouter } from "@react-router/dev/vite";
+import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
+import { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const appVersion = process.env.npm_package_version ?? "0.0.0";
@@ -35,5 +37,16 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
-  plugins: [tailwindcss(), reactRouter()],
+  plugins: [
+    tailwindcss(),
+    // React Compiler. Vite 8 ships Rolldown and React Router framework mode does
+    // its own React transform (no @vitejs/plugin-react in the build), so the
+    // compiler runs as a standalone Rolldown-native Babel pass via
+    // @rolldown/plugin-babel. Its DEFAULT_INCLUDE already covers .ts/.tsx (and
+    // excludes node_modules), so no filter is needed — reactCompilerPreset() just
+    // wires babel-plugin-react-compiler. Must run before reactRouter() so the
+    // compiler sees original source. React 19 ⇒ no runtime/target option.
+    babel({ presets: [reactCompilerPreset()] }),
+    reactRouter(),
+  ],
 });

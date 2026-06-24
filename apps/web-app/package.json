@@ -9,7 +9,8 @@
     "build": "react-router build",
     "preview": "vite preview",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "react-compiler:healthcheck": "pnpm dlx react-compiler-healthcheck --src \"./app/**/*.{ts,tsx}\""
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@react-router/dev": "^7.16.0",
+    "@rolldown/plugin-babel": "^0.2.3",
     "@spend-circle/mocks": "workspace:*",
     "@tailwindcss/vite": "^4.3.0",
     "@testing-library/jest-dom": "^6.9.1",
@@ -43,6 +45,7 @@
     "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
+    "babel-plugin-react-compiler": "^1.0.0",
     "cross-env": "^10.1.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.0",
