@@ -1,5 +1,5 @@
-import { searchResultTotalPages } from "@spend-circle/domain";
-import { SlidersHorizontal } from "lucide-react";
+import { searchResultTotalPages, toPlainDate } from "@spend-circle/domain";
+import { Download, SlidersHorizontal } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { TransactionList } from "~/components/transaction-list.js";
@@ -10,11 +10,14 @@ import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-c
 import { Pagination } from "~/components/ui/pagination.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import { useFilterPanelDraft } from "~/components/ui/use-filter-panel-draft.js";
+import { buildTransactionExportCsv, downloadCsv } from "~/lib/csv.js";
 import {
   TRANSACTIONS_PAGE_SIZE,
+  useExportTransactions,
   useTransactionSearch,
   useTransactionSearchOptions,
 } from "~/lib/data.js";
+import { useSnackbar } from "~/lib/snackbar.js";
 import {
   activeFilterCount,
   canonicalSearchParams,
@@ -44,6 +47,9 @@ export default function CircleSearch() {
     pageSize: TRANSACTIONS_PAGE_SIZE,
   });
   const filterCount = activeFilterCount(filters);
+  const exportTransactions = useExportTransactions(circle.id);
+  const { show } = useSnackbar();
+  const [exporting, setExporting] = useState(false);
 
   // Hold the last LOADED pagination shape so the control stays mounted while the next
   // page is in flight (useQuery returns undefined on arg change) — unmounting it would
@@ -121,6 +127,27 @@ export default function CircleSearch() {
     setPanelOpen(false);
   };
 
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const result = await exportTransactions(toSearchQuery(filters));
+      if (!result.ok) {
+        if (result.reason === "tooMany") {
+          show(
+            `Too many transactions to export (limit ${result.limit?.toLocaleString() ?? "the cap"}). Narrow your search and try again.`,
+          );
+        } else {
+          show("Export isn't available.");
+        }
+        return;
+      }
+      const filename = `spend-circle-${circle.ref}-${toPlainDate(new Date())}.csv`;
+      downloadCsv(filename, buildTransactionExportCsv(result.rows));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const paginatedList = {
     transactions: results.transactions,
     status: results.isLoading ? ("LoadingFirstPage" as const) : ("Exhausted" as const),
@@ -146,6 +173,15 @@ export default function CircleSearch() {
         <Button type="button" variant="outline" onClick={openPanel}>
           <SlidersHorizontal className="size-4" />
           Filters{filterCount > 0 ? ` (${filterCount})` : ""}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={exporting}
+          onClick={() => void exportCsv()}
+        >
+          <Download className="size-4" />
+          {exporting ? "Exporting…" : "Export"}
         </Button>
       </div>
 

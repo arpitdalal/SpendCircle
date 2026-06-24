@@ -28,7 +28,7 @@ import { newViewCaches, toTransactionView } from "./transactions.js";
 const filterType = v.union(v.literal("all"), v.literal("expense"), v.literal("income"));
 const lifecycleFilter = v.union(v.literal("active"), v.literal("archived"), v.literal("all"));
 
-const commonFilterArgs = {
+export const commonFilterArgs = {
   circleId: v.id("circles"),
   query: v.optional(v.string()),
   type: filterType,
@@ -42,7 +42,7 @@ interface SearchCaches {
   linksByTransaction: Map<Id<"transactions">, Doc<"transactionCategories">[]>;
 }
 
-function newSearchCaches() {
+export function newSearchCaches() {
   return { linksByTransaction: new Map() } satisfies SearchCaches;
 }
 
@@ -50,7 +50,7 @@ function emptyPage() {
   return { page: [], isDone: true, continueCursor: "" };
 }
 
-function validAmountBoundary(value: number | undefined) {
+export function validAmountBoundary(value: number | undefined) {
   return (
     value === undefined || (Number.isInteger(value) && value >= 0 && value <= MAX_AMOUNT_MINOR)
   );
@@ -90,7 +90,7 @@ function normalizeMemberIds(ctx: QueryCtx, values: string[] | undefined) {
   return { ids, hasOnlyUnknown: sawValue && ids.size === 0 };
 }
 
-function resolveSearchWindow(args: { dateFrom?: string; dateTo?: string }) {
+export function resolveSearchWindow(args: { dateFrom?: string; dateTo?: string }) {
   if (args.dateFrom !== undefined && !isValidPlainDate(args.dateFrom)) {
     return { ok: false };
   }
@@ -116,7 +116,7 @@ function nextPlainDate(date: string) {
   return `${year}-${month}-${day}`;
 }
 
-async function categoryLinksForTransaction(
+export async function categoryLinksForTransaction(
   ctx: QueryCtx,
   transactionId: Id<"transactions">,
   caches: SearchCaches,
@@ -133,7 +133,7 @@ async function categoryLinksForTransaction(
   return links;
 }
 
-async function matchesFilters(
+export async function matchesFilters(
   ctx: QueryCtx,
   txn: Doc<"transactions">,
   filters: {
@@ -196,7 +196,7 @@ function applyDateRange<
   return scoped;
 }
 
-function streamByWindow(
+export function streamByWindow(
   ctx: QueryCtx,
   args: {
     circleId: Id<"circles">;
@@ -328,7 +328,7 @@ function onlySelectedId<T>(ids: Set<T>) {
   return ids.values().next().value;
 }
 
-function buildIndexedSearchSource(
+export function buildIndexedSearchSource(
   ctx: QueryCtx,
   args: Omit<Parameters<typeof collectTransactionViews>[1], "paginationOpts">,
 ) {
@@ -510,7 +510,7 @@ async function searchTransactionsOffsetPage(
   };
 }
 
-function normalizeCommonFilters(
+export function normalizeCommonFilters(
   ctx: QueryCtx,
   args: {
     type: "all" | "expense" | "income";

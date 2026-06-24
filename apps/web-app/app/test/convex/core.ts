@@ -69,6 +69,7 @@ export const convexReactMock = {
   useQuery: vi.fn(),
   useMutation: vi.fn(),
   usePaginatedQuery: vi.fn(),
+  useConvex: vi.fn(),
   // Imported (not executed) by the Circle layout's resolver that some routes pull
   // in — present so the named import resolves; never relied upon here.
   useConvexAuth: vi.fn(() => ({ isAuthenticated: true, isLoading: false })),
@@ -97,6 +98,14 @@ export const convexHelpersReactMock = {
 export function configureConvex(state: ConvexState = {}) {
   const merged = mergeEntityDoubles(state);
   const noop = vi.fn();
+  const convexQuery = vi.fn((fn: FunctionReference<"query">, args: Record<string, unknown>) => {
+    const name = getFunctionName(fn);
+    const handler = merged.queries[name];
+    if (handler) return handler(args);
+    return undefined;
+  });
+
+  convexReactMock.useConvex.mockReturnValue({ query: convexQuery });
 
   convexReactMock.useQuery.mockImplementation(
     (fn: FunctionReference<"query">, args: Record<string, unknown> | "skip") => {

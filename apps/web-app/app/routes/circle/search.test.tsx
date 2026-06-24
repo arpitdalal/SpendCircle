@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as csv from "~/lib/csv.js";
 import type { Category, Circle, Member, TransactionFilterOptions } from "~/lib/data.js";
 import {
   assertFilterPanelDiscardsDraftOnClose,
@@ -93,6 +94,7 @@ function makeSearchOptions(): TransactionFilterOptions {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("CircleSearch", () => {
@@ -377,5 +379,36 @@ describe("CircleSearch", () => {
     await waitFor(() =>
       expect(location()).toBe(`/circles/${REF}/search?type=all&status=all&q=rent`),
     );
+  });
+
+  it("exports the current applied search filters as CSV", async () => {
+    const downloadSpy = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+    const user = userEvent.setup();
+    setup({
+      initialEntries: [`/circles/${REF}/search?type=all&status=active&q=rent`],
+      searchTransactions: [makeTransactionView({ title: "Rent", amountMinorUnits: 120_000 })],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    await waitFor(() => expect(downloadSpy).toHaveBeenCalledOnce());
+    const [filename, content] = downloadSpy.mock.calls[0] ?? [];
+    expect(filename).toMatch(/^spend-circle-trip-c1-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(content).toContain("Rent");
+    expect(content).toContain("1200.00");
+    expect(content).not.toContain("mock-");
+  });
+
+  it("shows guidance when export refuses for too many rows", async () => {
+    const user = userEvent.setup();
+    setup({
+      exportTransactions: { ok: false, reason: "tooMany", limit: 5000 },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(
+      await screen.findByText(/Too many transactions to export \(limit 5,000\)/),
+    ).toBeInTheDocument();
   });
 });

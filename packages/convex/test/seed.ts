@@ -255,6 +255,46 @@ export async function seedTransaction(
   return transactionId;
 }
 
+/** Bulk-inserts Transactions for cap/scale tests. Skips search sync by default (stream path). */
+export async function seedTransactionsBulk(
+  ctx: MutationCtx,
+  f: Fixture,
+  count: number,
+  opts: { titlePrefix?: string; syncSearch?: boolean } = {},
+) {
+  const now = Date.now();
+  const titlePrefix = opts.titlePrefix ?? "bulk";
+  const syncSearch = opts.syncSearch ?? false;
+  for (let index = 0; index < count; index += 1) {
+    const day = ((index % 28) + 1).toString().padStart(2, "0");
+    const date = `2026-06-${day}`;
+    const transactionId = await ctx.db.insert("transactions", {
+      circleId: f.circleId,
+      type: "expense",
+      title: `${titlePrefix} ${index}`,
+      amountMinorUnits: 1250,
+      date,
+      month: date.slice(0, 7),
+      recordedByMemberId: f.ownerMemberId,
+      paidByMemberId: f.ownerMemberId,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("transactionCategories", {
+      circleId: f.circleId,
+      transactionId,
+      categoryId: f.groceriesId,
+    });
+    if (syncSearch) {
+      const txn = await ctx.db.get(transactionId);
+      if (txn) {
+        await syncTransactionSearchDocument(ctx, txn, { categoryIds: [f.groceriesId] });
+      }
+    }
+  }
+}
+
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Inserts an invitation email send event for rate-limit tests (ADR 0026). */
