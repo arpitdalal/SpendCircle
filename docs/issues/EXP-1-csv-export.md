@@ -160,7 +160,9 @@ builders `search.test.ts` uses so filter-parity assertions can't drift. Web test
 - **Cap (text path):** a text query matching more than the `1024` full-text ceiling refuses
   (`!isDone`); ≤ ceiling exports fully.
 - **CSV safety:** titles/notes/category names containing commas, quotes, and newlines escape
-  correctly (round-trip parse test on the `csv.ts` helper).
+  correctly (round-trip parse test on the `csv.ts` helper). Member-controlled fields that start with
+  spreadsheet formula starters (`=`, `+`, `-`, `@`, including after leading whitespace) are
+  neutralized in `escapeCsvField` before RFC-4180 escaping so Excel/Sheets open them as literal text.
 - **Access:** non-member → refusal/empty (no leak); archived Circle exportable (view-only).
 - **Empty:** a Circle with no matching Transactions exports headers only.
 - **Stale ids:** unknown-only category/member id filters → empty result (mirrors `hasOnlyUnknownIds`).
@@ -175,7 +177,7 @@ builders `search.test.ts` uses so filter-parity assertions can't drift. Web test
 - Backend: `api.export.exportTransactions` in `packages/convex/convex/export.ts` (`EXPORT_LIMIT = 5000`;
   reuses exported predicate helpers from `search.ts`).
 - Web: Export button on Transaction Search (`search.tsx`), `useExportTransactions` in `ledger.ts`,
-  RFC-4180 CSV helpers in `apps/web-app/app/lib/csv.ts`.
+  RFC-4180 + formula-injection-safe CSV helpers in `apps/web-app/app/lib/csv.ts`.
 - Tests: `export.test.ts`, `csv.test.ts`, Search route export coverage in `search.test.tsx`.
 
 ## Out of scope

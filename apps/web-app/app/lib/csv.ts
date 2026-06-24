@@ -1,9 +1,22 @@
-/** RFC-4180 field escaping for CSV export. */
-export function escapeCsvField(value: string) {
-  if (/[,"\r\n]/.test(value)) {
-    return `"${value.replaceAll('"', '""')}"`;
+/**
+ * Spreadsheet formula injection guard (OWASP CSV injection).
+ * Excel/Sheets treat leading `=`, `+`, `-`, `@` (even after whitespace) as formulas.
+ * A leading apostrophe forces literal text without changing the displayed value.
+ */
+function neutralizeSpreadsheetFormula(value: string) {
+  if (/^[\s]*[=+\-@]/.test(value)) {
+    return `'${value}`;
   }
   return value;
+}
+
+/** RFC-4180 field escaping for CSV export, with spreadsheet-formula neutralization. */
+export function escapeCsvField(value: string) {
+  const safe = neutralizeSpreadsheetFormula(value);
+  if (/[,"\r\n]/.test(safe)) {
+    return `"${safe.replaceAll('"', '""')}"`;
+  }
+  return safe;
 }
 
 /** Builds a CSV string with a header row and `\r\n` line endings. */
