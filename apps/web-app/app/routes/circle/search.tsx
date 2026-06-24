@@ -134,7 +134,7 @@ export default function CircleSearch() {
       if (!result.ok) {
         if (result.reason === "tooMany") {
           show(
-            `Too many transactions to export (limit ${result.limit?.toLocaleString() ?? "the cap"}). Narrow your search and try again.`,
+            `Too many transactions to export (limit ${result.limit ?? "the cap"}). Narrow your search and try again.`,
           );
         } else {
           show("Export isn't available.");

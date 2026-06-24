@@ -98,14 +98,16 @@ export const convexHelpersReactMock = {
 export function configureConvex(state: ConvexState = {}) {
   const merged = mergeEntityDoubles(state);
   const noop = vi.fn();
-  const convexQuery = vi.fn((fn: FunctionReference<"query">, args: Record<string, unknown>) => {
-    const name = getFunctionName(fn);
-    const handler = merged.queries[name];
-    if (handler) return handler(args);
-    return undefined;
-  });
+  const convexQuery = vi.fn(
+    async (fn: FunctionReference<"query">, args: Record<string, unknown>) => {
+      const name = getFunctionName(fn);
+      const handler = merged.queries[name];
+      if (handler) return handler(args);
+      return undefined;
+    },
+  );
 
-  convexReactMock.useConvex.mockReturnValue({ query: convexQuery });
+  convexReactMock.useConvex.mockImplementation(() => ({ query: convexQuery }));
 
   convexReactMock.useQuery.mockImplementation(
     (fn: FunctionReference<"query">, args: Record<string, unknown> | "skip") => {

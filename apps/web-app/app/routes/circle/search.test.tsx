@@ -52,6 +52,7 @@ function setup(
   opts: {
     circle?: Partial<Circle>;
     searchTransactions?: ConvexState["searchTransactions"];
+    exportTransactions?: ConvexState["exportTransactions"];
     options?:
       | TransactionFilterOptions
       | null
@@ -62,6 +63,7 @@ function setup(
   const circle = makeCircleView(opts.circle);
   configureConvex({
     searchTransactions: opts.searchTransactions,
+    exportTransactions: opts.exportTransactions,
     transactionSearchOptions: opts.options ?? makeSearchOptions(),
   });
   const initialEntries = opts.initialEntries ?? [`/circles/${REF}/search`];
@@ -407,8 +409,10 @@ describe("CircleSearch", () => {
 
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    expect(
-      await screen.findByText(/Too many transactions to export \(limit 5,000\)/),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Too many transactions to export \(limit 5000\)/),
+      ).toBeInTheDocument(),
+    );
   });
 });
