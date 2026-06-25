@@ -237,6 +237,74 @@ describe("CircleMembers — invite form", () => {
       MUTATION_ERRORS.inviteAlreadyPending.message,
     );
   });
+
+  it("shows remaining seats from active members plus pending invitations", () => {
+    const ownerSelf = makeMemberView({
+      displayName: "Olive Owner",
+      role: "owner",
+      isSelf: true,
+    });
+    const mockPendingInvite = MOCK_PENDING_INVITATIONS[0];
+    if (!mockPendingInvite) {
+      throw new Error("MOCK_PENDING_INVITATIONS must include at least one row");
+    }
+    setup({
+      members: [ownerSelf, maya],
+      pendingInvitations: [mockPendingInvite],
+    });
+
+    expect(screen.getByText("253 of 256 seats remaining")).toBeInTheDocument();
+  });
+
+  it("disables invite submit and shows at-capacity copy when no seats remain", () => {
+    const mockPendingInvite = MOCK_PENDING_INVITATIONS[0];
+    if (!mockPendingInvite) {
+      throw new Error("MOCK_PENDING_INVITATIONS must include at least one row");
+    }
+    const members = Array.from({ length: 255 }, (_, index) =>
+      makeMemberView({
+        id: testId<Member["id"]>(`mem-capacity-${index}`),
+        displayName: `Member ${index}`,
+        role: index === 0 ? "owner" : "member",
+        isSelf: index === 0,
+      }),
+    );
+    setup({
+      members,
+      pendingInvitations: [mockPendingInvite],
+    });
+
+    expect(
+      screen.getByText(
+        /this circle is full\. revoke a pending invitation or remove a member to free a seat\./i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("0 of 256 seats remaining")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite member" })).toBeDisabled();
+  });
+
+  it("does not disable invite submit for at-capacity while seat counts are loading", async () => {
+    const ownerSelf = makeMemberView({
+      displayName: "Olive Owner",
+      role: "owner",
+      isSelf: true,
+    });
+    setup({
+      members: [ownerSelf],
+      pendingInvitations: undefined,
+    });
+
+    expect(
+      screen.queryByText(
+        /this circle is full\. revoke a pending invitation or remove a member to free a seat\./i,
+      ),
+    ).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Email address"), "ada@example.com");
+
+    expect(screen.getByRole("button", { name: "Invite member" })).toBeEnabled();
+  });
 });
 
 function pickTransferTarget(user: ReturnType<typeof userEvent.setup>, targetName: string) {

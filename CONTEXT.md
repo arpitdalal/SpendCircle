@@ -20,6 +20,10 @@ _Avoid_: Group Color
 The generated visual mark for a **Circle**, based on its initials and **Circle Color**. V1 does not support uploaded Circle images.
 _Avoid_: Circle Avatar Upload
 
+**Circle Capacity**:
+The maximum occupied seats in a **Circle**, counting current **Members** plus unexpired pending **Invitations**. A Circle can have at most 256 occupied seats; accepted Invitations become Member seats, while revoked or expired Invitations release their reserved seat.
+_Avoid_: Member Limit, Invite Limit
+
 **Personal Circle**:
 The always-solo **Circle** automatically created for a Google-authenticated **User**. It has exactly one **Member**, can be renamed manually, and cannot invite Members, be archived, deleted, left by its owning User, or transferred to another Owner. Its default name is derived from the User's **Display Name** (`{firstName}'s Circle`, or **Personal Circle** when no usable first token exists) and auto-tracks that Display Name until the owner manually renames it or turns off **Match my display name** in Circle Settings; the owner can turn auto-sync back on there, which immediately re-derives the name and Mark from the current Display Name. After auto-sync is off, identity-driven Display Name edits no longer change the Circle name. Its **Mark** always derives from the Circle's current name via `initials()` — including after manual renames and identity-driven reconciles — and is never user-chosen. Identity-driven name updates (Onboarding, App Settings, or re-enabling auto-sync) do not record **Circle History**; manual renames do.
 _Avoid_: Personal Household, Private Circle, Default Group
@@ -37,7 +41,7 @@ The Owner-controlled configuration for a **Circle**, including Circle name, Curr
 _Avoid_: Group Settings
 
 **Circle History**:
-The immutable change history for a **Circle**, including ownership transfers, Members added or removed, Circle archived or restored, and Circle Settings changed. Current Members can view Circle History as a Circle-level audit distinct from the **Member List**; it shows old and new values for Circle name, Circle Color, Currency, and Circle Setup answers, transfer from/to Members for ownership changes, and actor plus affected Member for membership changes; internal IDs are not shown.
+The immutable change history for a **Circle**, including ownership transfers, Members added or removed, Circle archived or restored, Invitation actions, and Circle Settings changed. Current Members can view Circle History as a Circle-level audit distinct from the **Member List**; it shows old and new values for Circle name, Circle Color, Currency, and Circle Setup answers, transfer from/to Members for ownership changes, and actor plus affected Member for membership changes; only the current Owner can see invitee email in Invitation history events, because unaccepted invitee emails remain Owner-only **Invitation** data, and internal IDs are not shown.
 _Avoid_: Group Audit
 
 **Currency**:
@@ -81,11 +85,11 @@ The single **Member** responsible for managing a **Circle's** membership and mod
 _Avoid_: Admin, Manager
 
 **Invitation**:
-A request sent to an email address for a person to become a **Member** of a **Circle**. An Invitation can be accepted only by a Google-authenticated **User** whose **Google Account Email** matches the Invitation email, and can be revoked by the **Owner** while pending; only the Owner can see pending Invitations. Invitation screens show Circle name, Owner Display Name, Owner Profile Picture, and invited email.
+A reserved **Circle Capacity** seat sent to an email address for a person to become a **Member** of a **Circle**. An Invitation can be accepted only by a Google-authenticated **User** whose **Google Account Email** matches the Invitation email, and can be revoked by the **Owner** while pending; only the Owner can see pending Invitations. Invitation screens show Circle name, Owner Display Name, Owner Profile Picture, and invited email.
 _Avoid_: Access Request
 
 **Invitation Link**:
-The single-use, seven-day expiring link sent for an **Invitation**. Resending an Invitation creates a new Invitation Link and invalidates older links; only the latest unexpired link can be accepted.
+The single-use, seven-day expiring link sent for an **Invitation**. Resending an Invitation creates a new Invitation Link, refreshes the Invitation's expiry, keeps its **Circle Capacity** seat reserved, and invalidates older links; only the latest unexpired link can be accepted.
 _Avoid_: Reusable Invite
 
 **Removed Member**:
@@ -283,6 +287,10 @@ _Avoid_: Release Notes
 **Engineer**: "Can an old Invitation email be reused?"
 
 **Product**: "No. Invitation Links are single-use and resends invalidate older links."
+
+**Engineer**: "Can non-Owners see invitee emails in Circle History?"
+
+**Product**: "No. They can see that an Invitation action happened, but only the current Owner sees the invitee email."
 
 **Engineer**: "If Alex is removed, do Alex's rent and grocery transactions disappear?"
 

@@ -1,5 +1,9 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { inviteEmailSchema } from "@spend-circle/domain";
+import {
+  CIRCLE_CAPACITY_LIMIT,
+  inviteEmailSchema,
+  remainingCircleSeats,
+} from "@spend-circle/domain";
 import { type FormEvent, useId, useMemo, useState } from "react";
 import { href, useNavigate } from "react-router";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
@@ -55,17 +59,28 @@ function formatExpiresIn(expiresAt: number): string {
 export default function CircleMembers() {
   const circle = useCircle();
   const members = useMembers(circle.id);
+  const pendingInvitations = usePendingInvitations(circle.id);
   const isOwner = members?.some((member) => member.isSelf && member.role === "owner") ?? false;
   const canWrite = circle.kind === "regular" && circle.status === "active";
   const isSelfMember = members?.some((member) => member.isSelf) ?? false;
   const canInvite = canWrite && isOwner;
+  const seatsLoaded = members != null && pendingInvitations != null;
+  const occupiedSeats = (members?.length ?? 0) + (pendingInvitations?.length ?? 0);
+  const remainingSeats = remainingCircleSeats(occupiedSeats);
+  const atCapacity = seatsLoaded && remainingSeats === 0;
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
 
   return (
     <div className="space-y-4">
       <h2 className="font-display text-lg font-semibold tracking-tight">Members</h2>
-      {canInvite ? <InviteMemberForm circleId={circle.id} /> : null}
-      {canInvite ? <PendingInvitationsList circleId={circle.id} /> : null}
+      {canInvite ? (
+        <InviteMemberForm
+          circleId={circle.id}
+          remainingSeats={remainingSeats}
+          atCapacity={atCapacity}
+        />
+      ) : null}
+      {canInvite ? <PendingInvitationsList pendingInvitations={pendingInvitations} /> : null}
       {isOwner && circle.kind === "regular" ? (
         <TransferOwnershipForm
           circleId={circle.id}
@@ -86,7 +101,15 @@ export default function CircleMembers() {
   );
 }
 
-function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
+function InviteMemberForm({
+  circleId,
+  remainingSeats,
+  atCapacity,
+}: {
+  circleId: Circle["id"];
+  remainingSeats: number;
+  atCapacity: boolean;
+}) {
   const createInvitation = useCreateInvitation();
   const [email, setEmail] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -133,6 +156,16 @@ function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
         Invite someone by email. They&apos;ll receive a link to join this Circle.
       </p>
 
+      <p className="text-sm text-muted-foreground">
+        {remainingSeats} of {CIRCLE_CAPACITY_LIMIT} seats remaining
+      </p>
+
+      {atCapacity ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          This Circle is full. Revoke a pending invitation or remove a member to free a seat.
+        </p>
+      ) : null}
+
       <Field>
         <FieldLabel htmlFor="invite-email">Email address</FieldLabel>
         <Input
@@ -171,15 +204,18 @@ function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {
         </p>
       ) : null}
 
-      <Button type="submit" disabled={submitting || email.trim() === ""}>
+      <Button type="submit" disabled={submitting || email.trim() === "" || atCapacity}>
         {submitting ? "Inviting…" : "Invite member"}
       </Button>
     </form>
   );
 }
 
-function PendingInvitationsList({ circleId }: { circleId: Circle["id"] }) {
-  const pendingInvitations = usePendingInvitations(circleId);
+function PendingInvitationsList({
+  pendingInvitations,
+}: {
+  pendingInvitations: PendingInvitation[] | null | undefined;
+}) {
   const resendInvitation = useResendInvitation();
   const revokeInvitation = useRevokeInvitation();
   const [resendingId, setResendingId] = useState<PendingInvitation["id"] | null>(null);

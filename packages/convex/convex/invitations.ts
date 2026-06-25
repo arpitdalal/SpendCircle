@@ -1,4 +1,9 @@
-import { inviteEmailSchema, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
+import {
+  CIRCLE_CAPACITY_LIMIT,
+  inviteEmailSchema,
+  MUTATION_ERRORS,
+  mutationErrorData,
+} from "@spend-circle/domain";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -68,6 +73,26 @@ async function assertUnderResendAddressCap(
   }
 }
 
+async function countActiveMembers(ctx: MutationCtx, circleId: Id<"circles">) {
+  const active = await ctx.db
+    .query("members")
+    .withIndex("by_circle_and_status", (q) => q.eq("circleId", circleId).eq("status", "active"))
+    .collect();
+  return active.length;
+}
+
+async function countUnexpiredPendingInvitations(
+  ctx: MutationCtx,
+  circleId: Id<"circles">,
+  now: number,
+) {
+  const invitations = await ctx.db
+    .query("invitations")
+    .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+    .collect();
+  return invitations.filter((i) => i.status === "pending" && i.expiresAt > now).length;
+}
+
 async function recordEmailSend(
   ctx: MutationCtx,
   args: {
@@ -134,6 +159,13 @@ export const createInvitation = mutation({
     );
     if (hasPending) {
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteAlreadyPending));
+    }
+
+    const occupied =
+      (await countActiveMembers(ctx, args.circleId)) +
+      (await countUnexpiredPendingInvitations(ctx, args.circleId, now));
+    if (occupied >= CIRCLE_CAPACITY_LIMIT) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleCapacityReached));
     }
 
     await assertUnderDailyInvitationCap(ctx, access.user._id, now);
@@ -271,6 +303,10 @@ export const acceptInvitation = mutation({
 
     if (existingMembership?.status === "active") {
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
+    }
+
+    if ((await countActiveMembers(ctx, circle._id)) >= CIRCLE_CAPACITY_LIMIT) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleCapacityReached));
     }
 
     let membership: Doc<"members">;

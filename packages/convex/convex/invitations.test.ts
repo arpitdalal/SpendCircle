@@ -1,4 +1,4 @@
-import { MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
+import { CIRCLE_CAPACITY_LIMIT, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
 import { capturedRequests, resetCapturedRequests } from "@spend-circle/mocks";
 import { ConvexError } from "convex/values";
 import { convexTest as createConvexTest } from "convex-test";
@@ -1737,5 +1737,345 @@ describe("acceptInvitation — failures", () => {
       expect(memberships).toHaveLength(1);
       expect(memberships[0]?.status).toBe("active");
     });
+  });
+});
+
+async function seedActiveMemberCount(
+  ctx: MutationCtx,
+  circleId: Id<"circles">,
+  totalActive: number,
+) {
+  const active = await ctx.db
+    .query("members")
+    .withIndex("by_circle_and_status", (q) => q.eq("circleId", circleId).eq("status", "active"))
+    .collect();
+  const toAdd = totalActive - active.length;
+  for (let i = 0; i < toAdd; i++) {
+    await addMember(ctx, circleId, `capacity-member-${i}@example.com`, `Member ${i}`);
+  }
+}
+
+describe("circle capacity", () => {
+  it("allows createInvitation when 255 seats are occupied", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "new@example.com" }),
+    ).resolves.toBeNull();
+  });
+
+  it("rejects createInvitation when 256 seats are occupied", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 256));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "new@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+  });
+
+  it("rejects createInvitation when 255 active members and 1 pending invitation occupy all seats", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: "pending@example.com",
+        invitedByUserId: owner._id,
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "another@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+  });
+
+  it("allows acceptInvitation when 255 active members and a matching pending invite", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    const ada = await t.run((ctx) => makeUser(ctx, "ada@example.com", "Ada Lovelace"));
+    const token = await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: ada.email,
+        invitedByUserId: owner._id,
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(ada);
+
+    await expect(t.mutation(api.invitations.acceptInvitation, { token })).resolves.toMatchObject({
+      circleId,
+    });
+
+    await t.run(async (ctx) => {
+      const active = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_status", (q) => q.eq("circleId", circleId).eq("status", "active"))
+        .collect();
+      expect(active).toHaveLength(256);
+    });
+  });
+
+  it("rejects acceptInvitation when the Circle already has 256 active members", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 256));
+    const ada = await t.run((ctx) => makeUser(ctx, "ada@example.com", "Ada Lovelace"));
+    const token = await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: ada.email,
+        invitedByUserId: owner._id,
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(ada);
+
+    await expect(t.mutation(api.invitations.acceptInvitation, { token })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+  });
+
+  it("rejects reactivation when the Circle already has 256 active members", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    const removed = await t.run((ctx) =>
+      addMember(ctx, circleId, "ada@example.com", "Ada Lovelace", "removed"),
+    );
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 256));
+    const token = await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: removed.user.email,
+        invitedByUserId: owner._id,
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(removed.user);
+
+    await expect(t.mutation(api.invitations.acceptInvitation, { token })).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+
+    await t.run(async (ctx) => {
+      const membership = await ctx.db.get(removed.memberId);
+      expect(membership?.status).toBe("removed");
+    });
+  });
+
+  it("allows the 256th active member and rejects the 257th invitation", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, CIRCLE_CAPACITY_LIMIT));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "overflow@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+
+    await t.run(async (ctx) => {
+      const active = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_status", (q) => q.eq("circleId", circleId).eq("status", "active"))
+        .collect();
+      expect(active).toHaveLength(CIRCLE_CAPACITY_LIMIT);
+    });
+  });
+
+  it("allows only one concurrent accept into a 255-active Circle", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    const ada = await t.run((ctx) => makeUser(ctx, "ada@example.com", "Ada"));
+    const bob = await t.run((ctx) => makeUser(ctx, "bob@example.com", "Bob"));
+    const adaToken = await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: ada.email,
+        invitedByUserId: owner._id,
+      }),
+    );
+    const bobToken = await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: bob.email,
+        invitedByUserId: owner._id,
+      }),
+    );
+
+    mockCurrentUser.mockResolvedValueOnce(ada).mockResolvedValueOnce(bob);
+
+    const results = await Promise.allSettled([
+      t.mutation(api.invitations.acceptInvitation, { token: adaToken }),
+      t.mutation(api.invitations.acceptInvitation, { token: bobToken }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === "rejected");
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+
+    await t.run(async (ctx) => {
+      const active = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_status", (q) => q.eq("circleId", circleId).eq("status", "active"))
+        .collect();
+      expect(active).toHaveLength(256);
+    });
+  });
+
+  it("allows only one concurrent createInvitation when one seat remains", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const results = await Promise.allSettled([
+      t.mutation(api.invitations.createInvitation, { circleId, email: "ada@example.com" }),
+      t.mutation(api.invitations.createInvitation, { circleId, email: "bob@example.com" }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === "rejected");
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+
+    await t.run(async (ctx) => {
+      const pending = await ctx.db
+        .query("invitations")
+        .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+        .collect();
+      const unexpiredPending = pending.filter(
+        (invite) => invite.status === "pending" && invite.expiresAt > Date.now(),
+      );
+      expect(unexpiredPending).toHaveLength(1);
+    });
+  });
+
+  it("releases a revoked invitation seat for a new invite", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    const invitationId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "revoked@example.com" }),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "blocked@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+
+    await t.mutation(api.invitations.revokeInvitation, { invitationId });
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "blocked@example.com" }),
+    ).resolves.toBeNull();
+  });
+
+  it("releases an expired invitation seat for a new invite", async () => {
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    await t.run((ctx) =>
+      seedPendingInvitation(ctx, {
+        circleId,
+        email: "expired@example.com",
+        invitedByUserId: owner._id,
+        expiresAt: Date.now() - 1,
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "new@example.com" }),
+    ).resolves.toBeNull();
+  });
+
+  it("keeps exactly one reserved seat when resending a pending invitation", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");
+
+    const t = createTestConvex();
+    const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+    await t.run((ctx) => completeSetup(ctx, circleId));
+    await t.run((ctx) => seedActiveMemberCount(ctx, circleId, 255));
+    const invitationId = await t.run((ctx) =>
+      seedInvitation(ctx, circleId, owner._id, { email: "pending@example.com" }),
+    );
+    mockCurrentUser.mockResolvedValue(owner);
+
+    const occupiedBefore = await t.run(async (ctx) => {
+      const active = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_status", (q) => q.eq("circleId", circleId).eq("status", "active"))
+        .collect();
+      const pending = await ctx.db
+        .query("invitations")
+        .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+        .collect();
+      const now = Date.now();
+      const unexpiredPending = pending.filter(
+        (invite) => invite.status === "pending" && invite.expiresAt > now,
+      );
+      return active.length + unexpiredPending.length;
+    });
+
+    await t.mutation(api.invitations.resendInvitation, { invitationId });
+    await drainWorkpool(t);
+
+    const occupiedAfter = await t.run(async (ctx) => {
+      const active = await ctx.db
+        .query("members")
+        .withIndex("by_circle_and_status", (q) => q.eq("circleId", circleId).eq("status", "active"))
+        .collect();
+      const pending = await ctx.db
+        .query("invitations")
+        .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+        .collect();
+      const now = Date.now();
+      const unexpiredPending = pending.filter(
+        (invite) => invite.status === "pending" && invite.expiresAt > now,
+      );
+      return active.length + unexpiredPending.length;
+    });
+
+    expect(occupiedBefore).toBe(256);
+    expect(occupiedAfter).toBe(256);
+
+    await expect(
+      t.mutation(api.invitations.createInvitation, { circleId, email: "another@example.com" }),
+    ).rejects.toMatchObject({
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+    });
+
+    vi.useRealTimers();
   });
 });
