@@ -6,17 +6,18 @@
 | **Labels** | `area:circles`, `backend`, `ui` |
 | **Depends on** | CS-0 (Done), CS-2 (Done), MEM membership/ownership events (landed). CS-3 currency event (Todo) — see note below |
 | **PRD stories** | 79, 80 |
-| **ADRs** | 0016, 0018 |
+| **ADRs** | 0016, 0018, 0028 |
 | **Glossary** | Circle History |
 
 ## Intent
 
 The read surface over a Circle's audit (PRD 79): ownership transfers, Members added/removed,
-Circle archived/restored, Circle renamed, and Circle Settings changes (color, Currency, Setup
-answers), showing old/new values and actor + affected Member — with **no raw internal IDs**
-(PRD 80). The events themselves are already written by `circles.ts`, `members.ts`, and
-`invitations.ts` via `recordEvent`; **this slice only surfaces them** (a pure read). Any current
-Member can view Circle History, including for an Archived Circle (history is view-only).
+Circle archived/restored, Circle renamed, Invitation actions, and Circle Settings changes (color,
+Currency, Setup answers), showing old/new values and actor + affected Member — with **no raw
+internal IDs** (PRD 80) and no invitee email for non-Owners (ADR 0028). The events themselves are
+already written by `circles.ts`, `members.ts`, and `invitations.ts` via `recordEvent`; **this slice
+only surfaces them** (a pure read). Any current Member can view Circle History, including for an
+Archived Circle (history is view-only).
 
 ## What already exists (don't rebuild)
 
@@ -32,7 +33,8 @@ The audit and its read primitives are landed and reused as-is:
     (`field: email`), `member joined` (`field: member`).
 - **Read primitive** — `paginateEntityHistory` + `newActorCache` / `toHistoryEventView`
   ([`historyView.ts`](../../packages/convex/convex/historyView.ts)) freeze the actor to a
-  Display Name + image and pass `changes` straight through (already ID-free, ADR 0018/0021).
+  Display Name + image, with Circle History omitting Invitation email changes for non-Owners at
+  read time (already ID-free, ADR 0018/0021/0028).
 - **Shared UI** — `HistoryList` ([`history-list.tsx`](../../apps/web-app/app/components/history-list.tsx))
   renders any entity's paginated events newest-first with a "Load more" control.
 
@@ -75,15 +77,17 @@ tests in [`circles.test.ts`](../../packages/convex/convex/circles.test.ts) /
   exhausted page; archived Circle still readable by current Members.
 - **Content:** drive real mutations then assert each event appears with the correct `action`,
   `actor.displayName`, affected Member **by name**, and old/new values. **Assert no raw `Id`
-  strings** in any rendered `from`/`to`.
+  strings** in any rendered `from`/`to`; assert non-Owners see Invitation action rows without the
+  email change while the current Owner sees the email.
 - **Order:** newest-first.
 - **Pagination:** a bounded first page with `isDone === false` and a usable `continueCursor`.
 
 ## Done when
 
 - Current Members (owner or not) can view a complete, ID-free Circle History reflecting settings,
-  membership, ownership, rename, and lifecycle events, newest-first and paginated, on a member-
-  accessible surface; new action/field labels render human text; tests green; gates pass.
+  membership, ownership, Invitation actions, rename, and lifecycle events, newest-first and
+  paginated, on a member-accessible surface; non-Owners do not receive invitee email changes; new
+  action/field labels render human text; tests green; gates pass.
 
 ## Out of scope
 
