@@ -71,9 +71,9 @@ export const deliverOne = internalMutation({
       return;
     }
 
-    const injectedFailureUserId = process.env.NOTIFY_TEST_INJECT_FAILURE_USER_ID;
-    if (injectedFailureUserId && args.recipientUserId === injectedFailureUserId) {
-      throw new Error("Injected notification delivery failure");
+    const recipient = await ctx.db.get("users", args.recipientUserId);
+    if (!recipient) {
+      throw new Error("Notification recipient not found");
     }
 
     await ctx.db.insert("notifications", {

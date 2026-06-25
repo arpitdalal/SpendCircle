@@ -178,7 +178,9 @@ describe("scheduler decoupling (ADR 0027)", () => {
     });
     const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     mockCurrentUser.mockResolvedValue(owner);
-    vi.stubEnv("NOTIFY_TEST_INJECT_FAILURE_USER_ID", maya.user._id);
+    // Force a real delivery failure for Maya: remove her user row so deliverOne
+    // fails when the scheduled job runs (recipient gone in the async gap).
+    await t.run((ctx) => ctx.db.delete(maya.user._id));
 
     await mutateAndDrain(t, () => t.mutation(api.circles.archiveCircle, { circleId }));
 
@@ -197,7 +199,9 @@ describe("scheduler decoupling (ADR 0027)", () => {
     });
     const maya = await t.run((ctx) => addMember(ctx, circleId, "m@example.com", "Maya Member"));
     const ada = await t.run((ctx) => addMember(ctx, circleId, "ada@example.com", "Ada Lovelace"));
-    vi.stubEnv("NOTIFY_TEST_INJECT_FAILURE_USER_ID", maya.user._id);
+    // Force a real delivery failure for Maya: remove her user row so deliverOne
+    // fails when the scheduled job runs (recipient gone in the async gap).
+    await t.run((ctx) => ctx.db.delete(maya.user._id));
 
     await mutateAndDrain(t, () =>
       t.mutation(internal.notify.fanOutCircleLifecycle, {
