@@ -22,7 +22,7 @@ import { createCategoryForMember } from "./categories.js";
 import { requireCircleAccess, resolveCircleAccess } from "./guard.js";
 import type { HistoryChange } from "./history.js";
 import { circleEntity, paginateEntityHistory, recordEvent } from "./history.js";
-import { newActorCache, toHistoryEventView } from "./historyView.js";
+import { type HistoryEventView, newActorCache, toHistoryEventView } from "./historyView.js";
 import { revokePendingInvitationsForCircle } from "./invitations.js";
 import { getPersonalCircleForOwner, reconcilePersonalCircleFromDisplayName } from "./model.js";
 import { notifyCircleLifecycleChange } from "./notify.js";
@@ -447,9 +447,20 @@ export const listCircleHistory = query({
     const page = await Promise.all(
       result.page.map((event) => toHistoryEventView(ctx, event, cache)),
     );
-    return { ...result, page };
+    return {
+      ...result,
+      page: access.isOwner ? page : redactInviteeEmailFromHistoryPage(page),
+    };
   },
 });
+
+/** Omit Invitation invitee email from Circle History for non-Owners (ADR 0028). */
+function redactInviteeEmailFromHistoryPage(page: HistoryEventView[]) {
+  return page.map((event) => ({
+    ...event,
+    changes: event.changes.filter((change) => change.field !== "email"),
+  }));
+}
 
 /** Whether a Circle has any Transaction row, of any status (MEM-9 UI gate). */
 export const circleHasTransactions = query({

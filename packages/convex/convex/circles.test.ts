@@ -4,6 +4,7 @@ import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mutateAndDrain } from "../test/mutateAndDrain.js";
 import { listNotificationsForUser } from "../test/notifications.js";
+import { registerEmailWorkpool } from "../test/registerEmailWorkpool.js";
 import {
   addMember,
   makeCategory,
@@ -1401,5 +1402,151 @@ describe("listCircleHistory", () => {
     });
     expect(result.page.length).toBeGreaterThan(0);
     expect(result.page.at(-1)?.action).toBe("created");
+  });
+
+  describe("invitee email redaction (ADR 0028)", () => {
+    const inviteeEmail = "ada@example.com";
+    const paginationOpts = { numItems: 20, cursor: null };
+
+    function createInvitationHistoryTest() {
+      const t = convexTest(schema, modules);
+      registerEmailWorkpool(t);
+      return t;
+    }
+
+    function expectPageOmitsInviteeEmail(page: unknown, email: string) {
+      expect(JSON.stringify(page)).not.toContain(email);
+    }
+
+    async function seedCircleReadyForInvites(t: ReturnType<typeof convexTest>) {
+      const { owner, circleId } = await t.run((ctx) => seedCircle(ctx));
+      await t.run((ctx) => ctx.db.patch(circleId, { setupCompletedAt: Date.now() }));
+      const member = await t.run((ctx) =>
+        addMember(ctx, circleId, "maya@example.com", "Maya Member"),
+      );
+      return { owner, member, circleId };
+    }
+
+    it("shows invitee email to the current Owner on member invited", async () => {
+      const t = createInvitationHistoryTest();
+      const { owner, circleId } = await seedCircleReadyForInvites(t);
+      mockCurrentUser.mockResolvedValue(owner);
+      await mutateAndDrain(t, () =>
+        t.mutation(api.invitations.createInvitation, { circleId, email: inviteeEmail }),
+      );
+
+      const result = await t.query(api.circles.listCircleHistory, { circleId, paginationOpts });
+      const invited = result.page.find((event) => event.action === "member invited");
+      expect(invited).toBeDefined();
+      expect(invited?.changes).toEqual([{ field: "email", to: inviteeEmail }]);
+    });
+
+    it("omits invitee email for a non-Owner member on member invited", async () => {
+      const t = createInvitationHistoryTest();
+      const { owner, member, circleId } = await seedCircleReadyForInvites(t);
+      mockCurrentUser.mockResolvedValue(owner);
+      await mutateAndDrain(t, () =>
+        t.mutation(api.invitations.createInvitation, { circleId, email: inviteeEmail }),
+      );
+
+      mockCurrentUser.mockResolvedValue(member.user);
+      const result = await t.query(api.circles.listCircleHistory, { circleId, paginationOpts });
+      const invited = result.page.find((event) => event.action === "member invited");
+      expect(invited).toBeDefined();
+      expect(invited?.changes).toEqual([]);
+      expectPageOmitsInviteeEmail(result.page, inviteeEmail);
+    });
+
+    it("omits invitee email for non-Owners across resent, revoked, and accepted invites", async () => {
+      const t = createInvitationHistoryTest();
+      const { owner, member, circleId } = await seedCircleReadyForInvites(t);
+      mockCurrentUser.mockResolvedValue(owner);
+
+      await mutateAndDrain(t, () =>
+        t.mutation(api.invitations.createInvitation, { circleId, email: inviteeEmail }),
+      );
+      const inviteId = await t.run(async (ctx) => {
+        const invite = await ctx.db
+          .query("invitations")
+          .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+          .first();
+        if (!invite) {
+          throw new Error("expected pending invitation");
+        }
+        return invite._id;
+      });
+      await mutateAndDrain(t, () =>
+        t.mutation(api.invitations.resendInvitation, { invitationId: inviteId }),
+      );
+
+      const revokeEmail = "bob@example.com";
+      const revokeInviteId = await t.run((ctx) =>
+        seedInvitation(ctx, circleId, owner._id, { email: revokeEmail }),
+      );
+      await mutateAndDrain(t, () =>
+        t.mutation(api.invitations.revokeInvitation, { invitationId: revokeInviteId }),
+      );
+
+      const ada = await t.run((ctx) => makeUser(ctx, inviteeEmail, "Ada Lovelace"));
+      const acceptToken = await t.run(async (ctx) => {
+        const invite = await ctx.db.get(inviteId);
+        if (!invite) {
+          throw new Error("expected invitation to accept");
+        }
+        const token = generateInvitationToken();
+        await ctx.db.patch(inviteId, { tokenHash: await hashInvitationToken(token) });
+        return token;
+      });
+      mockCurrentUser.mockResolvedValue(ada);
+      await mutateAndDrain(t, () =>
+        t.mutation(api.invitations.acceptInvitation, { token: acceptToken }),
+      );
+
+      mockCurrentUser.mockResolvedValue(member.user);
+      const result = await t.query(api.circles.listCircleHistory, { circleId, paginationOpts });
+      expect(result.page.map((event) => event.action)).toEqual(
+        expect.arrayContaining([
+          "member joined",
+          "invitation revoked",
+          "invitation resent",
+          "member invited",
+        ]),
+      );
+      for (const event of result.page) {
+        expect(event.changes.every((change) => change.field !== "email")).toBe(true);
+      }
+      expectPageOmitsInviteeEmail(result.page, inviteeEmail);
+      expectPageOmitsInviteeEmail(result.page, revokeEmail);
+    });
+
+    it("evaluates invitee email visibility against the current Owner after ownership transfer", async () => {
+      const t = createInvitationHistoryTest();
+      const { owner, member, circleId } = await seedCircleReadyForInvites(t);
+      mockCurrentUser.mockResolvedValue(owner);
+      await mutateAndDrain(t, () =>
+        t.mutation(api.invitations.createInvitation, { circleId, email: inviteeEmail }),
+      );
+
+      await t.mutation(api.members.transferOwnership, {
+        circleId,
+        toMemberId: member.memberId,
+      });
+
+      mockCurrentUser.mockResolvedValue(member.user);
+      const asOwner = await t.query(api.circles.listCircleHistory, { circleId, paginationOpts });
+      const invitedForOwner = asOwner.page.find((event) => event.action === "member invited");
+      expect(invitedForOwner?.changes).toEqual([{ field: "email", to: inviteeEmail }]);
+
+      mockCurrentUser.mockResolvedValue(owner);
+      const asFormerOwner = await t.query(api.circles.listCircleHistory, {
+        circleId,
+        paginationOpts,
+      });
+      const invitedForFormerOwner = asFormerOwner.page.find(
+        (event) => event.action === "member invited",
+      );
+      expect(invitedForFormerOwner?.changes).toEqual([]);
+      expectPageOmitsInviteeEmail(asFormerOwner.page, inviteeEmail);
+    });
   });
 });

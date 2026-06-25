@@ -364,6 +364,8 @@ Backend tests in `packages/convex/convex/invitations.test.ts` (extend the existi
   + 1 outside → succeeds.
 - History event: action `"invitation resent"`, entity = Circle, actor = Owner membership,
   `changes: [{ field: "email", to: emailLower }]`, no raw IDs.
+- Circle History redacts that `email` change for non-Owners at read time (ADR 0028); keep storing
+  it here for the current Owner's audit.
 - `resendCount` across multiple resends: after 2 resends `resendCount === 2` (starts at 0 on
   create).
 
@@ -377,6 +379,8 @@ Backend tests in `packages/convex/convex/invitations.test.ts` (extend the existi
 - Already-accepted invitation → generic "Invitation not found".
 - Invitation from different Circle → generic "Invitation not found".
 - History event: action `"invitation revoked"`, `changes: [{ field: "email", from: emailLower }]`.
+- Circle History redacts that `email` change for non-Owners at read time (ADR 0028); keep storing
+  it here for the current Owner's audit.
 
 **Domain errors (`packages/domain/src/mutation-errors.test.ts`)**
 - `invite.resendCapReached` and `invite.dailyCapReached` appear in the catalog.
