@@ -46,6 +46,13 @@ export default defineConfig({
     // excludes node_modules), so no filter is needed — reactCompilerPreset() just
     // wires babel-plugin-react-compiler. Must run before reactRouter() so the
     // compiler sees original source. React 19 ⇒ no runtime/target option.
+    //
+    // Escape hatch: add `"use no memo"` at the top of a component (or module) to
+    // opt out of compilation when a deliberate Rules-of-React exception is
+    // required (e.g. adjust-during-render via useValueChange, a ref mirror for
+    // event handlers). Document why in a one-line comment. Prefer fixing the
+    // pattern first; opt-out is last resort. ESLint (lint:react-compiler) and
+    // vitest.config.ts mirror this compiler pass so CI catches miscompiles.
     babel({ presets: [reactCompilerPreset()] }),
     reactRouter(),
   ],

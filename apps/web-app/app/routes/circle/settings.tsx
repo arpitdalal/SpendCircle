@@ -9,7 +9,7 @@ import {
   RESIDENCE_TYPES,
   SUPPORTED_CURRENCIES,
 } from "@spend-circle/domain";
-import { type FormEvent, useId, useRef, useState } from "react";
+import { type FormEvent, useId, useState } from "react";
 import { href, Navigate, useNavigate } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Button } from "~/components/ui/button.js";
@@ -29,6 +29,7 @@ import {
 } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { useSnackbar } from "~/lib/snackbar.js";
+import { useValueChange } from "~/lib/use-value-change.js";
 import { cn } from "~/lib/utils.js";
 import { useCircle } from "~/routes/layouts/circle-layout.js";
 
@@ -95,14 +96,12 @@ export default function CircleSettings() {
 
   const dashboardPath = href("/circles/:circleRef", { circleRef: circle.ref });
 
-  const syncedCircle = useRef(circle);
-  if (circle !== syncedCircle.current) {
-    syncedCircle.current = circle;
-    setName(circle.name);
-    setColor(circle.color);
-    setPurpose(circle.setupAnswers?.purpose ?? "");
-    setResidenceType(circle.setupAnswers?.residenceType ?? "");
-  }
+  useValueChange(circle, (current) => {
+    setName(current.name);
+    setColor(current.color);
+    setPurpose(current.setupAnswers?.purpose ?? "");
+    setResidenceType(current.setupAnswers?.residenceType ?? "");
+  });
 
   if (members === undefined || hasTransactions === undefined) {
     return <p className="text-sm text-muted-foreground">Loading settings…</p>;

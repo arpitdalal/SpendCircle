@@ -1,15 +1,18 @@
-import react from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineProject } from "vitest/config";
 
 // Component tests run under jsdom with the React plugin only — the React Router
 // Vite plugin is intentionally excluded so tests render components directly.
+// The React Compiler preset matches production (vite.config.ts) so unit tests
+// exercise compiled output, not a separate uncompiled code path.
 const appVersion = process.env.npm_package_version ?? "0.0.0";
 
 export default defineProject({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
-  plugins: [react()],
+  plugins: [babel({ presets: [reactCompilerPreset()] }), react()],
   resolve: {
     tsconfigPaths: true,
   },

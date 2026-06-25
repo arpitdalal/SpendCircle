@@ -333,14 +333,12 @@ describe("CircleTransactions", () => {
     const user = userEvent.setup();
     // The mixed status=all view keeps the row mounted across the archive: its `<li key>`
     // is the stable id, so the LifecycleButton instance (and its in-flight flag) survives
-    // the reactive flip from active→archived. A backing array we mutate in place models
-    // that reactive update arriving after the mutation resolves.
-    const rows = [
-      makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
-    ];
+    // the reactive flip from active→archived.
     const { rerender } = setup({
       initialEntries: [`/circles/${REF}/transactions?month=2026-05&type=all&status=all`],
-      filteredTransactions: rows,
+      filteredTransactions: [
+        makeTransactionView({ title: "Weekly shop", status: "active", canArchive: true }),
+      ],
     });
 
     await archiveWithDoubleCheck(user, "Weekly shop");
@@ -348,9 +346,20 @@ describe("CircleTransactions", () => {
       transactionId: testId<Transaction["id"]>("t1"),
     });
 
-    // The reactive ledger query pushes the now-archived row; the row flips to the Restore
-    // action in place.
-    rows[0] = makeTransactionView({ title: "Weekly shop", status: "archived", canArchive: true });
+    // The reactive ledger query pushes the now-archived row; Convex delivers a fresh page
+    // snapshot (new array reference), so re-seed the mock before rerendering.
+    configureConvex({
+      categories: [makeCategoryView()],
+      members: [makeMemberView()],
+      ledgerFilterTransactions: [
+        makeTransactionView({ title: "Weekly shop", status: "archived", canArchive: true }),
+      ],
+      ledgerFilterOptions: makeFilterOptions(),
+      loadMore: paginatedLoadMore,
+      createTransaction,
+      archiveTransaction,
+      restoreTransaction,
+    });
     rerender();
 
     // The button must settle on the new action's IDLE label — not strand on the opposite
