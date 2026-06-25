@@ -1,4 +1,12 @@
-import { LayoutDashboard, type LucideIcon, Receipt, Search, Tags, Users } from "lucide-react";
+import {
+  History,
+  LayoutDashboard,
+  type LucideIcon,
+  Receipt,
+  Search,
+  Tags,
+  Users,
+} from "lucide-react";
 import { href, matchPath } from "react-router";
 
 /** A canonical Circle-chrome destination, shared by the desktop tab nav and the
@@ -47,6 +55,12 @@ export function circleNavItems(circleRef: string): CircleNavItem[] {
       label: "Members",
       end: false,
       icon: Users,
+    },
+    {
+      to: href("/circles/:circleRef/history", { circleRef }),
+      label: "History",
+      end: false,
+      icon: History,
     },
   ];
 }

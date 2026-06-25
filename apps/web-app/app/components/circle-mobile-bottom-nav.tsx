@@ -100,7 +100,7 @@ export function CircleMobileBottomNav({ circle }: { circle: Circle }) {
               </Dialog.Close>
             </div>
             <Dialog.Description className="sr-only">
-              Categories and members navigation for this circle.
+              Categories, members, and history navigation for this circle.
             </Dialog.Description>
             <div className="flex flex-col gap-1 px-4 pb-4 pt-2">
               {moreItems.map((item) => {

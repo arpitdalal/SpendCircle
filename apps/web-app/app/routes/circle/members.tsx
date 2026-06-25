@@ -2,7 +2,6 @@ import { Dialog } from "@base-ui/react/dialog";
 import { inviteEmailSchema } from "@spend-circle/domain";
 import { type FormEvent, useId, useMemo, useState } from "react";
 import { href, useNavigate } from "react-router";
-import { HistoryList } from "~/components/history-list.js";
 import { RowsSkeleton, SkeletonRegion } from "~/components/skeleton.js";
 import { Avatar } from "~/components/ui/avatar.js";
 import { Button } from "~/components/ui/button.js";
@@ -23,7 +22,6 @@ import {
   type Circle,
   type Member,
   type PendingInvitation,
-  useCircleHistory,
   useCreateInvitation,
   useLeaveCircle,
   useMembers,
@@ -84,16 +82,8 @@ export default function CircleMembers() {
       {circle.kind !== "personal" && isSelfMember ? (
         <LeaveCircle circleId={circle.id} isOwner={isOwner} />
       ) : null}
-      <CircleHistory circleId={circle.id} />
     </div>
   );
-}
-
-/** The Circle History panel (PRD stories 79–80) — paginated audit on a member-
- * accessible surface. Kept a thin wrapper so the data hook stays out of the route shell. */
-function CircleHistory({ circleId }: { circleId: Circle["id"] }) {
-  const { events, status, loadMore } = useCircleHistory(circleId);
-  return <HistoryList events={events} status={status} loadMore={loadMore} label="Circle history" />;
 }
 
 function InviteMemberForm({ circleId }: { circleId: Circle["id"] }) {

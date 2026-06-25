@@ -65,13 +65,13 @@ describe("CircleMobileBottomNav", () => {
     renderMobileNav(`/circles/${circle.ref}`);
     await user.click(screen.getByRole("button", { name: "More" }));
     const dialog = screen.getByRole("dialog", { name: "More" });
-    for (const label of ["Categories", "Members"]) {
+    for (const label of ["Categories", "Members", "History"]) {
       const link = within(dialog).getByRole("link", { name: label });
       expect(link.querySelector("svg")).toBeInTheDocument();
     }
   });
 
-  it("opens More and lists Categories and Members with canonical hrefs", async () => {
+  it("opens More and lists Categories, Members, and History with canonical hrefs", async () => {
     const user = userEvent.setup();
     renderMobileNav(`/circles/${circle.ref}`);
     await user.click(screen.getByRole("button", { name: "More" }));
@@ -83,6 +83,10 @@ describe("CircleMobileBottomNav", () => {
     expect(within(dialog).getByRole("link", { name: "Members" })).toHaveAttribute(
       "href",
       `/circles/${circle.ref}/members`,
+    );
+    expect(within(dialog).getByRole("link", { name: "History" })).toHaveAttribute(
+      "href",
+      `/circles/${circle.ref}/history`,
     );
   });
 
