@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect -- URL-driven deep-link resolution (#202): parse, auto-load, highlight, and snackbars are effect-driven because they call loadMore, timers, and external UI. */
 import { useEffect, useRef, useState } from "react";
 import type { Category, PaginationStatus } from "~/lib/data.js";
 import { handleUnavailableRefLink, handleUnparseableRefLink } from "./ref-link-failure.js";

@@ -48,8 +48,6 @@ export function useDoubleCheck({
   const [armedSession, setArmedSession] = useState<ArmedSession | null>(null);
   const armed = armedSession?.identity === identity && armedSession.generation === generation;
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const onConfirmRef = useRef(onConfirm);
-  onConfirmRef.current = onConfirm;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== undefined) {
@@ -102,7 +100,7 @@ export function useDoubleCheck({
           return;
         }
         disarm();
-        onConfirmRef.current();
+        onConfirm();
       }),
       onBlur: chainHandlers<FocusEvent<HTMLButtonElement>>(onBlur, () => {
         if (armed) disarm();

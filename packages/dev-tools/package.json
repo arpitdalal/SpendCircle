@@ -1,0 +1,11 @@
+{
+  "name": "@spend-circle/dev-tools",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "react-compiler:healthcheck": "node ./react-compiler-healthcheck.cjs"
+  },
+  "dependencies": {
+    "react-compiler-healthcheck": "1.0.0"
+  }
+}

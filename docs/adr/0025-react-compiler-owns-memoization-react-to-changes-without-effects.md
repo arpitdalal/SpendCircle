@@ -72,6 +72,10 @@ logging) stay in event handlers or Effects.
   `react-hooks` recommended rules). This ADR is the convention the migration
   lands against; it stands on its own before the plugin is wired, because
   `useEffectEvent` and `useValueChange` are correct with or without the compiler.
+- CI now enforces compiler safety via `lint:react-compiler` (`eslint-plugin-react-hooks`
+  `recommended-latest`), pinned `react-compiler-healthcheck`, and the same compiler
+  preset in `vitest.config.ts` as production. Opt out with `"use no memo"` only when
+  unavoidable; document why inline (see `apps/web-app/vite.config.ts`).
 - Tests assert behavior (no stale frame, single fire on change), not the presence
   of `useMemo`/`useCallback`, so removing hand-memoization under the compiler does
   not churn tests (ADR 0006).
