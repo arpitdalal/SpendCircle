@@ -1,8 +1,8 @@
 import { comparisonWindowMonths, currentMonth, isValidPlainMonth } from "@spend-circle/domain";
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel.js";
+import type { Id } from "./_generated/dataModel.js";
 import { query } from "./_generated/server.js";
-import { asyncMapChunked } from "./asyncBatch.js";
+import { asyncMapChunked, DEFAULT_READ_CONCURRENCY } from "./asyncBatch.js";
 import { resolveCircleAccess } from "./guard.js";
 import { collectMonthActiveTransactions, sumMonthTotals } from "./monthActivity.js";
 import { newViewCaches, toTransactionView } from "./transactions.js";
@@ -15,14 +15,6 @@ const transactionType = v.union(v.literal("expense"), v.literal("income"));
  * recent slice stays bounded regardless of how busy the month is.
  */
 export const RECENT_TRANSACTIONS_LIMIT = 5;
-
-/**
- * Caps how many per-transaction `transactionCategories` reads `getCategoryAnalytics`
- * keeps in flight at once (RPT-5). Mirrors the app's 25-row page size — enough
- * parallelism to erase the serial-loop latency, low enough that a high-volume month
- * can't stampede the backend.
- */
-const CATEGORY_LINK_READ_CONCURRENCY = 25;
 
 /**
  * The per-Circle Dashboard surface for one month (RPT-3; PRD stories 68, 75).
@@ -177,17 +169,13 @@ export const getCategoryAnalytics = query({
     // Bounded parallel fan-out: at most CATEGORY_LINK_READ_CONCURRENCY transactionCategories
     // reads in flight at once — keeps the latency win over the serial N+1 loop without
     // letting a high-volume month spike to thousands of concurrent reads (RPT-5).
-    const linkLoads = await asyncMapChunked(
-      scopedTxns,
-      CATEGORY_LINK_READ_CONCURRENCY,
-      async (txn) => ({
-        txn,
-        links: await ctx.db
-          .query("transactionCategories")
-          .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
-          .collect(),
-      }),
-    );
+    const linkLoads = await asyncMapChunked(scopedTxns, DEFAULT_READ_CONCURRENCY, async (txn) => ({
+      txn,
+      links: await ctx.db
+        .query("transactionCategories")
+        .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
+        .collect(),
+    }));
 
     const accum = new Map<Id<"categories">, { taggedTotalMinor: number; txnCount: number }>();
     for (const { txn, links } of linkLoads) {
@@ -199,17 +187,21 @@ export const getCategoryAnalytics = query({
       }
     }
 
-    const categoryDocs = new Map<Id<"categories">, Doc<"categories">>();
+    const categoryIds = [...accum.keys()];
+    const loadedCategories = await asyncMapChunked(
+      categoryIds,
+      DEFAULT_READ_CONCURRENCY,
+      (categoryId) => ctx.db.get(categoryId),
+    );
     const rows = [];
-    for (const [categoryId, totals] of accum) {
-      let category = categoryDocs.get(categoryId);
+    for (const [index, categoryId] of categoryIds.entries()) {
+      const category = loadedCategories[index];
       if (!category) {
-        const doc = await ctx.db.get(categoryId);
-        if (!doc) {
-          continue;
-        }
-        category = doc;
-        categoryDocs.set(categoryId, doc);
+        continue;
+      }
+      const totals = accum.get(categoryId);
+      if (!totals) {
+        continue;
       }
       rows.push({
         categoryId,

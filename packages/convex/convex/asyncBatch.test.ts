@@ -22,4 +22,21 @@ describe("asyncMapChunked", () => {
     const out = await asyncMapChunked(items, 25, async (n) => n * 2);
     expect(out).toEqual(items.map((n) => n * 2));
   });
+
+  it("bounds concurrency to chunkSize", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const items = Array.from({ length: 12 }, (_, i) => i);
+
+    await asyncMapChunked(items, 4, async (n) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return n;
+    });
+
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(peak).toBeGreaterThan(1);
+  });
 });

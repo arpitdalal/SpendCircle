@@ -59,6 +59,11 @@ type DeliverOneArgs = {
   link?: string;
 };
 
+/** The single actor-skip rule: we never notify an actor of their own action. */
+function isActorSkip(recipientUserId: Id<"users">, actorUserId: Id<"users">) {
+  return recipientUserId === actorUserId;
+}
+
 /**
  * Single-recipient delivery seam (NTF-2 / ADR 0027). The sole writer of
  * `notifications` — actor-skip is enforced at enqueue time; this guard is a
@@ -67,7 +72,7 @@ type DeliverOneArgs = {
 export const deliverOne = internalMutation({
   args: deliverOneArgsValidator,
   handler: async (ctx, args) => {
-    if (args.recipientUserId === args.actorUserId) {
+    if (isActorSkip(args.recipientUserId, args.actorUserId)) {
       return;
     }
 
@@ -131,7 +136,7 @@ export const fanOutCircleLifecycle = internalMutation({
 });
 
 async function scheduleDeliverOne(ctx: MutationCtx, args: DeliverOneArgs) {
-  if (args.recipientUserId === args.actorUserId) {
+  if (isActorSkip(args.recipientUserId, args.actorUserId)) {
     return;
   }
   await ctx.scheduler.runAfter(0, internal.notify.deliverOne, args);
@@ -222,6 +227,16 @@ export async function notifyCircleLifecycleChange(
     action: "archived" | "restored";
   },
 ) {
+  const members = await ctx.db
+    .query("members")
+    .withIndex("by_circle_and_status", (q) =>
+      q.eq("circleId", opts.circle._id).eq("status", "active"),
+    )
+    .collect();
+  if (!members.some((member) => !isActorSkip(member.userId, opts.actorUserId))) {
+    return;
+  }
+
   await ctx.scheduler.runAfter(0, internal.notify.fanOutCircleLifecycle, {
     circleId: opts.circle._id,
     actorUserId: opts.actorUserId,

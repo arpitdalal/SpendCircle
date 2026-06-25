@@ -1,4 +1,10 @@
 /**
+ * Default cap for bounded parallel DB reads (RPT-5). Matches the app's 25-row page
+ * size — enough parallelism to beat serial N+1 loops without stampeding the backend.
+ */
+export const DEFAULT_READ_CONCURRENCY = 25;
+
+/**
  * Maps an async fn over `items` with at most `chunkSize` calls in flight at once,
  * preserving input order. Bounds fan-out so a high-volume month can't schedule
  * thousands of concurrent DB reads (RPT-5) while still parallelizing within a batch —
