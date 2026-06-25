@@ -37,7 +37,7 @@ The Owner-controlled configuration for a **Circle**, including Circle name, Curr
 _Avoid_: Group Settings
 
 **Circle History**:
-The immutable change history for a **Circle**, including ownership transfers, Members added or removed, Circle archived or restored, and Circle Settings changed. Current Members can view Circle History; it shows old and new values for Circle name, Circle Color, Currency, and Circle Setup answers, transfer from/to Members for ownership changes, and actor plus affected Member for membership changes; internal IDs are not shown.
+The immutable change history for a **Circle**, including ownership transfers, Members added or removed, Circle archived or restored, and Circle Settings changed. Current Members can view Circle History as a Circle-level audit distinct from the **Member List**; it shows old and new values for Circle name, Circle Color, Currency, and Circle Setup answers, transfer from/to Members for ownership changes, and actor plus affected Member for membership changes; internal IDs are not shown.
 _Avoid_: Group Audit
 
 **Currency**:
