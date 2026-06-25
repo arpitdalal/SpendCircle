@@ -86,11 +86,16 @@ async function countUnexpiredPendingInvitations(
   circleId: Id<"circles">,
   now: number,
 ) {
-  const invitations = await ctx.db
+  // Indexed range scan over live seats only: the `expiresAt > now` bound excludes
+  // expired-but-still-"pending" rows at the index level, so the read is bounded by
+  // the 256 cap and never scans the unbounded terminal-state invitation history.
+  const pending = await ctx.db
     .query("invitations")
-    .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+    .withIndex("by_circle_status_and_expiresAt", (q) =>
+      q.eq("circleId", circleId).eq("status", "pending").gt("expiresAt", now),
+    )
     .collect();
-  return invitations.filter((i) => i.status === "pending" && i.expiresAt > now).length;
+  return pending.length;
 }
 
 async function recordEmailSend(
@@ -371,22 +376,22 @@ export const listPendingInvitations = query({
     }
 
     const now = Date.now();
-    // Pending invitations per Circle are bounded: at most one non-expired pending row
-    // per email (create rejects duplicates; revoked/accepted rows are filtered out).
+    // Indexed range scan over live seats only (≤ the 256 cap): the `expiresAt > now`
+    // bound skips expired-but-still-"pending" rows and the terminal-state history.
     const invitations = await ctx.db
       .query("invitations")
-      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+      .withIndex("by_circle_status_and_expiresAt", (q) =>
+        q.eq("circleId", args.circleId).eq("status", "pending").gt("expiresAt", now),
+      )
       .collect();
 
-    return invitations
-      .filter((invitation) => invitation.status === "pending" && invitation.expiresAt > now)
-      .map((invitation) => ({
-        id: invitation._id,
-        email: invitation.emailLower,
-        createdAt: invitation.createdAt,
-        expiresAt: invitation.expiresAt,
-        resendCount: invitation.resendCount,
-      }));
+    return invitations.map((invitation) => ({
+      id: invitation._id,
+      email: invitation.emailLower,
+      createdAt: invitation.createdAt,
+      expiresAt: invitation.expiresAt,
+      resendCount: invitation.resendCount,
+    }));
   },
 });
 
@@ -461,14 +466,16 @@ export const resendInvitation = mutation({
 
 /** Revokes every pending invitation for a Circle — no per-invite history (MEM-8). */
 export async function revokePendingInvitationsForCircle(ctx: MutationCtx, circleId: Id<"circles">) {
+  // Read only pending rows via the index prefix — skips the accepted/revoked/expired
+  // history. Expired-but-still-"pending" rows are swept too (harmless, keeps state clean).
   const invitations = await ctx.db
     .query("invitations")
-    .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+    .withIndex("by_circle_status_and_expiresAt", (q) =>
+      q.eq("circleId", circleId).eq("status", "pending"),
+    )
     .collect();
   for (const invitation of invitations) {
-    if (invitation.status === "pending") {
-      await ctx.db.patch(invitation._id, { status: "revoked" });
-    }
+    await ctx.db.patch(invitation._id, { status: "revoked" });
   }
 }
 
