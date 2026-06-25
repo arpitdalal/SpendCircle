@@ -299,6 +299,7 @@ describe("CircleMembers — invite form", () => {
         /this circle is full\. revoke a pending invitation or remove a member to free a seat\./i,
       ),
     ).not.toBeInTheDocument();
+    expect(screen.getByText("Loading seat availability…")).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Email address"), "ada@example.com");

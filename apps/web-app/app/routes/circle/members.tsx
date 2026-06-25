@@ -78,6 +78,7 @@ export default function CircleMembers() {
           circleId={circle.id}
           remainingSeats={remainingSeats}
           atCapacity={atCapacity}
+          seatsLoaded={seatsLoaded}
         />
       ) : null}
       {canInvite ? <PendingInvitationsList pendingInvitations={pendingInvitations} /> : null}
@@ -105,10 +106,12 @@ function InviteMemberForm({
   circleId,
   remainingSeats,
   atCapacity,
+  seatsLoaded,
 }: {
   circleId: Circle["id"];
   remainingSeats: number;
   atCapacity: boolean;
+  seatsLoaded: boolean;
 }) {
   const createInvitation = useCreateInvitation();
   const [email, setEmail] = useState("");
@@ -157,7 +160,9 @@ function InviteMemberForm({
       </p>
 
       <p className="text-sm text-muted-foreground">
-        {remainingSeats} of {CIRCLE_CAPACITY_LIMIT} seats remaining
+        {seatsLoaded
+          ? `${remainingSeats} of ${CIRCLE_CAPACITY_LIMIT} seats remaining`
+          : "Loading seat availability…"}
       </p>
 
       {atCapacity ? (

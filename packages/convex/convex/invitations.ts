@@ -170,7 +170,7 @@ export const createInvitation = mutation({
       (await countActiveMembers(ctx, args.circleId)) +
       (await countUnexpiredPendingInvitations(ctx, args.circleId, now));
     if (occupied >= CIRCLE_CAPACITY_LIMIT) {
-      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleCapacityReached));
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleCapacityFull));
     }
 
     await assertUnderDailyInvitationCap(ctx, access.user._id, now);

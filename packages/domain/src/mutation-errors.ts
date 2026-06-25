@@ -38,6 +38,10 @@ const mutationErrors = defineMutationErrorCatalog({
   circleArchived: defineMutationError("circle.archived", "Circle is archived"),
   circleCapacityReached: defineMutationError(
     "circle.capacityReached",
+    "This Circle is full. The invitation can't be accepted right now.",
+  ),
+  circleCapacityFull: defineMutationError(
+    "circle.capacityFull",
     "This Circle is full. Free a seat by revoking a pending invitation or removing a member, then try again.",
   ),
   categoryNameDuplicate: defineMutationError(

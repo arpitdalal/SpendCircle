@@ -1751,7 +1751,8 @@ async function seedActiveMemberCount(
     .collect();
   const toAdd = totalActive - active.length;
   for (let i = 0; i < toAdd; i++) {
-    await addMember(ctx, circleId, `capacity-member-${i}@example.com`, `Member ${i}`);
+    const index = active.length + i;
+    await addMember(ctx, circleId, `capacity-member-${index}@example.com`, `Member ${index}`);
   }
 }
 
@@ -1778,7 +1779,7 @@ describe("circle capacity", () => {
     await expect(
       t.mutation(api.invitations.createInvitation, { circleId, email: "new@example.com" }),
     ).rejects.toMatchObject({
-      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityFull),
     });
   });
 
@@ -1799,7 +1800,7 @@ describe("circle capacity", () => {
     await expect(
       t.mutation(api.invitations.createInvitation, { circleId, email: "another@example.com" }),
     ).rejects.toMatchObject({
-      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityFull),
     });
   });
 
@@ -1889,7 +1890,7 @@ describe("circle capacity", () => {
     await expect(
       t.mutation(api.invitations.createInvitation, { circleId, email: "overflow@example.com" }),
     ).rejects.toMatchObject({
-      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityFull),
     });
 
     await t.run(async (ctx) => {
@@ -1960,7 +1961,7 @@ describe("circle capacity", () => {
     const rejected = results.filter((result) => result.status === "rejected");
     expect(rejected).toHaveLength(1);
     expect(rejected[0]?.reason).toMatchObject({
-      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityFull),
     });
 
     await t.run(async (ctx) => {
@@ -1988,7 +1989,7 @@ describe("circle capacity", () => {
     await expect(
       t.mutation(api.invitations.createInvitation, { circleId, email: "blocked@example.com" }),
     ).rejects.toMatchObject({
-      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityFull),
     });
 
     await t.mutation(api.invitations.revokeInvitation, { invitationId });
@@ -2073,7 +2074,7 @@ describe("circle capacity", () => {
     await expect(
       t.mutation(api.invitations.createInvitation, { circleId, email: "another@example.com" }),
     ).rejects.toMatchObject({
-      data: mutationErrorData(MUTATION_ERRORS.circleCapacityReached),
+      data: mutationErrorData(MUTATION_ERRORS.circleCapacityFull),
     });
 
     vi.useRealTimers();
