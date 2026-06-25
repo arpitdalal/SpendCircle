@@ -11,12 +11,14 @@ function DoubleCheckButton({
   onConfirm,
   timeoutMs,
   label = "Item",
+  identity = label,
 }: {
   onConfirm: () => void;
   timeoutMs?: number;
   label?: string;
+  identity?: string;
 }) {
-  const { armed, getButtonProps } = useDoubleCheck({ onConfirm, timeoutMs });
+  const { armed, getButtonProps } = useDoubleCheck({ onConfirm, timeoutMs, identity });
   return (
     <button
       type="button"
@@ -99,6 +101,120 @@ describe("useDoubleCheck", () => {
 
     expect(screen.getByRole("button", { name: "Archive Groceries" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("disarms when identity changes (list recycled this instance for a new row)", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirm} label="Groceries" identity="txn-a" />,
+    );
+    await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+
+    rerender(<DoubleCheckButton onConfirm={onConfirm} label="Groceries" identity="txn-b" />);
+
+    expect(screen.getByRole("button")).toHaveTextContent("Archive");
+    await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("stays armed across re-renders that keep the same identity", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirm} label="Groceries" identity="txn-a" />,
+    );
+    await user.click(screen.getByRole("button", { name: "Archive Groceries" }));
+    rerender(<DoubleCheckButton onConfirm={onConfirm} label="Bills" identity="txn-a" />);
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+  });
+
+  it("a confirm after an identity change targets the new entity, not the stale one", async () => {
+    const user = userEvent.setup();
+    const onConfirmA = vi.fn();
+    const onConfirmB = vi.fn();
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirmA} identity="a" label="A" />,
+    );
+    await user.click(screen.getByRole("button", { name: "Archive A" }));
+    rerender(<DoubleCheckButton onConfirm={onConfirmB} identity="b" label="B" />);
+    await user.click(screen.getByRole("button", { name: "Archive B" }));
+    await user.click(screen.getByRole("button", { name: "Confirm archive B" }));
+    expect(onConfirmA).not.toHaveBeenCalled();
+    expect(onConfirmB).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not restore armed state when identity returns to a previously armed entity", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirm} label="A" identity="txn-a" />,
+    );
+    await user.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+
+    rerender(<DoubleCheckButton onConfirm={onConfirm} label="B" identity="txn-b" />);
+    rerender(<DoubleCheckButton onConfirm={onConfirm} label="A" identity="txn-a" />);
+
+    expect(screen.getByRole("button")).toHaveTextContent("Archive");
+    await user.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("stays armed after identity round-trip when a stale timeout would have fired", () => {
+    vi.useFakeTimers();
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirm} timeoutMs={10_000} label="A" identity="txn-a" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    rerender(
+      <DoubleCheckButton onConfirm={onConfirm} timeoutMs={10_000} label="B" identity="txn-b" />,
+    );
+    rerender(
+      <DoubleCheckButton onConfirm={onConfirm} timeoutMs={10_000} label="A" identity="txn-a" />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+
+    // First arm's timer would fire at t=10s; re-arm happened at t=5s. Past t=10s the
+    // stale callback must not disarm the new session (generation mismatch).
+    act(() => {
+      vi.advanceTimersByTime(5_001);
+    });
+
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale timeout callback after identity change without re-arming", () => {
+    vi.useFakeTimers();
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirm} timeoutMs={10_000} label="A" identity="txn-a" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+
+    rerender(
+      <DoubleCheckButton onConfirm={onConfirm} timeoutMs={10_000} label="B" identity="txn-b" />,
+    );
+    expect(screen.getByRole("button")).toHaveTextContent("Archive");
+
+    act(() => {
+      vi.advanceTimersByTime(10_001);
+    });
+
+    expect(screen.getByRole("button")).toHaveTextContent("Archive");
     expect(onConfirm).not.toHaveBeenCalled();
   });
 });
