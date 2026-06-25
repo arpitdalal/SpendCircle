@@ -218,6 +218,10 @@ export default defineSchema({
   })
     .index("by_circle", ["circleId"])
     .index("by_circle_and_email", ["circleId", "emailLower"])
+    // Bounds capacity/pending reads to live seats only: an (status, expiresAt)
+    // range scan reads just unexpired pending rows (≤ the 256 cap) and never
+    // touches the unbounded accepted/revoked/expired history (CIR-cap).
+    .index("by_circle_status_and_expiresAt", ["circleId", "status", "expiresAt"])
     .index("by_token_hash", ["tokenHash"]),
 
   // Append-only send log for invitation rate limits (ADR 0026).

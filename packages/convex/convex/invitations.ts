@@ -1,4 +1,9 @@
-import { inviteEmailSchema, MUTATION_ERRORS, mutationErrorData } from "@spend-circle/domain";
+import {
+  CIRCLE_CAPACITY_LIMIT,
+  inviteEmailSchema,
+  MUTATION_ERRORS,
+  mutationErrorData,
+} from "@spend-circle/domain";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -68,6 +73,31 @@ async function assertUnderResendAddressCap(
   }
 }
 
+async function countActiveMembers(ctx: MutationCtx, circleId: Id<"circles">) {
+  const active = await ctx.db
+    .query("members")
+    .withIndex("by_circle_and_status", (q) => q.eq("circleId", circleId).eq("status", "active"))
+    .collect();
+  return active.length;
+}
+
+async function countUnexpiredPendingInvitations(
+  ctx: MutationCtx,
+  circleId: Id<"circles">,
+  now: number,
+) {
+  // Indexed range scan over live seats only: the `expiresAt > now` bound excludes
+  // expired-but-still-"pending" rows at the index level, so the read is bounded by
+  // the 256 cap and never scans the unbounded terminal-state invitation history.
+  const pending = await ctx.db
+    .query("invitations")
+    .withIndex("by_circle_status_and_expiresAt", (q) =>
+      q.eq("circleId", circleId).eq("status", "pending").gt("expiresAt", now),
+    )
+    .collect();
+  return pending.length;
+}
+
 async function recordEmailSend(
   ctx: MutationCtx,
   args: {
@@ -134,6 +164,13 @@ export const createInvitation = mutation({
     );
     if (hasPending) {
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteAlreadyPending));
+    }
+
+    const occupied =
+      (await countActiveMembers(ctx, args.circleId)) +
+      (await countUnexpiredPendingInvitations(ctx, args.circleId, now));
+    if (occupied >= CIRCLE_CAPACITY_LIMIT) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleCapacityFull));
     }
 
     await assertUnderDailyInvitationCap(ctx, access.user._id, now);
@@ -273,6 +310,10 @@ export const acceptInvitation = mutation({
       throw new ConvexError(mutationErrorData(MUTATION_ERRORS.inviteInvalid));
     }
 
+    if ((await countActiveMembers(ctx, circle._id)) >= CIRCLE_CAPACITY_LIMIT) {
+      throw new ConvexError(mutationErrorData(MUTATION_ERRORS.circleCapacityReached));
+    }
+
     let membership: Doc<"members">;
     if (existingMembership?.status === "removed") {
       await ctx.db.patch(existingMembership._id, {
@@ -335,22 +376,22 @@ export const listPendingInvitations = query({
     }
 
     const now = Date.now();
-    // Pending invitations per Circle are bounded: at most one non-expired pending row
-    // per email (create rejects duplicates; revoked/accepted rows are filtered out).
+    // Indexed range scan over live seats only (≤ the 256 cap): the `expiresAt > now`
+    // bound skips expired-but-still-"pending" rows and the terminal-state history.
     const invitations = await ctx.db
       .query("invitations")
-      .withIndex("by_circle", (q) => q.eq("circleId", args.circleId))
+      .withIndex("by_circle_status_and_expiresAt", (q) =>
+        q.eq("circleId", args.circleId).eq("status", "pending").gt("expiresAt", now),
+      )
       .collect();
 
-    return invitations
-      .filter((invitation) => invitation.status === "pending" && invitation.expiresAt > now)
-      .map((invitation) => ({
-        id: invitation._id,
-        email: invitation.emailLower,
-        createdAt: invitation.createdAt,
-        expiresAt: invitation.expiresAt,
-        resendCount: invitation.resendCount,
-      }));
+    return invitations.map((invitation) => ({
+      id: invitation._id,
+      email: invitation.emailLower,
+      createdAt: invitation.createdAt,
+      expiresAt: invitation.expiresAt,
+      resendCount: invitation.resendCount,
+    }));
   },
 });
 
@@ -425,14 +466,16 @@ export const resendInvitation = mutation({
 
 /** Revokes every pending invitation for a Circle — no per-invite history (MEM-8). */
 export async function revokePendingInvitationsForCircle(ctx: MutationCtx, circleId: Id<"circles">) {
+  // Read only pending rows via the index prefix — skips the accepted/revoked/expired
+  // history. Expired-but-still-"pending" rows are swept too (harmless, keeps state clean).
   const invitations = await ctx.db
     .query("invitations")
-    .withIndex("by_circle", (q) => q.eq("circleId", circleId))
+    .withIndex("by_circle_status_and_expiresAt", (q) =>
+      q.eq("circleId", circleId).eq("status", "pending"),
+    )
     .collect();
   for (const invitation of invitations) {
-    if (invitation.status === "pending") {
-      await ctx.db.patch(invitation._id, { status: "revoked" });
-    }
+    await ctx.db.patch(invitation._id, { status: "revoked" });
   }
 }
 
