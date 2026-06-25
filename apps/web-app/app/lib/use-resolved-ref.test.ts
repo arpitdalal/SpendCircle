@@ -1,16 +1,20 @@
 import { renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { reportAppError } from "./report-error.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ResolvedRefOptions, useResolvedRef } from "./use-resolved-ref.js";
 
 // The primitive owns navigation, the current location, the snackbar, and error
-// reporting through four seams; we stub all of them so the state machine is
+// reporting. We stub the genuine boundaries — `react-router`'s context hooks and
+// the snackbar provider hook (renderHook has neither) — so the state machine is
 // asserted in isolation, exactly as ADR 0017 intends ("test the primitive
-// directly"). `location` is mutable so each test sets the URL it canonicalizes.
-const { navigate, showUnavailable, location } = vi.hoisted(() => ({
+// directly"). Error reporting is NOT stubbed at our own seam: we mock the true
+// boundary (`@sentry/react`) and let the real `reportAppError` run, so a report
+// is observed via `captureMessage` (CLAUDE.md: mock only third-party boundaries).
+// `location` is mutable so each test sets the URL it canonicalizes.
+const { navigate, showUnavailable, location, captureMessage } = vi.hoisted(() => ({
   navigate: vi.fn(),
   showUnavailable: vi.fn(),
   location: { pathname: "/circles/home-c1", search: "", hash: "" },
+  captureMessage: vi.fn(),
 }));
 vi.mock("react-router", () => ({
   useNavigate: () => navigate,
@@ -19,7 +23,13 @@ vi.mock("react-router", () => ({
 vi.mock("./snackbar.js", () => ({
   useSnackbar: () => ({ show: vi.fn(), showUnavailable }),
 }));
-vi.mock("./report-error.js", () => ({ reportAppError: vi.fn() }));
+vi.mock("@sentry/react", () => ({ captureMessage }));
+
+let warnSpy: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  // `reportAppError` console.warns in dev; silence it so the suite stays quiet.
+  warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+});
 
 interface TestRef {
   ref: string;
@@ -38,6 +48,7 @@ function resolve(overrides: Partial<ResolvedRefOptions<TestRef>>) {
 }
 
 afterEach(() => {
+  warnSpy.mockRestore();
   vi.clearAllMocks();
   location.pathname = "/circles/home-c1";
   location.search = "";
@@ -50,7 +61,7 @@ describe("useResolvedRef", () => {
     expect(result).toEqual({ status: "pending" });
     expect(navigate).not.toHaveBeenCalled();
     expect(showUnavailable).not.toHaveBeenCalled();
-    expect(reportAppError).not.toHaveBeenCalled();
+    expect(captureMessage).not.toHaveBeenCalled();
   });
 
   it("is ready when the value resolves on its canonical ref, with no navigation", () => {
@@ -58,21 +69,21 @@ describe("useResolvedRef", () => {
     const result = resolve({ value });
     expect(result).toEqual({ status: "ready", value });
     expect(navigate).not.toHaveBeenCalled();
-    expect(reportAppError).not.toHaveBeenCalled();
+    expect(captureMessage).not.toHaveBeenCalled();
   });
 
   it("falls back and reports when the ref is unparseable (an app-emitted bad link)", () => {
     resolve({ parsed: false, value: undefined, fallback: "/safe" });
     expect(showUnavailable).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledWith("/safe", { replace: true });
-    expect(reportAppError).toHaveBeenCalledOnce();
+    expect(captureMessage).toHaveBeenCalledOnce();
   });
 
   it("falls back silently when the target is inaccessible (no report — permission outcome)", () => {
     resolve({ parsed: true, value: null, fallback: "/safe" });
     expect(showUnavailable).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledWith("/safe", { replace: true });
-    expect(reportAppError).not.toHaveBeenCalled();
+    expect(captureMessage).not.toHaveBeenCalled();
   });
 
   it("fires the default 'link' unavailable message when no target is given", () => {
@@ -91,7 +102,7 @@ describe("useResolvedRef", () => {
     resolve({ rawRef: "c1", value }); // bare id ⇒ stale vs canonical "home-c1"
     expect(navigate).toHaveBeenCalledWith("/circles/home-c1", { replace: true });
     expect(showUnavailable).not.toHaveBeenCalled();
-    expect(reportAppError).not.toHaveBeenCalled();
+    expect(captureMessage).not.toHaveBeenCalled();
   });
 
   it("preserves the child route segment when canonicalizing a stale ref", () => {
@@ -154,7 +165,7 @@ describe("useResolvedRef — disabled (inert)", () => {
     expect(result).toEqual({ status: "pending" });
     expect(navigate).not.toHaveBeenCalled();
     expect(showUnavailable).not.toHaveBeenCalled();
-    expect(reportAppError).not.toHaveBeenCalled();
+    expect(captureMessage).not.toHaveBeenCalled();
   });
 
   it("is pending with no fallback for a null (inaccessible) value when disabled", () => {

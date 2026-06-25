@@ -227,13 +227,19 @@ export async function notifyCircleLifecycleChange(
     action: "archived" | "restored";
   },
 ) {
-  const members = await ctx.db
+  // Existence check only: schedule the coordinator iff some active Member is not
+  // the actor. A bounded `.take(2)` answers this without scanning the whole set
+  // (which ADR 0027 notes is uncapped and can approach Convex read limits) — the
+  // actor holds at most one active Member row (`by_circle_and_user` is unique),
+  // so any 2 distinct rows must include a non-actor recipient. The coordinator
+  // still owns the full per-recipient fan-out; this gate only avoids a no-op job.
+  const sample = await ctx.db
     .query("members")
     .withIndex("by_circle_and_status", (q) =>
       q.eq("circleId", opts.circle._id).eq("status", "active"),
     )
-    .collect();
-  if (!members.some((member) => !isActorSkip(member.userId, opts.actorUserId))) {
+    .take(2);
+  if (!sample.some((member) => !isActorSkip(member.userId, opts.actorUserId))) {
     return;
   }
 
