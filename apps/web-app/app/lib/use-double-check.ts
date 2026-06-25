@@ -68,18 +68,12 @@ export function useDoubleCheck({
   // Synchronous reset on identity change (ADR 0025) — not a post-paint Effect, so
   // no committed frame can show armed UI bound to a different entity's onConfirm.
   // Bump `generation` so any still-scheduled timeout from the prior identity is
-  // invalidated even if identity round-trips (A → B → A) before it fires.
+  // invalidated in the same commit (callback compares generation; stale timers
+  // become no-ops even on A → B → A round-trips before they fire).
   useValueChange(identity, () => {
     setArmedSession(null);
     setGeneration((current) => current + 1);
   });
-
-  // Cancel the pending timeout when identity changes; generation covers any
-  // effect-timing gap, but clearing the timer avoids pointless late callbacks.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: identity is the intentional trigger.
-  useEffect(() => {
-    clearTimer();
-  }, [identity, clearTimer]);
 
   function getButtonProps({
     onClick,
