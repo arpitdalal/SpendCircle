@@ -60,6 +60,7 @@ export default [
         // lifts the new-Category form off the list, deep-linked with the active type tab.
         route("categories/new", "routes/circle/category-new.tsx"),
         route("members", "routes/circle/members.tsx"),
+        route("history", "routes/circle/history.tsx"),
         route("settings", "routes/circle/settings.tsx"),
       ]),
     ]),
