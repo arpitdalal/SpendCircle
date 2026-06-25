@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CircleHistoryEvent, Member, PaginationStatus } from "~/lib/data.js";
+import type { Circle, CircleHistoryEvent, Member, PaginationStatus } from "~/lib/data.js";
 import {
   configureConvex,
   makeCircleView,
@@ -15,8 +15,14 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 
 import CircleHistoryPage from "./history.js";
 
+/**
+ * Behavior test for the Circle History page (jsdom). Only `convex/react` is doubled;
+ * the real `useCircleHistory` hook, `useCircle` Outlet seam, and route logic run
+ * against modeled backend state (ADR 0006).
+ */
 function setup(
   opts: {
+    circle?: Partial<Circle>;
     circleHistory?: CircleHistoryEvent[];
     historyStatus?: PaginationStatus;
     historyLoadMore?: () => void;
@@ -29,7 +35,7 @@ function setup(
     historyStatus: opts.historyStatus,
     historyLoadMore: opts.historyLoadMore,
   });
-  return renderInCircle(makeCircleView(), <CircleHistoryPage />);
+  return renderInCircle(makeCircleView(opts.circle), <CircleHistoryPage />);
 }
 
 const owner = makeMemberView({
@@ -115,5 +121,25 @@ describe("CircleHistoryPage — history panel (CS-4)", () => {
 
     expect(screen.getByRole("region", { name: "Circle history" })).toBeInTheDocument();
     expect(screen.getByText("joined")).toBeInTheDocument();
+  });
+
+  it("shows circle history on an archived Circle (read-only, no write gating)", () => {
+    setup({
+      circle: { status: "archived" },
+      members: [owner, maya],
+      circleHistory: [
+        makeHistoryEventView({
+          id: testId<CircleHistoryEvent["id"]>("h-archived"),
+          action: "archived",
+          actor: { displayName: "Olive Owner", image: undefined },
+          changes: [{ field: "status", from: "active", to: "archived" }],
+        }),
+      ],
+    });
+
+    const panel = screen.getByRole("region", { name: "Circle history" });
+    expect(within(panel).getByText("Olive Owner")).toBeInTheDocument();
+    expect(within(panel).getAllByText("archived").length).toBeGreaterThan(0);
+    expect(within(panel).getByText("active")).toBeInTheDocument();
   });
 });
