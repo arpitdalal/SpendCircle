@@ -162,4 +162,37 @@ describe("useDoubleCheck", () => {
     await user.click(screen.getByRole("button", { name: "Archive A" }));
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it("stays armed after identity round-trip when a stale timeout would have fired", () => {
+    vi.useFakeTimers();
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <DoubleCheckButton onConfirm={onConfirm} timeoutMs={10_000} label="A" identity="txn-a" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    rerender(
+      <DoubleCheckButton onConfirm={onConfirm} timeoutMs={10_000} label="B" identity="txn-b" />,
+    );
+    rerender(
+      <DoubleCheckButton onConfirm={onConfirm} timeoutMs={10_000} label="A" identity="txn-a" />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive A" }));
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+
+    // First arm's timer would fire at t=10s; re-arm happened at t=5s. Past t=10s the
+    // stale callback must not disarm the new session (generation mismatch + cancel).
+    act(() => {
+      vi.advanceTimersByTime(5_001);
+    });
+
+    expect(screen.getByRole("button")).toHaveTextContent("Confirm archive");
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });

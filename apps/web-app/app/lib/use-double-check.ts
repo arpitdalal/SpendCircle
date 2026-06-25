@@ -17,6 +17,11 @@ function chainHandlers<E>(...handlers: Array<((event: E) => void) | undefined>) 
   };
 }
 
+type ArmedSession = {
+  identity: string;
+  generation: number;
+};
+
 /**
  * Arm → confirm double-check for destructive inline actions (issue #207). First
  * activation arms; second within `timeoutMs` runs `onConfirm`. Resets on blur,
@@ -39,8 +44,9 @@ export function useDoubleCheck({
   identity: string;
   timeoutMs?: number;
 }) {
-  const [armedForIdentity, setArmedForIdentity] = useState<string | null>(null);
-  const armed = armedForIdentity === identity;
+  const [generation, setGeneration] = useState(0);
+  const [armedSession, setArmedSession] = useState<ArmedSession | null>(null);
+  const armed = armedSession?.identity === identity && armedSession.generation === generation;
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onConfirmRef = useRef(onConfirm);
   onConfirmRef.current = onConfirm;
@@ -54,16 +60,26 @@ export function useDoubleCheck({
 
   const disarm = useCallback(() => {
     clearTimer();
-    setArmedForIdentity(null);
+    setArmedSession(null);
   }, [clearTimer]);
 
   useEffect(() => () => clearTimer(), [clearTimer]);
 
   // Synchronous reset on identity change (ADR 0025) — not a post-paint Effect, so
   // no committed frame can show armed UI bound to a different entity's onConfirm.
+  // Bump `generation` so any still-scheduled timeout from the prior identity is
+  // invalidated even if identity round-trips (A → B → A) before it fires.
   useValueChange(identity, () => {
-    setArmedForIdentity(null);
+    setArmedSession(null);
+    setGeneration((current) => current + 1);
   });
+
+  // Cancel the pending timeout when identity changes; generation covers any
+  // effect-timing gap, but clearing the timer avoids pointless late callbacks.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identity is the intentional trigger.
+  useEffect(() => {
+    clearTimer();
+  }, [identity, clearTimer]);
 
   function getButtonProps({
     onClick,
@@ -77,11 +93,17 @@ export function useDoubleCheck({
     return {
       onClick: chainHandlers<MouseEvent<HTMLButtonElement>>(onClick, () => {
         if (!armed) {
+          clearTimer();
           const armedIdentity = identity;
-          setArmedForIdentity(armedIdentity);
+          const armedGeneration = generation;
+          setArmedSession({ identity: armedIdentity, generation: armedGeneration });
           timerRef.current = setTimeout(() => {
             timerRef.current = undefined;
-            setArmedForIdentity((current) => (current === armedIdentity ? null : current));
+            setArmedSession((current) =>
+              current?.identity === armedIdentity && current.generation === armedGeneration
+                ? null
+                : current,
+            );
           }, timeoutMs);
           return;
         }
