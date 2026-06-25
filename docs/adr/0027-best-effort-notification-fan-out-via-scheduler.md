@@ -25,7 +25,7 @@ Two facts shaped the fix:
 
 - **Fan-out is two-stage and per-recipient.** The business mutation schedules one small coordinator job (e.g. `internal.notify.fanOutCircleLifecycle` with `{ circleId, actorUserId, actorDisplayName, action }`). That coordinator queries Members and schedules **one `deliverOne` job per recipient** — it inserts nothing itself, so its only failure surface is the Member query (OCC auto-retried). `deliverOne` performs a single insert. One recipient's failure is isolated to that one row; it cannot starve the batch, and there is no N-insert ceiling in any single transaction.
 
-- **The actor-skip rule is evaluated at enqueue time.** `recipient === actor → no row` is checked before scheduling, so common self-actions (archiving your own Category) never schedule a no-op job.
+- **The actor-skip rule is centralized and evaluated at enqueue time.** `recipient === actor → no row` is enforced by a single `isActorSkip` helper used by both `scheduleDeliverOne` and the `deliverOne` backstop. The check runs before scheduling, so common self-actions (archiving your own Category) never schedule a no-op `deliverOne` job. Circle archive/restore fan-out is also gated at enqueue time: when the actor is the only active Member, `notifyCircleLifecycleChange` skips scheduling the coordinator entirely — no no-op coordinator job runs.
 
 - **Notifications are best-effort. No application-error retry, backoff, or dead-letter in v1.** We rely solely on Convex's built-in OCC/transient mutation retry. In-app activity notifications are explicitly not email (PRD 86) and carry no delivery guarantee; gold-plating a local insert with vendor-grade durability machinery is unwarranted.
 
@@ -46,6 +46,8 @@ Two facts shaped the fix:
 - A single recipient's failed insert no longer aborts the fan-out, and no single transaction holds an unbounded number of notification inserts — the per-mutation document limit is not a fan-out ceiling.
 
 - **Delivery is best-effort.** A notification lost to a non-retryable error is gone; there is no dead-letter or alert. Acceptable for in-app activity notifications. The escape hatch is documented: swap `runAfter` for a notification Workpool (one job per recipient) to gain retry-with-backoff and `onComplete` dead-lettering, if product upgrades notifications to guaranteed delivery.
+
+- **Enqueue-time gating adds one indexed Member read on circle lifecycle notifies.** `notifyCircleLifecycleChange` queries active Members before scheduling the coordinator so a solo Circle never pays for a no-op fan-out job. This is a read-only check on the enqueue path — it does not reintroduce the N-insert write-set coupling ADR 0027 removed from the business mutation.
 
 - **Tests must flush scheduled functions.** Assertions that previously read the `notifications` table synchronously after `t.mutation(...)` now run `vi.useFakeTimers()` + `t.finishAllScheduledFunctions(vi.runAllTimers)` first — the established pattern already used for the email Workpool in `invitations.test.ts`.
 

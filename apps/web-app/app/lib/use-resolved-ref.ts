@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { reportAppError } from "./report-error.js";
+import { handleUnavailableRefLink, handleUnparseableRefLink } from "./ref-link-failure.js";
 import { type UnavailableTarget, useSnackbar } from "./snackbar.js";
 
 /**
@@ -11,7 +11,8 @@ import { type UnavailableTarget, useSnackbar } from "./snackbar.js";
  * own the subscribe and feed this `parsed` + `value`; this owns the dance every
  * guard shares: show pending UI while loading, canonicalize a stale ref via
  * replace navigation, or fire the generic unavailable-link snackbar and fall back
- * to a safe route.
+ * to a safe route. Unparseable/unavailable failure handling is shared with
+ * in-list highlight hooks via `ref-link-failure.ts` (#237).
  *
  * Outcome classes: an unparseable ref and an inaccessible target look IDENTICAL
  * to the user (the same snackbar + fallback — ADR 0016 anti-enumeration), but
@@ -108,11 +109,22 @@ export function useResolvedRef<T extends { ref: string }>(
     if (!unavailable) {
       return;
     }
-    if (unparseable) {
-      reportAppError("Unparseable ref in URL", { rawRef });
+    if (unparseable && rawRef != null) {
+      handleUnparseableRefLink({
+        rawRef,
+        reportMessage: "Unparseable ref in URL",
+        showUnavailable,
+        unavailableTarget,
+        alsoShowUnavailable: true,
+        onConsumed: () => navigate(fallback, { replace: true }),
+      });
+      return;
     }
-    showUnavailable(unavailableTarget);
-    navigate(fallback, { replace: true });
+    handleUnavailableRefLink({
+      showUnavailable,
+      unavailableTarget,
+      onConsumed: () => navigate(fallback, { replace: true }),
+    });
   }, [unavailable, unparseable, rawRef, fallback, navigate, showUnavailable, unavailableTarget]);
 
   useEffect(() => {

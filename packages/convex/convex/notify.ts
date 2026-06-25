@@ -59,6 +59,11 @@ type DeliverOneArgs = {
   link?: string;
 };
 
+/** The single actor-skip rule: we never notify an actor of their own action. */
+function isActorSkip(recipientUserId: Id<"users">, actorUserId: Id<"users">) {
+  return recipientUserId === actorUserId;
+}
+
 /**
  * Single-recipient delivery seam (NTF-2 / ADR 0027). The sole writer of
  * `notifications` — actor-skip is enforced at enqueue time; this guard is a
@@ -67,7 +72,7 @@ type DeliverOneArgs = {
 export const deliverOne = internalMutation({
   args: deliverOneArgsValidator,
   handler: async (ctx, args) => {
-    if (args.recipientUserId === args.actorUserId) {
+    if (isActorSkip(args.recipientUserId, args.actorUserId)) {
       return;
     }
 
@@ -131,7 +136,7 @@ export const fanOutCircleLifecycle = internalMutation({
 });
 
 async function scheduleDeliverOne(ctx: MutationCtx, args: DeliverOneArgs) {
-  if (args.recipientUserId === args.actorUserId) {
+  if (isActorSkip(args.recipientUserId, args.actorUserId)) {
     return;
   }
   await ctx.scheduler.runAfter(0, internal.notify.deliverOne, args);
@@ -222,6 +227,22 @@ export async function notifyCircleLifecycleChange(
     action: "archived" | "restored";
   },
 ) {
+  // Existence check only: schedule the coordinator iff some active Member is not
+  // the actor. A bounded `.take(2)` answers this without scanning the whole set
+  // (which ADR 0027 notes is uncapped and can approach Convex read limits) — the
+  // actor holds at most one active Member row (`by_circle_and_user` is unique),
+  // so any 2 distinct rows must include a non-actor recipient. The coordinator
+  // still owns the full per-recipient fan-out; this gate only avoids a no-op job.
+  const sample = await ctx.db
+    .query("members")
+    .withIndex("by_circle_and_status", (q) =>
+      q.eq("circleId", opts.circle._id).eq("status", "active"),
+    )
+    .take(2);
+  if (!sample.some((member) => !isActorSkip(member.userId, opts.actorUserId))) {
+    return;
+  }
+
   await ctx.scheduler.runAfter(0, internal.notify.fanOutCircleLifecycle, {
     circleId: opts.circle._id,
     actorUserId: opts.actorUserId,

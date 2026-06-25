@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Category, PaginationStatus } from "~/lib/data.js";
+import { handleUnavailableRefLink, handleUnparseableRefLink } from "./ref-link-failure.js";
 import { parseCategoryRef } from "./refs.js";
-import { reportAppError } from "./report-error.js";
 import { useSnackbar } from "./snackbar.js";
 
 const HIGHLIGHT_MS = 2500;
@@ -60,13 +60,19 @@ export function useCategoryRefHighlight(args: {
     }
     const parsed = parseCategoryRef(categoryRefRaw);
     if (!parsed) {
-      reportAppError("Unparseable categoryRef in URL", { rawRef: categoryRefRaw });
-      setCategoryRefConsumed(true);
-      setTargetId(null);
+      handleUnparseableRefLink({
+        rawRef: categoryRefRaw,
+        reportMessage: "Unparseable categoryRef in URL",
+        showUnavailable,
+        onConsumed: () => {
+          setCategoryRefConsumed(true);
+          setTargetId(null);
+        },
+      });
       return;
     }
     setTargetId(parsed.id);
-  }, [targetId, categoryRefRaw]);
+  }, [targetId, categoryRefRaw, showUnavailable]);
 
   const matchedCategory =
     targetId != null ? categories.find((category) => category.id === targetId) : undefined;
@@ -92,9 +98,13 @@ export function useCategoryRefHighlight(args: {
     if (status === "CanLoadMore") {
       if (autoLoadCountRef.current >= MAX_AUTO_LOAD_PAGES) {
         consumedRef.current = true;
-        setCategoryRefConsumed(true);
-        showUnavailable("link");
-        setTargetId(null);
+        handleUnavailableRefLink({
+          showUnavailable,
+          onConsumed: () => {
+            setCategoryRefConsumed(true);
+            setTargetId(null);
+          },
+        });
         return;
       }
       autoLoadCountRef.current += 1;
@@ -103,9 +113,13 @@ export function useCategoryRefHighlight(args: {
     }
 
     consumedRef.current = true;
-    setCategoryRefConsumed(true);
-    showUnavailable("link");
-    setTargetId(null);
+    handleUnavailableRefLink({
+      showUnavailable,
+      onConsumed: () => {
+        setCategoryRefConsumed(true);
+        setTargetId(null);
+      },
+    });
   }, [loadMore, matchedCategory, showUnavailable, status, targetId]);
 
   return { highlightedId, categoryRefConsumed };

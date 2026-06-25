@@ -391,7 +391,7 @@ describe("notification creation on events (NTF-2)", () => {
     });
   });
 
-  it("archiveCircle on a solo Circle emits zero notifications", async () => {
+  it("archiveCircle on a solo Circle schedules no coordinator and emits zero notifications", async () => {
     const t = convexTest(schema, modules);
     const { owner, circleId } = await t.run(async (ctx) => {
       const seed = await seedCircle(ctx);
@@ -400,11 +400,24 @@ describe("notification creation on events (NTF-2)", () => {
     });
     mockCurrentUser.mockResolvedValue(owner);
 
-    await mutateAndDrain(t, () => t.mutation(api.circles.archiveCircle, { circleId }));
+    vi.useFakeTimers();
+    try {
+      await t.mutation(api.circles.archiveCircle, { circleId });
 
-    await t.run(async (ctx) => {
-      expect(await listNotificationsForUser(ctx, owner._id)).toHaveLength(0);
-    });
+      await t.run(async (ctx) => {
+        const scheduled = await ctx.db.system.query("_scheduled_functions").collect();
+        expect(scheduled).toHaveLength(0);
+        expect(await listNotificationsForUser(ctx, owner._id)).toHaveLength(0);
+      });
+
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+      await t.run(async (ctx) => {
+        expect(await listNotificationsForUser(ctx, owner._id)).toHaveLength(0);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("createTransaction notifies Paid By when set to another Member", async () => {

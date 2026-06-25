@@ -18,6 +18,7 @@ import { stream } from "convex-helpers/server/stream";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import type { QueryCtx } from "./_generated/server.js";
 import { query } from "./_generated/server.js";
+import { asyncMapChunked, DEFAULT_READ_CONCURRENCY } from "./asyncBatch.js";
 import { toCategoryView } from "./categories.js";
 import { resolveCircleAccess } from "./guard.js";
 import { toMemberView } from "./members.js";
@@ -409,9 +410,13 @@ async function collectSearchTransactionViews(
 ) {
   const source = buildIndexedSearchSource(ctx, args);
   const result = await source.paginate(args.paginationOpts);
+  // Batch raw transaction loads; map to views serially so shared viewCaches stay coherent.
+  const txns = await asyncMapChunked(result.page, DEFAULT_READ_CONCURRENCY, (searchDoc) =>
+    ctx.db.get(searchDoc.transactionId),
+  );
   const page = [];
-  for (const searchDoc of result.page) {
-    const txn = await ctx.db.get(searchDoc.transactionId);
+  for (let index = 0; index < result.page.length; index++) {
+    const txn = txns[index];
     if (txn) {
       page.push(
         await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
@@ -444,9 +449,13 @@ async function searchTransactionsOffsetPage(
     const result = await source.paginate({ numItems: indexedTakeLimit, cursor: null });
     const allDocs = result.page;
     const docSlice = allDocs.slice((page - 1) * pageSize, page * pageSize);
+    // Batch raw transaction loads; map to views serially so shared viewCaches stay coherent.
+    const txns = await asyncMapChunked(docSlice, DEFAULT_READ_CONCURRENCY, (searchDoc) =>
+      ctx.db.get(searchDoc.transactionId),
+    );
     const transactions = [];
-    for (const searchDoc of docSlice) {
-      const txn = await ctx.db.get(searchDoc.transactionId);
+    for (let index = 0; index < docSlice.length; index++) {
+      const txn = txns[index];
       if (txn) {
         transactions.push(
           await toTransactionView(ctx, txn, viewCaches, args.viewerMemberId, args.viewerIsOwner),
@@ -680,33 +689,38 @@ export const getLedgerFilterOptions = query({
     for (const txn of transactions) {
       memberIds.add(txn.recordedByMemberId);
       memberIds.add(txn.paidByMemberId);
-      if (!type || txn.type === type) {
-        const links = await ctx.db
-          .query("transactionCategories")
-          .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
-          .collect();
-        for (const link of links) {
-          categoryIds.add(link.categoryId);
-        }
+    }
+
+    const typeFilteredTxns = type ? transactions.filter((txn) => txn.type === type) : transactions;
+    const linkLoads = await asyncMapChunked(typeFilteredTxns, DEFAULT_READ_CONCURRENCY, (txn) =>
+      ctx.db
+        .query("transactionCategories")
+        .withIndex("by_transaction", (q) => q.eq("transactionId", txn._id))
+        .collect(),
+    );
+    for (const links of linkLoads) {
+      for (const link of links) {
+        categoryIds.add(link.categoryId);
       }
     }
 
-    const categoryDocs: Doc<"categories">[] = [];
-    for (const categoryId of categoryIds) {
-      const category = await ctx.db.get(categoryId);
-      if (category && (!type || category.type === type)) {
-        categoryDocs.push(category);
-      }
-    }
+    const loadedCategories = await asyncMapChunked(
+      [...categoryIds],
+      DEFAULT_READ_CONCURRENCY,
+      (categoryId) => ctx.db.get(categoryId),
+    );
+    const categoryDocs = loadedCategories.filter(
+      (category): category is Doc<"categories"> =>
+        category != null && (!type || category.type === type),
+    );
     categoryDocs.sort(orderCategories);
 
-    const memberDocs: Doc<"members">[] = [];
-    for (const memberId of memberIds) {
-      const member = await ctx.db.get(memberId);
-      if (member) {
-        memberDocs.push(member);
-      }
-    }
+    const loadedMembers = await asyncMapChunked(
+      [...memberIds],
+      DEFAULT_READ_CONCURRENCY,
+      (memberId) => ctx.db.get(memberId),
+    );
+    const memberDocs = loadedMembers.filter((member): member is Doc<"members"> => member != null);
     memberDocs.sort(orderMembers);
 
     const viewer = { userId: access.user._id, isOwner: access.isOwner };
