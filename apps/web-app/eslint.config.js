@@ -19,10 +19,8 @@ export default [
       },
     },
     plugins: reactCompilerRules.plugins,
-    rules: {
-      ...reactCompilerRules.rules,
-      // Silent compiler bailouts must fail CI, not warn.
-      "react-hooks/unsupported-syntax": "error",
-    },
+    // Gate-only config: promote every recommended-latest rule to error (the preset
+    // ships exhaustive-deps and incompatible-library as warn).
+    rules: Object.fromEntries(Object.keys(reactCompilerRules.rules).map((rule) => [rule, "error"])),
   },
 ];
