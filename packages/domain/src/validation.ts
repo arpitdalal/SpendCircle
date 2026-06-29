@@ -27,8 +27,46 @@ export const LIMITS = {
   categoryNameMax: 40,
   transactionTitleMax: 120,
   transactionNoteMax: 1_000,
+  feedbackMessageMax: 4_000,
   maxCategoriesPerTransaction: 10,
 } as const;
+
+export const FEEDBACK_TYPES = ["bug", "feature", "currency"] as const;
+export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
+
+export function isFeedbackType(value: string): value is FeedbackType {
+  return FEEDBACK_TYPES.some((type) => type === value);
+}
+
+/** Server-facing feedback input (FBK-1). */
+export const feedbackInputSchema = z.object({
+  type: z.enum(FEEDBACK_TYPES),
+  message: z
+    .string()
+    .trim()
+    .min(1, "Message is required")
+    .max(LIMITS.feedbackMessageMax, "Message is too long"),
+});
+export type FeedbackInput = z.infer<typeof feedbackInputSchema>;
+
+export type FeedbackInputParseResult =
+  | { ok: true; value: FeedbackInput }
+  | { ok: false; error: string };
+
+/** Shared feedback parse contract for client forms and Convex mutations (FBK-1). */
+export function parseFeedbackInput(input: {
+  type: FeedbackType;
+  message: string;
+}): FeedbackInputParseResult {
+  const parsed = feedbackInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid feedback",
+    };
+  }
+  return { ok: true, value: parsed.data };
+}
 
 const colorId = z.string().refine(isValidColorId, { message: "Unsupported color" });
 

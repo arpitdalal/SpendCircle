@@ -106,6 +106,10 @@ const mutationErrors = defineMutationErrorCatalog({
     "invite.dailyCapReached",
     "You've sent too many invitation emails today. Try again tomorrow.",
   ),
+  feedbackDailyCapReached: defineMutationError(
+    "feedback.dailyCapReached",
+    "You've sent too much feedback today. Try again tomorrow.",
+  ),
   leavePersonalCircle: defineMutationError(
     "leave.personalCircle",
     "You can't leave your Personal Circle",
