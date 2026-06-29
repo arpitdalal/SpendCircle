@@ -93,16 +93,19 @@ Create `packages/convex/convex/feedback.ts`.
 Use a public `mutation`, not an action, for the client entry point:
 
 1. `const user = await requireCurrentUser(ctx)`.
-2. Validate args with Convex validators at the boundary, then parse with `feedbackInputSchema`.
-3. Enforce 20/User/day by querying `feedbackEmailEvents.by_user_and_sentAt` with
-   `gt(sentAt, Date.now() - 24 * 60 * 60 * 1000)` and `.take(20)`.
-4. If at cap, throw `new ConvexError(mutationErrorData(MUTATION_ERRORS.feedbackDailyCapReached))`.
-5. If optional `circleId` is provided, resolve with `resolveCircleAccessForUser(ctx, circleId, user)`
-   or `resolveCircleAccess(ctx, circleId)`. Inaccessible/missing Circle means omit Circle context;
-   feedback submission should not reveal Circle existence.
-6. Insert `feedbackEmailEvents` only after validation and cap check. It records the submission for
-   rate limiting, not the free text.
-7. Enqueue an internal action with `emailPool.enqueueAction(...)`.
+2. Validate args with Convex validators at the boundary, then parse with `parseFeedbackSubmission`
+   (type, message, appVersion).
+3. If optional `circleId` is provided, resolve with `resolveCircleAccessForUser(ctx, circleId, user)`.
+   Inaccessible/missing Circle means omit Circle context; feedback submission should not reveal Circle
+   existence.
+4. Insert `feedbackEmailEvents` after validation. It records the submission for rate limiting, not
+   the free text.
+5. Enforce 20/User/day **after** the insert: query `feedbackEmailEvents.by_user_and_sentAt` with
+   `gt(sentAt, Date.now() - 24 * 60 * 60 * 1000)` and `.take(21)`. If more than 20 rows are in the
+   rolling window, delete the row just inserted and throw
+   `new ConvexError(mutationErrorData(MUTATION_ERRORS.feedbackDailyCapReached))`. This keeps the cap
+   check, ledger insert, and enqueue aligned so a capped user never schedules `sendFeedbackEmail`.
+6. Enqueue an internal action with `emailPool.enqueueAction(...)` only when the cap check passes.
 
 Create internal action `sendFeedbackEmail` in the same module or in `email.ts`. Keep vendor wiring
 in `sendEmail`; the action should only build template payload and call `sendEmail`.

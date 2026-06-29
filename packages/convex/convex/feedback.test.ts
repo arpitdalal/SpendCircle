@@ -108,6 +108,32 @@ describe("submitFeedback", () => {
     ).rejects.toThrow("Not authenticated");
   });
 
+  it("rejects a blank app version", async () => {
+    const t = createTestConvex();
+    const seed = await t.run((ctx) =>
+      seedPersonalCircleOwner(ctx, {
+        email: "ada@example.com",
+        displayName: "Ada",
+        onboarded: true,
+      }),
+    );
+    mockCurrentUser.mockResolvedValue(seed.owner);
+
+    await expect(
+      t.mutation(api.feedback.submitFeedback, {
+        type: "bug",
+        message: "Hi",
+        appVersion: "   ",
+      }),
+    ).rejects.toThrow("App version is required");
+
+    await t.run(async (ctx) => {
+      const events = await ctx.db.query("feedbackEmailEvents").collect();
+      expect(events).toHaveLength(0);
+    });
+    expect(capturedRequests.filter((r) => r.vendor === "resend")).toHaveLength(0);
+  });
+
   it("inserts only rate-limit metadata and sends one support email", async () => {
     const t = createTestConvex();
     const seed = await t.run((ctx) =>

@@ -55,10 +55,36 @@ export type FeedbackInputParseResult =
 
 /** Shared feedback parse contract for client forms and Convex mutations (FBK-1). */
 export function parseFeedbackInput(input: {
-  type: FeedbackType;
+  type: string;
   message: string;
 }): FeedbackInputParseResult {
   const parsed = feedbackInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid feedback",
+    };
+  }
+  return { ok: true, value: parsed.data };
+}
+
+/** Server-facing feedback submission including build metadata (FBK-1). */
+export const feedbackSubmissionSchema = feedbackInputSchema.extend({
+  appVersion: z.string().trim().min(1, "App version is required"),
+});
+export type FeedbackSubmission = z.infer<typeof feedbackSubmissionSchema>;
+
+export type FeedbackSubmissionParseResult =
+  | { ok: true; value: FeedbackSubmission }
+  | { ok: false; error: string };
+
+/** Convex mutation boundary — validates raw type and app version. */
+export function parseFeedbackSubmission(input: {
+  type: string;
+  message: string;
+  appVersion: string;
+}): FeedbackSubmissionParseResult {
+  const parsed = feedbackSubmissionSchema.safeParse(input);
   if (!parsed.success) {
     return {
       ok: false,

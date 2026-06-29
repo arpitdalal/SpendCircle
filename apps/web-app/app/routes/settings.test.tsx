@@ -196,7 +196,7 @@ describe("Settings feedback form", () => {
 
     expect(await screen.findByText(/Ada Lovelace/)).toBeInTheDocument();
     expect(screen.getByText(/ada@example.com/)).toBeInTheDocument();
-    expect(screen.getAllByText(new RegExp(__APP_VERSION__)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(__APP_VERSION__, { exact: false }).length).toBeGreaterThan(0);
     expect(screen.getByText(/Circle context:/)).toBeInTheDocument();
   });
 

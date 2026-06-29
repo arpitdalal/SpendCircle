@@ -1,3 +1,5 @@
+import type { FeedbackType } from "./validation.js";
+
 function escapeHtml(text: string) {
   return text
     .replaceAll("&", "&amp;")
@@ -52,7 +54,7 @@ export function invitationEmail(args: {
   };
 }
 
-const FEEDBACK_TYPE_LABEL: Record<"bug" | "feature" | "currency", string> = {
+const FEEDBACK_TYPE_LABEL: Record<FeedbackType, string> = {
   bug: "bug",
   feature: "feature",
   currency: "currency",
@@ -60,7 +62,7 @@ const FEEDBACK_TYPE_LABEL: Record<"bug" | "feature" | "currency", string> = {
 
 /** Pure HTML builder for in-app feedback (FBK-1) — escapes all user-supplied values. */
 export function feedbackEmail(args: {
-  type: "bug" | "feature" | "currency";
+  type: FeedbackType;
   message: string;
   userEmail: string;
   displayName: string;

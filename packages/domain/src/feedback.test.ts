@@ -4,6 +4,7 @@ import {
   feedbackInputSchema,
   LIMITS,
   parseFeedbackInput,
+  parseFeedbackSubmission,
 } from "@spend-circle/domain";
 import { describe, expect, it } from "vitest";
 
@@ -29,6 +30,27 @@ describe("feedbackInputSchema", () => {
     expect(parseFeedbackInput({ type: "currency", message: "  Add CHF  " })).toEqual({
       ok: true,
       value: { type: "currency", message: "Add CHF" },
+    });
+  });
+
+  it("rejects an invalid raw type string", () => {
+    expect(parseFeedbackInput({ type: "spam", message: "hello" }).ok).toBe(false);
+  });
+});
+
+describe("parseFeedbackSubmission", () => {
+  it("rejects a blank app version after trimming", () => {
+    expect(parseFeedbackSubmission({ type: "bug", message: "Hi", appVersion: "   " }).ok).toBe(
+      false,
+    );
+  });
+
+  it("trims app version on success", () => {
+    expect(
+      parseFeedbackSubmission({ type: "bug", message: "Hi", appVersion: "  1.2.3  " }),
+    ).toEqual({
+      ok: true,
+      value: { type: "bug", message: "Hi", appVersion: "1.2.3" },
     });
   });
 });

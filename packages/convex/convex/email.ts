@@ -15,7 +15,8 @@ import { hashInvitationToken } from "./invitationToken.js";
  * Feedback (FBK-1) also uses SUPPORT_EMAIL as the recipient address.
  *
  * Optional: EMAIL_DEV_LOG=1 logs subject + body to the Convex console even when
- * Resend creds are configured (also logs when creds are unset).
+ * Resend creds are configured (also logs when creds are unset). Feedback sends
+ * pass `logBodyInDev: false` so free-text message bodies never hit dev logs.
  */
 
 // Durable, throttled handoff to Resend — the shared seam EML-2 / FBK-1 reuse.
@@ -38,13 +39,20 @@ export async function sendEmail(args: {
   subject: string;
   html: string;
   idempotencyKey?: string;
+  /** When false, dev logging omits the HTML body (FBK-1 feedback privacy). Default true. */
+  logBodyInDev?: boolean;
 }) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
+  const logBodyInDev = args.logBodyInDev ?? true;
   const devLog = process.env.EMAIL_DEV_LOG === "1" || !key || !from;
   if (devLog) {
     console.log(`[email] to=${args.to} subject=${JSON.stringify(args.subject)}`);
-    console.log(`[email] body:\n${args.html}`);
+    if (logBodyInDev) {
+      console.log(`[email] body:\n${args.html}`);
+    } else {
+      console.log("[email] body: (redacted)");
+    }
   }
   if (!key || !from) {
     console.error("Resend env not configured; skipping email send");
@@ -280,6 +288,7 @@ export const sendFeedbackEmail = internalAction({
       subject,
       html,
       idempotencyKey: `feedback:${args.eventId}`,
+      logBodyInDev: false,
     });
   },
 });

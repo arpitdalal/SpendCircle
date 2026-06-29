@@ -2,7 +2,7 @@ import {
   buildRef,
   MUTATION_ERRORS,
   mutationErrorData,
-  parseFeedbackInput,
+  parseFeedbackSubmission,
 } from "@spend-circle/domain";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api.js";
@@ -22,13 +22,20 @@ const feedbackTypeValidator = v.union(
   v.literal("currency"),
 );
 
-async function assertUnderDailyFeedbackCap(ctx: MutationCtx, userId: Id<"users">, now: number) {
+/** Insert-then-count: cap is enforced after the ledger row exists so check/insert/enqueue stay aligned. */
+async function assertDailyFeedbackCapAfterInsert(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  eventId: Id<"feedbackEmailEvents">,
+  now: number,
+) {
   const windowStart = now - DAY_MS;
   const recent = await ctx.db
     .query("feedbackEmailEvents")
     .withIndex("by_user_and_sentAt", (q) => q.eq("userId", userId).gt("sentAt", windowStart))
-    .take(DAILY_FEEDBACK_CAP);
-  if (recent.length >= DAILY_FEEDBACK_CAP) {
+    .take(DAILY_FEEDBACK_CAP + 1);
+  if (recent.length > DAILY_FEEDBACK_CAP) {
+    await ctx.db.delete(eventId);
     throw new ConvexError(mutationErrorData(MUTATION_ERRORS.feedbackDailyCapReached));
   }
 }
@@ -48,13 +55,16 @@ export const submitFeedback = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
-    const parsed = parseFeedbackInput({ type: args.type, message: args.message });
+    const parsed = parseFeedbackSubmission({
+      type: args.type,
+      message: args.message,
+      appVersion: args.appVersion,
+    });
     if (!parsed.ok) {
       throw new Error(parsed.error);
     }
 
     const now = Date.now();
-    await assertUnderDailyFeedbackCap(ctx, user._id, now);
 
     let circleName: string | undefined;
     let circleRef: string | undefined;
@@ -71,6 +81,7 @@ export const submitFeedback = mutation({
       type: parsed.value.type,
       sentAt: now,
     });
+    await assertDailyFeedbackCapAfterInsert(ctx, user._id, eventId, now);
 
     await emailPool.enqueueAction(ctx, internal.email.sendFeedbackEmail, {
       eventId,
@@ -78,7 +89,7 @@ export const submitFeedback = mutation({
       message: parsed.value.message,
       userEmail: user.email,
       displayName: user.displayName,
-      appVersion: args.appVersion.trim(),
+      appVersion: parsed.value.appVersion,
       circleName,
       circleRef,
       submittedAtIso: new Date(now).toISOString(),
