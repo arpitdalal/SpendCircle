@@ -1,3 +1,5 @@
+import type { FeedbackType } from "./validation.js";
+
 function escapeHtml(text: string) {
   return text
     .replaceAll("&", "&amp;")
@@ -52,6 +54,47 @@ export function invitationEmail(args: {
   };
 }
 
+const FEEDBACK_TYPE_LABEL: Record<FeedbackType, string> = {
+  bug: "bug",
+  feature: "feature",
+  currency: "currency",
+};
+
+/** Pure HTML builder for in-app feedback (FBK-1) — escapes all user-supplied values. */
+export function feedbackEmail(args: {
+  type: FeedbackType;
+  message: string;
+  userEmail: string;
+  displayName: string;
+  appVersion: string;
+  circleName?: string;
+  circleRef?: string;
+  submittedAtIso: string;
+}) {
+  const typeLabel = FEEDBACK_TYPE_LABEL[args.type];
+  const subject = `Spend Circle feedback: ${typeLabel}`;
+  const circleBlock =
+    args.circleName && args.circleRef
+      ? `<p><strong>Circle:</strong> ${escapeHtml(args.circleName)} (${escapeHtml(args.circleRef)})</p>`
+      : "";
+  return {
+    subject,
+    html: `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
+<body>
+  <p><strong>Type:</strong> ${escapeHtml(typeLabel)}</p>
+  <p><strong>From:</strong> ${escapeHtml(args.displayName)} &lt;${escapeHtml(args.userEmail)}&gt;</p>
+  <p><strong>App version:</strong> ${escapeHtml(args.appVersion)}</p>
+  <p><strong>Submitted:</strong> ${escapeHtml(args.submittedAtIso)}</p>
+  ${circleBlock}
+  <p><strong>Message:</strong></p>
+  <p>${escapeHtml(args.message).replaceAll("\n", "<br>")}</p>
+</body>
+</html>`,
+  };
+}
+
 /** One source of truth for the preview UI and the template tests — no per-file drift. */
 export const EMAIL_PREVIEWS = [
   {
@@ -79,6 +122,35 @@ export const EMAIL_PREVIEWS = [
         circleName: p.circleName ?? "",
         ownerDisplayName: p.ownerDisplayName ?? "",
         recipientEmail: p.recipientEmail ?? "",
+      }),
+  },
+  {
+    id: "feedback",
+    name: "Feedback",
+    fields: [
+      { key: "type", label: "Type", default: "bug" },
+      { key: "message", label: "Message", default: "The dashboard feels slow on mobile." },
+      { key: "userEmail", label: "User email", default: "ada@example.com" },
+      { key: "displayName", label: "Display name", default: "Ada Lovelace" },
+      { key: "appVersion", label: "App version", default: "0.1.0" },
+      { key: "circleName", label: "Circle name", default: "Weekend Trip" },
+      { key: "circleRef", label: "Circle ref", default: "weekend-trip-c1" },
+      {
+        key: "submittedAtIso",
+        label: "Submitted at",
+        default: "2026-06-29T12:00:00.000Z",
+      },
+    ],
+    render: (p: Record<string, string>) =>
+      feedbackEmail({
+        type: p.type === "feature" || p.type === "currency" ? p.type : "bug",
+        message: p.message ?? "",
+        userEmail: p.userEmail ?? "",
+        displayName: p.displayName ?? "",
+        appVersion: p.appVersion ?? "",
+        circleName: p.circleName,
+        circleRef: p.circleRef,
+        submittedAtIso: p.submittedAtIso ?? "",
       }),
   },
 ] as const;

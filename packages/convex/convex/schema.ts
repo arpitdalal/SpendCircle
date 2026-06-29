@@ -235,6 +235,13 @@ export default defineSchema({
     .index("by_user_and_sentAt", ["invitedByUserId", "sentAt"])
     .index("by_circle_email_and_sentAt", ["circleId", "emailLower", "sentAt"]),
 
+  // Append-only send log for feedback rate limits (FBK-1). Stores only safe metadata.
+  feedbackEmailEvents: defineTable({
+    userId: v.id("users"),
+    type: v.union(v.literal("bug"), v.literal("feature"), v.literal("currency")),
+    sentAt: v.number(),
+  }).index("by_user_and_sentAt", ["userId", "sentAt"]),
+
   // E2E-only (ADR 0019): last emailed invitation token per Circle+email so Playwright
   // can drive accept flows after EML-2 stopped returning plaintext tokens to clients.
   // Never written when E2E_TEST_AUTH is unset — table stays empty in production.

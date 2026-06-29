@@ -1,5 +1,5 @@
 import { vOnCompleteValidator, Workpool } from "@convex-dev/workpool";
-import { invitationEmail, welcomeEmail } from "@spend-circle/domain";
+import { feedbackEmail, invitationEmail, welcomeEmail } from "@spend-circle/domain";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api.js";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server.js";
@@ -12,8 +12,11 @@ import { hashInvitationToken } from "./invitationToken.js";
  * Required deployment env vars (Convex deployment env, like auth.ts):
  * RESEND_API_KEY, RESEND_FROM_EMAIL
  *
+ * Feedback (FBK-1) also uses SUPPORT_EMAIL as the recipient address.
+ *
  * Optional: EMAIL_DEV_LOG=1 logs subject + body to the Convex console even when
- * Resend creds are configured (also logs when creds are unset).
+ * Resend creds are configured (also logs when creds are unset). Feedback sends
+ * pass `logBodyInDev: false` so free-text message bodies never hit dev logs.
  */
 
 // Durable, throttled handoff to Resend — the shared seam EML-2 / FBK-1 reuse.
@@ -36,13 +39,20 @@ export async function sendEmail(args: {
   subject: string;
   html: string;
   idempotencyKey?: string;
+  /** When false, dev logging omits the HTML body (FBK-1 feedback privacy). Default true. */
+  logBodyInDev?: boolean;
 }) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
+  const logBodyInDev = args.logBodyInDev ?? true;
   const devLog = process.env.EMAIL_DEV_LOG === "1" || !key || !from;
   if (devLog) {
     console.log(`[email] to=${args.to} subject=${JSON.stringify(args.subject)}`);
-    console.log(`[email] body:\n${args.html}`);
+    if (logBodyInDev) {
+      console.log(`[email] body:\n${args.html}`);
+    } else {
+      console.log("[email] body: (redacted)");
+    }
   }
   if (!key || !from) {
     console.error("Resend env not configured; skipping email send");
@@ -234,6 +244,60 @@ export const onInvitationRunComplete = internalMutation({
   handler: async (_ctx, { context, result }) => {
     if (result.kind === "failed") {
       console.error("Invitation email exhausted all retries", context.invitationId, result.error);
+      // TODO(OBS-1): Sentry.captureMessage here.
+    }
+  },
+});
+
+const feedbackTypeValidator = v.union(
+  v.literal("bug"),
+  v.literal("feature"),
+  v.literal("currency"),
+);
+
+export const sendFeedbackEmail = internalAction({
+  args: {
+    eventId: v.id("feedbackEmailEvents"),
+    type: feedbackTypeValidator,
+    message: v.string(),
+    userEmail: v.string(),
+    displayName: v.string(),
+    appVersion: v.string(),
+    circleName: v.optional(v.string()),
+    circleRef: v.optional(v.string()),
+    submittedAtIso: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    const supportEmail = process.env.SUPPORT_EMAIL;
+    if (!supportEmail) {
+      console.error("SUPPORT_EMAIL not configured; skipping feedback email send");
+      return;
+    }
+    const { subject, html } = feedbackEmail({
+      type: args.type,
+      message: args.message,
+      userEmail: args.userEmail,
+      displayName: args.displayName,
+      appVersion: args.appVersion,
+      circleName: args.circleName,
+      circleRef: args.circleRef,
+      submittedAtIso: args.submittedAtIso,
+    });
+    await sendEmail({
+      to: supportEmail,
+      subject,
+      html,
+      idempotencyKey: `feedback:${args.eventId}`,
+      logBodyInDev: false,
+    });
+  },
+});
+
+export const onFeedbackRunComplete = internalMutation({
+  args: vOnCompleteValidator(v.object({ eventId: v.id("feedbackEmailEvents") })),
+  handler: async (_ctx, { context, result }) => {
+    if (result.kind === "failed") {
+      console.error("Feedback email exhausted all retries", context.eventId, result.error);
       // TODO(OBS-1): Sentry.captureMessage here.
     }
   },

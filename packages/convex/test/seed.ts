@@ -297,6 +297,18 @@ export async function seedTransactionsBulk(
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Inserts a feedback email send event for rate-limit tests (FBK-1). */
+export async function seedFeedbackEmailEvent(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    type: "bug" | "feature" | "currency";
+    sentAt: number;
+  },
+) {
+  return await ctx.db.insert("feedbackEmailEvents", args);
+}
+
 /** Inserts an invitation email send event for rate-limit tests (ADR 0026). */
 export async function seedInvitationEmailEvent(
   ctx: MutationCtx,

@@ -272,6 +272,26 @@ describe("sendEmail env safety and vendor errors", () => {
     logSpy.mockRestore();
   });
 
+  it("omits body from dev logs when logBodyInDev is false", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("RESEND_API_KEY", "");
+    vi.stubEnv("RESEND_FROM_EMAIL", "");
+
+    await sendEmail({
+      to: "support@spendcircle.test",
+      subject: "Spend Circle feedback: bug",
+      html: "<p>secret feedback</p>",
+      logBodyInDev: false,
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      '[email] to=support@spendcircle.test subject="Spend Circle feedback: bug"',
+    );
+    expect(logSpy).toHaveBeenCalledWith("[email] body: (redacted)");
+    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining("secret feedback"));
+    logSpy.mockRestore();
+  });
+
   it("rejects on non-2xx", async () => {
     vi.stubEnv("RESEND_API_KEY", "test-key");
     vi.stubEnv("RESEND_FROM_EMAIL", "no-reply@spendcircle.test");

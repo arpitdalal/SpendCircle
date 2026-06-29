@@ -4,6 +4,7 @@
 export * from "./data/categories.js";
 export * from "./data/circles.js";
 export * from "./data/dashboard.js";
+export * from "./data/feedback.js";
 export * from "./data/history.js";
 export * from "./data/invitations.js";
 export * from "./data/ledger.js";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMAIL_PREVIEWS,
+  feedbackEmail,
   INVITATION_SUBJECT,
   invitationEmail,
   WELCOME_SUBJECT,
@@ -50,6 +51,29 @@ describe("invitationEmail", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("a&amp;b@example.com");
     expect(html).toContain("O&quot;wn");
+  });
+});
+
+describe("feedbackEmail", () => {
+  it("returns a type-specific subject and interpolated values", () => {
+    const { subject, html } = feedbackEmail({
+      type: "bug",
+      message: "Crash on save",
+      userEmail: "ada@example.com",
+      displayName: "Ada Lovelace",
+      appVersion: "0-2-0",
+      circleName: "Trip",
+      circleRef: "trip-c1",
+      submittedAtIso: "2026-06-29T12:00:00Z",
+    });
+    expect(subject).toBe("Spend Circle feedback: bug");
+    expect(html).toContain("Crash on save");
+    expect(html).toContain("ada@example.com");
+    expect(html).toContain("Ada Lovelace");
+    expect(html).toContain("0-2-0");
+    expect(html).toContain("Trip");
+    expect(html).toContain("trip-c1");
+    expect(html).not.toMatch(FINANCIAL_PATTERN);
   });
 });
 
