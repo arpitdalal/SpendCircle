@@ -12,6 +12,7 @@ import {
 } from "@spend-circle/domain";
 import { useMemo, useRef, useState } from "react";
 import { FieldError, FieldGroup } from "~/components/ui/field.js";
+import { track } from "~/lib/analytics.js";
 import {
   type Category,
   type Circle,
@@ -186,6 +187,11 @@ export function TransactionForm({
             date: args.date,
             categoryIds,
             paidByMemberId: paidBy.memberId,
+          });
+          track("transaction_added", {
+            type: args.type,
+            paidBySelf: !value.paidByMemberId || paidBy.memberId === selfMemberId,
+            categoryCount: categoryIds.length,
           });
         } else {
           const parsed = parseAmountToMinorUnits(value.amount);

@@ -5,6 +5,7 @@ import { ConvexError } from "convex/values";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Circle } from "~/lib/data.js";
+import { analyticsMock } from "~/test/analytics-mock.js";
 import {
   circleLayoutHeadingChrome,
   configureConvex,
@@ -20,6 +21,10 @@ import {
  * exercised exactly as in the app (ADR 0006).
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+vi.mock(
+  "~/lib/analytics.js",
+  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
+);
 
 import CategoryNew from "./category-new.js";
 
@@ -95,6 +100,10 @@ describe("CategoryNew — render and submit", () => {
       name: "Dining",
       type: "expense",
       color: "teal",
+    });
+    expect(analyticsMock.track).toHaveBeenCalledWith("category_created", {
+      type: "expense",
+      source: "standalone",
     });
   });
 

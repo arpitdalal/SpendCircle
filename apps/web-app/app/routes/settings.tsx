@@ -18,6 +18,7 @@ import {
 import { Input } from "~/components/ui/input.js";
 import { Switch } from "~/components/ui/switch.js";
 import { Textarea } from "~/components/ui/textarea.js";
+import { track } from "~/lib/analytics.js";
 import { useSetAnalyticsOptOut, useSubmitFeedback, useUpdateProfile } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { type SessionUser, useAppSession } from "~/lib/session.js";
@@ -212,6 +213,7 @@ function FeedbackSettingsForm({ user }: { user: SessionUser }) {
         message: parsed.value.message,
         appVersion: __APP_VERSION__,
       });
+      track("feedback_submitted", { type: parsed.value.type });
       setMessage("");
       show("Thanks — your feedback was sent.");
     } catch (caught) {

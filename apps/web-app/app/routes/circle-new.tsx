@@ -14,6 +14,7 @@ import { href, Link, useNavigate } from "react-router";
 import { CircleMark } from "~/components/circle-mark.js";
 import { Button } from "~/components/ui/button.js";
 import { buttonVariants } from "~/components/ui/button-variants.js";
+import { track } from "~/lib/analytics.js";
 import { useCreateCircle } from "~/lib/data.js";
 import { viewerLocale } from "~/lib/locale.js";
 import { useSnackbar } from "~/lib/snackbar.js";
@@ -74,6 +75,7 @@ export default function CreateCircle() {
         color: parsed.data.color,
         mark: parsed.data.mark,
       });
+      track("circle_created", { currency: parsed.data.currency });
       // Navigate with the canonical ref so the URL is id-authoritative from the first
       // load — no stale-slug redirect (ADR 0016). Setup remains skippable.
       const ref = buildRef(parsed.data.name, circleId);

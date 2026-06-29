@@ -16,6 +16,7 @@ import {
   type Transaction,
   type TransactionFilterOptions,
 } from "~/lib/data.js";
+import { analyticsMock } from "~/test/analytics-mock.js";
 import {
   assertFilterPanelDiscardsDraftOnClose,
   configureConvex,
@@ -37,6 +38,10 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 vi.mock(
   "convex-helpers/react",
   async () => (await import("~/test/convex-react.js")).convexHelpersReactMock,
+);
+vi.mock(
+  "~/lib/analytics.js",
+  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
 );
 
 import CircleTransactions from "./transactions.js";
@@ -198,6 +203,15 @@ describe("CircleTransactions", () => {
 
     expect(location()).toBe(
       `/circles/${REF}/transactions?month=2026-05&type=all&status=all&q=rent`,
+    );
+    expect(analyticsMock.track).toHaveBeenCalledWith(
+      "ledger_filter_applied",
+      expect.objectContaining({
+        type: "all",
+        status: "all",
+        hasQuery: true,
+        categoryCount: 0,
+      }),
     );
     expect(screen.getByText("Rent payment")).toBeInTheDocument();
     expect(screen.getAllByText(/\$125\.00/)).toHaveLength(2);

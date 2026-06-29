@@ -10,6 +10,8 @@ import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-c
 import { Pagination } from "~/components/ui/pagination.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import { useFilterPanelDraft } from "~/components/ui/use-filter-panel-draft.js";
+import { track } from "~/lib/analytics.js";
+import { exportAnalyticsProps, searchFilterAnalyticsProps } from "~/lib/analytics-props.js";
 import { buildTransactionExportCsv, downloadCsv } from "~/lib/csv.js";
 import {
   TRANSACTIONS_PAGE_SIZE,
@@ -119,7 +121,9 @@ export default function CircleSearch() {
     if (hasReversedRange(draft)) {
       return;
     }
-    setSearchParams(canonicalSearchParams({ ...draft, q: filters.q, page: 1 }), { replace: false });
+    const applied = { ...draft, q: filters.q, page: 1 };
+    track("transaction_search_submitted", searchFilterAnalyticsProps(applied));
+    setSearchParams(canonicalSearchParams(applied), { replace: false });
     setPanelOpen(false);
   };
 
@@ -134,17 +138,21 @@ export default function CircleSearch() {
       const result = await exportTransactions(toSearchQuery(filters));
       if (!result.ok) {
         if (result.reason === "tooMany") {
+          track("export_performed", exportAnalyticsProps(filters, "too_many"));
           show(
             `Too many transactions to export (limit ${result.limit ?? "the cap"}). Narrow your search and try again.`,
           );
         } else {
+          track("export_performed", exportAnalyticsProps(filters, "inaccessible"));
           show("Export isn't available.");
         }
         return;
       }
       const filename = `spend-circle-${circle.ref}-${toPlainDate(new Date())}.csv`;
       downloadCsv(filename, buildTransactionExportCsv(result.rows));
+      track("export_performed", exportAnalyticsProps(filters, "downloaded"));
     } catch (error) {
+      track("export_performed", exportAnalyticsProps(filters, "failed"));
       show(
         mutationErrorMessageForUser(error, "Couldn't export the search results. Please try again."),
       );
@@ -169,9 +177,11 @@ export default function CircleSearch() {
         <DebouncedSearchInput
           className="min-w-0 flex-1"
           value={filters.q}
-          onSearch={(q) =>
-            setSearchParams(canonicalSearchParams({ ...filters, q, page: 1 }), { replace: true })
-          }
+          onSearch={(q) => {
+            const next = { ...filters, q, page: 1 };
+            track("transaction_search_submitted", searchFilterAnalyticsProps(next));
+            setSearchParams(canonicalSearchParams(next), { replace: true });
+          }}
           label="Search title or note"
           normalize={(raw) => cleanText(raw)}
         />
@@ -203,9 +213,10 @@ export default function CircleSearch() {
         totalPages={totalPages}
         totalCountCapped={totalCountCapped}
         loading={results.isLoading}
-        onSelectPage={(page) =>
-          setSearchParams(canonicalSearchParams({ ...filters, page }), { replace: false })
-        }
+        onSelectPage={(page) => {
+          track("transaction_search_page_changed", { page });
+          setSearchParams(canonicalSearchParams({ ...filters, page }), { replace: false });
+        }}
       />
 
       <FilterPanel

@@ -4,6 +4,7 @@ import { createRoutesStub, Link } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SKELETON_DELAY_MS } from "~/lib/route-skeleton.js";
 import { SnackbarProvider } from "~/lib/snackbar.js";
+import { analyticsMock } from "~/test/analytics-mock.js";
 import { configureConvex, makeCurrentUserView } from "~/test/convex-react.js";
 import { installIntersectionObserverStub } from "~/test/intersection-observer-stub.js";
 import { deferred, renderRouteStub } from "~/test/router-stub.js";
@@ -16,6 +17,10 @@ import { deferred, renderRouteStub } from "~/test/router-stub.js";
  * The header chrome must stay put while the `<Outlet/>` content swaps to the skeleton.
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+vi.mock(
+  "~/lib/analytics.js",
+  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
+);
 
 import OnboardingRoute from "../onboarding.js";
 import ProtectedLayout from "./protected-layout.js";
@@ -274,6 +279,31 @@ describe("ProtectedLayout onboarding gate", () => {
 
     expect(await screen.findByText("Home stub")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Welcome" })).not.toBeInTheDocument();
+    expect(analyticsMock.initAnalytics).toHaveBeenCalledWith(
+      expect.objectContaining({ analyticsOptOut: false }),
+    );
+    expect(analyticsMock.setAnalyticsOptOut).toHaveBeenCalledWith(false);
+  });
+
+  it("syncs analytics opt-out from the ready session", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ analyticsOptOut: true, onboardingComplete: true }),
+      circles: [],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [{ index: true, Component: () => <h2>Home stub</h2> }],
+        },
+      ],
+      ["/"],
+    );
+
+    await screen.findByText("Home stub");
+    expect(analyticsMock.initAnalytics).not.toHaveBeenCalled();
+    expect(analyticsMock.setAnalyticsOptOut).toHaveBeenCalledWith(true);
   });
 
   it("completes onboarding and lets the User reach the app shell", async () => {

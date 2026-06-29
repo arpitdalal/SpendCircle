@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category, Circle, Member, Transaction } from "~/lib/data.js";
+import { analyticsMock } from "~/test/analytics-mock.js";
 import {
   configureConvex,
   inlineCreateTransactionFormCategory,
@@ -30,6 +31,11 @@ import {
  * once keeps the route tests about routing, not about field rules (ADR 0006/0020).
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+
+vi.mock(
+  "~/lib/analytics.js",
+  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
+);
 
 import { TransactionForm, type TransactionFormMode } from "./index.js";
 
@@ -145,6 +151,11 @@ describe("TransactionForm — create", () => {
       date: toPlainDate(new Date()),
       categoryIds: ["cat-groceries"],
       paidByMemberId: undefined, // "Me" default omits → server defaults to creator
+    });
+    expect(analyticsMock.track).toHaveBeenCalledWith("transaction_added", {
+      type: "expense",
+      paidBySelf: true,
+      categoryCount: 1,
     });
     expect(onClose).toHaveBeenCalled(); // a successful save closes the form
   });
@@ -323,6 +334,10 @@ describe("TransactionForm — create", () => {
       name: "Snacks",
       type: "expense",
       color: paletteColorForSeed("snacks").id,
+    });
+    expect(analyticsMock.track).toHaveBeenCalledWith("category_created", {
+      type: "expense",
+      source: "transaction_inline",
     });
     expect(within(form).getByRole("button", { name: /Remove Snacks/ })).toBeInTheDocument();
   });

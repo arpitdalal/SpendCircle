@@ -12,6 +12,10 @@ interface ImportMetaEnv {
   readonly VITE_E2E?: string;
   /** Sentry ingest DSN for client error monitoring (ADR 0012). Optional locally. */
   readonly VITE_SENTRY_DSN?: string;
+  /** PostHog project key for product analytics (ADR 0013). Optional locally. */
+  readonly VITE_POSTHOG_KEY?: string;
+  /** PostHog ingest host. Optional; defaults to PostHog cloud. */
+  readonly VITE_POSTHOG_HOST?: string;
 }
 
 interface ImportMeta {

@@ -18,3 +18,9 @@ export const CONVEX_URL = import.meta.env.VITE_CONVEX_URL;
 
 /** Sentry DSN for client error monitoring (ADR 0012). Unset locally → init no-ops. */
 export const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
+
+/** PostHog project key (ADR 0013). Unset locally → product analytics no-op. */
+export const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY;
+
+/** PostHog ingest host. Defaults to PostHog cloud when unset. */
+export const POSTHOG_HOST = import.meta.env.VITE_POSTHOG_HOST ?? "https://us.i.posthog.com";

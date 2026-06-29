@@ -3,6 +3,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { analyticsMock } from "~/test/analytics-mock.js";
 import { configureConvex, renderRoutes } from "~/test/convex-react.js";
 
 /**
@@ -14,6 +15,10 @@ import { configureConvex, renderRoutes } from "~/test/convex-react.js";
  * exercised exactly as in the app.
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+vi.mock(
+  "~/lib/analytics.js",
+  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
+);
 
 import CreateCircle from "./circle-new.js";
 
@@ -57,6 +62,7 @@ describe("Create Circle", () => {
       color: "teal",
       mark: "MH",
     });
+    expect(analyticsMock.track).toHaveBeenCalledWith("circle_created", { currency: "USD" });
 
     // Canonical-ref navigation (ADR 0016) — id-authoritative from first load.
     await waitFor(() => {

@@ -4,6 +4,7 @@ import { Route, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as csv from "~/lib/csv.js";
 import type { Category, Circle, Member, TransactionFilterOptions } from "~/lib/data.js";
+import { analyticsMock } from "~/test/analytics-mock.js";
 import {
   assertFilterPanelDiscardsDraftOnClose,
   type ConvexState,
@@ -22,6 +23,10 @@ vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).con
 vi.mock(
   "convex-helpers/react",
   async () => (await import("~/test/convex-react.js")).convexHelpersReactMock,
+);
+vi.mock(
+  "~/lib/analytics.js",
+  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
 );
 
 import CircleSearch from "./search.js";
@@ -158,6 +163,15 @@ describe("CircleSearch", () => {
 
     expect(location()).toBe(
       `/circles/${REF}/search?type=expense&status=archived&from=2026-05-01&to=2026-05-31&min=10`,
+    );
+    expect(analyticsMock.track).toHaveBeenCalledWith(
+      "transaction_search_submitted",
+      expect.objectContaining({
+        type: "expense",
+        status: "archived",
+        hasDateRange: true,
+        hasAmountRange: true,
+      }),
     );
   });
 
@@ -302,6 +316,10 @@ describe("CircleSearch", () => {
 
     await waitFor(() => expect(location()).toMatch(/q=new/));
     expect(location()).not.toMatch(/page=/);
+    expect(analyticsMock.track).toHaveBeenCalledWith(
+      "transaction_search_submitted",
+      expect.objectContaining({ hasQuery: true }),
+    );
   });
 
   it.each(
@@ -333,6 +351,9 @@ describe("CircleSearch", () => {
 
     await user.click(screen.getByRole("button", { name: "Page 1" }));
     await waitFor(() => expect(location()).not.toMatch(/page=2/));
+    expect(analyticsMock.track).toHaveBeenCalledWith("transaction_search_page_changed", {
+      page: 1,
+    });
 
     expect(searchbox).toHaveValue("rental");
     expect(location()).toMatch(/q=rent/);
@@ -394,6 +415,10 @@ describe("CircleSearch", () => {
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(downloadSpy).toHaveBeenCalledOnce());
+    expect(analyticsMock.track).toHaveBeenCalledWith(
+      "export_performed",
+      expect.objectContaining({ result: "downloaded" }),
+    );
     const [filename, content] = downloadSpy.mock.calls[0] ?? [];
     expect(filename).toMatch(/^spend-circle-trip-c1-\d{4}-\d{2}-\d{2}\.csv$/);
     expect(content).toContain("Rent");
@@ -414,6 +439,10 @@ describe("CircleSearch", () => {
         screen.getByText(/Too many transactions to export \(limit 5000\)/),
       ).toBeInTheDocument(),
     );
+    expect(analyticsMock.track).toHaveBeenCalledWith(
+      "export_performed",
+      expect.objectContaining({ result: "too_many" }),
+    );
   });
 
   it("shows an error when the export query rejects", async () => {
@@ -429,6 +458,10 @@ describe("CircleSearch", () => {
     expect(
       await screen.findByText("Couldn't export the search results. Please try again."),
     ).toBeInTheDocument();
+    expect(analyticsMock.track).toHaveBeenCalledWith(
+      "export_performed",
+      expect.objectContaining({ result: "failed" }),
+    );
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });
 });

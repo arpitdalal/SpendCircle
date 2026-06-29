@@ -5,9 +5,14 @@ import { ConvexError } from "convex/values";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SnackbarProvider } from "~/lib/snackbar.js";
+import { analyticsMock } from "~/test/analytics-mock.js";
 import { configureConvex, convexReactMock, makeCurrentUserView } from "~/test/convex-react.js";
 
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+vi.mock(
+  "~/lib/analytics.js",
+  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
+);
 
 import Settings from "./settings.js";
 
@@ -241,6 +246,7 @@ describe("Settings feedback form", () => {
     await waitFor(() => {
       expect(screen.getByText("Thanks — your feedback was sent.")).toBeInTheDocument();
     });
+    expect(analyticsMock.track).toHaveBeenCalledWith("feedback_submitted", { type: "bug" });
     expect(message).toHaveValue("");
     expect(screen.getByRole("button", { name: "Send feedback" })).toBeDisabled();
   });
@@ -300,7 +306,7 @@ describe("Settings feedback form", () => {
     );
   });
 
-  it("does not import a temporary analytics client", async () => {
+  it("does not import PostHog directly", async () => {
     const { readFileSync } = await import("node:fs");
     const { dirname, join } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
@@ -308,6 +314,6 @@ describe("Settings feedback form", () => {
     const moduleText = readFileSync(join(dir, "settings.tsx"), "utf8");
     expect(moduleText).not.toMatch(/from\s+["'][^"']*posthog/i);
     expect(moduleText).not.toMatch(/import\s*\(\s*["'][^"']*posthog/i);
-    expect(moduleText).not.toMatch(/\btrack\s*\(/);
+    expect(moduleText).toMatch(/from\s+["']~\/lib\/analytics\.js["']/);
   });
 });

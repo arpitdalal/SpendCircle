@@ -19,6 +19,7 @@ import {
   useComboboxAnchor,
 } from "~/components/ui/combobox.js";
 import { FieldError, FieldLegend, FieldSet } from "~/components/ui/field.js";
+import { track } from "~/lib/analytics.js";
 import { type Category, type Circle, useCreateCategory } from "~/lib/data.js";
 import { useTypedAppFormContext } from "~/lib/form.js";
 import { mutationErrorCode, mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
@@ -162,6 +163,7 @@ export function TransactionFormCategorySection({
       }
       const created = toInlineCreatedCategory(newId, parsed.data.name, activeType, seededColor);
       onInlineCreatedCategory(created);
+      track("category_created", { type: activeType, source: "transaction_inline" });
       if (!currentIds.includes(newId)) {
         onIdsChange([...currentIds, newId]);
       }
