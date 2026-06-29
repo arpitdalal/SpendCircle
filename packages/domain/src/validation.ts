@@ -74,24 +74,20 @@ export const feedbackSubmissionSchema = feedbackInputSchema.extend({
 });
 export type FeedbackSubmission = z.infer<typeof feedbackSubmissionSchema>;
 
-export type FeedbackSubmissionParseResult =
-  | { ok: true; value: FeedbackSubmission }
-  | { ok: false; error: string };
-
 /** Convex mutation boundary — validates raw type and app version. */
 export function parseFeedbackSubmission(input: {
   type: string;
   message: string;
   appVersion: string;
-}): FeedbackSubmissionParseResult {
+}) {
   const parsed = feedbackSubmissionSchema.safeParse(input);
   if (!parsed.success) {
     return {
-      ok: false,
+      ok: false as const,
       error: parsed.error.issues[0]?.message ?? "Invalid feedback",
     };
   }
-  return { ok: true, value: parsed.data };
+  return { ok: true as const, value: parsed.data };
 }
 
 const colorId = z.string().refine(isValidColorId, { message: "Unsupported color" });
