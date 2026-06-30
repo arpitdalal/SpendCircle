@@ -2,8 +2,13 @@ import { buildRef } from "@spend-circle/domain";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { configureConvex, renderRoutes } from "~/test/convex-react.js";
+import {
+  posthogSdk,
+  primeAnalyticsForTests,
+  resetPostHogBoundary,
+} from "~/test/posthog-boundary.js";
 
 /**
  * Behavior test for the Create Circle flow (CS-0). Doubles ONLY Convex's reactive
@@ -14,10 +19,19 @@ import { configureConvex, renderRoutes } from "~/test/convex-react.js";
  * exercised exactly as in the app.
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+vi.mock("posthog-js", async () => (await import("~/test/posthog-mock.js")).posthogModuleMock);
+vi.mock("~/lib/env.js", async (importOriginal) =>
+  (await import("~/test/posthog-mock.js")).createPosthogEnvMock(importOriginal),
+);
 
 import CreateCircle from "./circle-new.js";
 
+beforeEach(() => {
+  primeAnalyticsForTests();
+});
+
 afterEach(() => {
+  resetPostHogBoundary();
   // restoreAllMocks (not just clear) so a per-test navigator.language spy does not
   // leak its locale into later tests.
   vi.restoreAllMocks();
@@ -57,6 +71,7 @@ describe("Create Circle", () => {
       color: "teal",
       mark: "MH",
     });
+    expect(posthogSdk.capture).toHaveBeenCalledWith("circle_created", { currency: "USD" });
 
     // Canonical-ref navigation (ADR 0016) — id-authoritative from first load.
     await waitFor(() => {

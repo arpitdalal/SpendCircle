@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
 import { Route } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type Category,
   type Circle,
@@ -32,14 +32,27 @@ import {
   testId,
 } from "~/test/convex-react.js";
 import { archiveWithDoubleCheck, armArchive, confirmArchive } from "~/test/double-check.js";
+import {
+  posthogSdk,
+  primeAnalyticsForTests,
+  resetPostHogBoundary,
+} from "~/test/posthog-boundary.js";
 
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
 vi.mock(
   "convex-helpers/react",
   async () => (await import("~/test/convex-react.js")).convexHelpersReactMock,
 );
+vi.mock("posthog-js", async () => (await import("~/test/posthog-mock.js")).posthogModuleMock);
+vi.mock("~/lib/env.js", async (importOriginal) =>
+  (await import("~/test/posthog-mock.js")).createPosthogEnvMock(importOriginal),
+);
 
 import CircleTransactions from "./transactions.js";
+
+beforeEach(() => {
+  primeAnalyticsForTests();
+});
 
 const REF = "trip-c1";
 const NOW_MONTH = currentMonth(new Date());
@@ -130,8 +143,8 @@ function makeFilterOptions(): TransactionFilterOptions {
 }
 
 afterEach(() => {
+  resetPostHogBoundary();
   vi.useRealTimers();
-  vi.clearAllMocks();
 });
 
 describe("CircleTransactions", () => {
@@ -198,6 +211,15 @@ describe("CircleTransactions", () => {
 
     expect(location()).toBe(
       `/circles/${REF}/transactions?month=2026-05&type=all&status=all&q=rent`,
+    );
+    expect(posthogSdk.capture).toHaveBeenCalledWith(
+      "ledger_filter_applied",
+      expect.objectContaining({
+        type: "all",
+        status: "all",
+        hasQuery: true,
+        categoryCount: 0,
+      }),
     );
     expect(screen.getByText("Rent payment")).toBeInTheDocument();
     expect(screen.getAllByText(/\$125\.00/)).toHaveLength(2);

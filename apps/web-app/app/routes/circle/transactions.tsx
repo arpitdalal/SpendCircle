@@ -18,6 +18,8 @@ import { FilterPanel } from "~/components/ui/filter-panel.js";
 import { MultiCombobox, type MultiComboboxOption } from "~/components/ui/multi-combobox.js";
 import { Segmented } from "~/components/ui/segmented.js";
 import { useFilterPanelDraft } from "~/components/ui/use-filter-panel-draft.js";
+import { track } from "~/lib/analytics.js";
+import { ledgerFilterAnalyticsProps } from "~/lib/analytics-props.js";
 import { circlePath } from "~/lib/circle-path.js";
 import {
   type MonthlySummary,
@@ -145,7 +147,9 @@ export default function CircleTransactions() {
   };
 
   const applyFilters = () => {
-    setSearchParams(canonicalLedgerParams({ ...draft, month: filters.month }, searchParams), {
+    const applied = { ...draft, month: filters.month };
+    track("ledger_filter_applied", ledgerFilterAnalyticsProps(applied));
+    setSearchParams(canonicalLedgerParams(applied, searchParams), {
       replace: false,
     });
     setPanelOpen(false);

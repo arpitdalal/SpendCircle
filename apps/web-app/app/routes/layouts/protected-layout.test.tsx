@@ -6,6 +6,7 @@ import { SKELETON_DELAY_MS } from "~/lib/route-skeleton.js";
 import { SnackbarProvider } from "~/lib/snackbar.js";
 import { configureConvex, makeCurrentUserView } from "~/test/convex-react.js";
 import { installIntersectionObserverStub } from "~/test/intersection-observer-stub.js";
+import { posthogSdk, resetPostHogBoundary } from "~/test/posthog-boundary.js";
 import { deferred, renderRouteStub } from "~/test/router-stub.js";
 
 /**
@@ -16,6 +17,10 @@ import { deferred, renderRouteStub } from "~/test/router-stub.js";
  * The header chrome must stay put while the `<Outlet/>` content swaps to the skeleton.
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
+vi.mock("posthog-js", async () => (await import("~/test/posthog-mock.js")).posthogModuleMock);
+vi.mock("~/lib/env.js", async (importOriginal) =>
+  (await import("~/test/posthog-mock.js")).createPosthogEnvMock(importOriginal),
+);
 
 import OnboardingRoute from "../onboarding.js";
 import ProtectedLayout from "./protected-layout.js";
@@ -41,7 +46,7 @@ function routesWith(settingsLoader: () => any) {
 installIntersectionObserverStub();
 
 afterEach(() => {
-  vi.clearAllMocks();
+  resetPostHogBoundary();
 });
 
 function ready() {
@@ -274,6 +279,33 @@ describe("ProtectedLayout onboarding gate", () => {
 
     expect(await screen.findByText("Home stub")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Welcome" })).not.toBeInTheDocument();
+    expect(posthogSdk.init).toHaveBeenCalledWith(
+      "phc_test",
+      expect.objectContaining({
+        disable_session_recording: true,
+      }),
+    );
+  });
+
+  it("syncs analytics opt-out from the ready session", async () => {
+    configureConvex({
+      currentUser: makeCurrentUserView({ analyticsOptOut: true, onboardingComplete: true }),
+      circles: [],
+    });
+    renderRouteStub(
+      [
+        {
+          path: "/",
+          Component: ProtectedLayout,
+          children: [{ index: true, Component: () => <h2>Home stub</h2> }],
+        },
+      ],
+      ["/"],
+    );
+
+    await screen.findByText("Home stub");
+    expect(posthogSdk.init).not.toHaveBeenCalled();
+    expect(posthogSdk.opt_out_capturing).not.toHaveBeenCalled();
   });
 
   it("completes onboarding and lets the User reach the app shell", async () => {

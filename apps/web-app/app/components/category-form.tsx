@@ -9,6 +9,7 @@ import {
 import { type FormEvent, useState } from "react";
 import { Button } from "~/components/ui/button.js";
 import { Segmented } from "~/components/ui/segmented.js";
+import { track } from "~/lib/analytics.js";
 import { type Circle, useCreateCategory } from "~/lib/data.js";
 import { mutationErrorMessageForUser } from "~/lib/mutation-user-message.js";
 import { cn } from "~/lib/utils.js";
@@ -63,6 +64,7 @@ export function NewCategoryForm({
     setSubmitting(true);
     try {
       await createCategory({ circleId, name: parsed.data.name, type, color });
+      track("category_created", { type, source: "standalone" });
       onClose(); // a dedicated page is done on success — return to where it opened from
     } catch (caught) {
       setError(

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { href, Link, Navigate, Outlet, useLocation, useNavigation } from "react-router";
 import { AccountMenu } from "~/components/account-menu.js";
 import { CircleBottomNavSkeleton } from "~/components/circle-mobile-bottom-nav.js";
@@ -5,6 +6,7 @@ import { CircleSwitcher } from "~/components/circle-switcher.js";
 import { NotificationCenter } from "~/components/notification-center.js";
 import { PageSkeleton } from "~/components/skeleton.js";
 import { Splash } from "~/components/splash.js";
+import { initAnalytics, setAnalyticsOptOut } from "~/lib/analytics.js";
 import { isCircleScopedPath } from "~/lib/circle-path.js";
 import { MOCKS } from "~/lib/env.js";
 import { parseReturnTo, RETURN_TO_PARAM, withReturnTo } from "~/lib/return-to-url.js";
@@ -35,6 +37,18 @@ export default function ProtectedLayout() {
   const navigation = useNavigation();
   const pendingTo = navigation.location?.pathname;
   const showBottomNavSkeleton = showSkeleton && pendingTo != null && isCircleScopedPath(pendingTo);
+  const analyticsUser =
+    session.state === "ready" && session.user.onboardingComplete ? session.user : undefined;
+
+  useEffect(() => {
+    if (!analyticsUser) {
+      return;
+    }
+    if (!analyticsUser.analyticsOptOut) {
+      initAnalytics(analyticsUser);
+    }
+    setAnalyticsOptOut(analyticsUser.analyticsOptOut);
+  }, [analyticsUser]);
 
   if (session.state === "loading") {
     return <Splash />;

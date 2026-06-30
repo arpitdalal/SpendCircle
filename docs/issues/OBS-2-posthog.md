@@ -2,58 +2,85 @@
 
 | | |
 |---|---|
-| **Status** | Todo |
-| **Labels** | `area:observability`, `frontend`, `security` |
-| **Depends on** | SET-1 |
-| **PRD stories** | 93, 91 |
-| **ADRs** | 0013 |
-| **Glossary** | — |
+| **Status** | Done |
+| **Issue** | [#48](https://github.com/arpitdalal/SpendCircle/issues/48) |
+| **Labels** | `enhancement`, `area:observability`, `frontend`, `security`, `ready-for-agent` |
+| **Depends on** | SET-1 (done), OBS-1 (done) |
+| **Related** | FBK-1 (done; optional `feedback_submitted` event) |
+| **PRD stories** | 93, 91, 184 |
+| **ADRs** | 0013, 0006, 0017 |
+| **Glossary** | User, Feedback, Transaction, Ledger Filter, Transaction Search, Export |
 
 ## Intent
 
-Product analytics to understand feature usage **safely** (PRD 93, ADR 0013): wire **PostHog**
-with **no Session Replay** in v1, **enabled by default after signup legal acceptance**, and
-**honoring the Settings opt-out** (SET-1, PRD 91). The hard constraint: **never send financial
-content** — no Transaction Title, Note, exact Amount, Feedback free text, or other financial
-data (PRD 184). Only coarse feature-usage events.
+Add PostHog product analytics for coarse feature usage only. Product analytics are **default-on**
+after legal acceptance because every bootstrapped User has `analyticsOptOut: false` by default, and
+users can later opt out in Settings. Respect that preference completely. Do **not** affect Sentry:
+OBS-1 made Sentry always-on and independent of `analyticsOptOut`.
 
-## Implement
+Hard privacy rule: never send financial content or free text to PostHog. No Transaction Title, Note,
+exact Amount/min/max, Feedback message, search query text, Circle/Category/Member names, emails,
+Display Names, refs, ids, or raw URLs. Only event names and whitelisted coarse props.
 
-- **Web:** initialize PostHog (key from env) **gated on the User's `analyticsOptOut === false`**;
-  no replay (`disable_session_recording`). Provide a thin `track(event, props?)` wrapper that is
-  the single capture seam and that **whitelists** allowed props (no free text, no amounts, no
-  titles/notes). Default on after legal acceptance; opting out (SET-1) stops capture and
-  resets/blocks the client.
-- Define the v1 event set (coarse: circle_created, transaction_added (type only, no
-  amount/title), category_created, ledger_filter_applied, transaction_search_submitted,
-  export_performed, feedback_submitted (type only), etc.). Search/filter events may include safe
-  coarse props such as lifecycle status, Transaction type, whether archived/all was selected,
-  whether a date range was present, and counts of selected filter values; never include query text,
-  category/member names, IDs, titles, notes, or amounts.
+## Implementation summary
 
-## Why this way
+### Analytics seam (`apps/web-app/app/lib/analytics.ts`)
 
-- **Single `track` seam with a prop whitelist** makes "no financial content" enforceable and
-  testable in one place rather than trusting every call site (PRD 184).
-- **Opt-out gates initialization/capture** (SET-1) — but Sentry (OBS-1) is untouched.
-- **No replay** in v1 (explicit out-of-scope).
+- Sole importer of `posthog-js`.
+- `initAnalytics(user)` — browser-only, requires `VITE_POSTHOG_KEY`, skips when `analyticsOptOut`.
+- `setAnalyticsOptOut(optOut)` — opts out/in via PostHog browser API without reload.
+- `track(event, props?)` — whitelisted events only; forbidden keys stripped before capture.
+- Session Replay disabled via `disable_session_recording: true` plus `stopSessionRecording()`.
+- No `identify` in v1.
 
-## How to test
+### Env
 
-- **Opt-out honored:** with `analyticsOptOut: true`, PostHog is not initialized / `track`
-  no-ops; default (`false`) captures.
-- **No financial content:** assert `track` strips/rejects amount, title, note, feedback text;
-  attempting to pass them doesn't transmit them (whitelist test).
-- **No replay:** session recording disabled in config.
-- **Independence:** Sentry (OBS-1) unaffected by the opt-out; analytics affected.
-- **Event set:** representative actions fire the expected coarse events with safe props.
+- `VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` wired through `app/lib/env.ts`, `app/env.d.ts`, `.env.example`.
+- Missing key → analytics no-op.
+
+### Lifecycle
+
+- `protected-layout.tsx` calls `initAnalytics` + `setAnalyticsOptOut` when session is ready and
+  onboarding is complete. Settings persists opt-out only; analytics reacts via session updates.
+
+### v1 events (wired)
+
+| Event | Call site |
+|---|---|
+| `circle_created` | `circle-new.tsx` |
+| `transaction_added` | `transaction-form.tsx` (create only) |
+| `category_created` | `category-form.tsx`, `transaction-form-category-section.tsx` |
+| `ledger_filter_applied` | `transactions.tsx` (Apply) |
+| `transaction_search_submitted` | `search.tsx` (debounced search + filter Apply) |
+| `transaction_search_page_changed` | `search.tsx` (pagination) |
+| `export_performed` | `search.tsx` (downloaded / too_many / inaccessible / failed) |
+| `feedback_submitted` | `settings.tsx` (after mutation success) |
+
+Coarse prop helpers live in `app/lib/analytics-props.ts`. Event/prop allowlists in
+`app/lib/analytics-events.ts`.
+
+### Tests
+
+- Unit: `analytics.test.ts`, `analytics-props.test.ts` — opt-out, no replay, whitelist, Sentry independence.
+- Route/component: call-site `track` assertions via `app/test/analytics-mock.ts`.
+- MSW PostHog handler reused from `packages/mocks` for future integration tests.
 
 ## Done when
 
-- PostHog runs (no replay), default-on post-acceptance, fully gated by the opt-out, capturing
-  only whitelisted non-financial props through a single `track` seam; tests green; gates pass.
+- [x] PostHog installed and initialized only through the app analytics seam.
+- [x] Product analytics honor `analyticsOptOut`, default on for fresh Users, disable/enable from Settings.
+- [x] Session Replay disabled for PostHog v1.
+- [x] All analytics payloads pass the event/prop whitelist.
+- [x] Representative feature events wired.
+- [x] Tests prove opt-out, no replay, whitelist enforcement, Sentry independence, call-site events.
+- [x] Gates pass: `pnpm typecheck && pnpm lint && pnpm test && pnpm build`.
 
 ## Out of scope
 
-Sentry (OBS-1); the opt-out toggle/storage (SET-1); PostHog Session Replay (out of scope v1).
-</content>
+- Building or changing the opt-out storage/UI (SET-1 is done).
+- Sentry setup or Sentry replay behavior (OBS-1 is done and independent).
+- PostHog Session Replay.
+- User identity/group analytics, `identify`, email/name/user id capture, or Circle id/ref capture.
+- Backend/Convex analytics events.
+- Tracking edits, archives/restores, notifications, invitations, or dashboard chart interactions unless
+  a future issue defines their safe event contract.
