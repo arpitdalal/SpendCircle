@@ -11,6 +11,8 @@ overrides:
 
 allowBuilds:
   '@biomejs/biome': true
+  # posthog-js → core-js (postinstall copies polyfill modules)
+  core-js: true
   esbuild: true
   lefthook: true
   msw: true
