@@ -3,15 +3,19 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
 import { Route } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Circle } from "~/lib/data.js";
-import { analyticsMock } from "~/test/analytics-mock.js";
 import {
   circleLayoutHeadingChrome,
   configureConvex,
   makeCircleView,
   renderCircleRoutes,
 } from "~/test/convex-react.js";
+import {
+  posthogSdk,
+  primeAnalyticsForTests,
+  resetPostHogBoundary,
+} from "~/test/posthog-boundary.js";
 
 /**
  * Behavior test for the new-Category OBJECT route (jsdom, issue #96; revised #138). Doubles
@@ -21,9 +25,9 @@ import {
  * exercised exactly as in the app (ADR 0006).
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
-vi.mock(
-  "~/lib/analytics.js",
-  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
+vi.mock("posthog-js", async () => (await import("~/test/posthog-mock.js")).posthogModuleMock);
+vi.mock("~/lib/env.js", async (importOriginal) =>
+  (await import("~/test/posthog-mock.js")).createPosthogEnvMock(importOriginal),
 );
 
 import CategoryNew from "./category-new.js";
@@ -55,7 +59,12 @@ function setup(opts: { circle?: Partial<Circle>; url?: string } = {}) {
   });
 }
 
+beforeEach(() => {
+  primeAnalyticsForTests();
+});
+
 afterEach(() => {
+  resetPostHogBoundary();
   vi.clearAllMocks();
 });
 
@@ -101,7 +110,7 @@ describe("CategoryNew — render and submit", () => {
       type: "expense",
       color: "teal",
     });
-    expect(analyticsMock.track).toHaveBeenCalledWith("category_created", {
+    expect(posthogSdk.capture).toHaveBeenCalledWith("category_created", {
       type: "expense",
       source: "standalone",
     });

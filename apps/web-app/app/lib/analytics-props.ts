@@ -1,10 +1,6 @@
 import { currentMonth, type PlainMonth, plainMonthParts } from "@spend-circle/domain";
 
-import type {
-  AnalyticsEventMap,
-  AnalyticsLifecycleStatus,
-  AnalyticsTransactionType,
-} from "./analytics-events.js";
+import type { AnalyticsEventMap } from "./analytics-events.js";
 import type {
   BaseTransactionFilters,
   LedgerFilters,
@@ -13,8 +9,8 @@ import type {
 
 function coarseBaseFilterProps(filters: BaseTransactionFilters) {
   return {
-    type: filters.type as AnalyticsTransactionType,
-    status: filters.status as AnalyticsLifecycleStatus,
+    type: filters.type,
+    status: filters.status,
     hasQuery: filters.q.trim().length > 0,
     categoryCount: filters.categories.length,
     recordedByCount: filters.recordedBy.length,
@@ -29,18 +25,14 @@ export function ledgerMonthOffset(month: PlainMonth, now = new Date()) {
   return (selected.year - current.year) * 12 + (selected.month - current.month);
 }
 
-export function ledgerFilterAnalyticsProps(
-  filters: LedgerFilters,
-): AnalyticsEventMap["ledger_filter_applied"] {
+export function ledgerFilterAnalyticsProps(filters: LedgerFilters) {
   return {
     ...coarseBaseFilterProps(filters),
     monthOffset: ledgerMonthOffset(filters.month),
   };
 }
 
-export function searchFilterAnalyticsProps(
-  filters: SearchFilters,
-): AnalyticsEventMap["transaction_search_submitted"] {
+export function searchFilterAnalyticsProps(filters: SearchFilters) {
   return {
     ...coarseBaseFilterProps(filters),
     hasDateRange: Boolean(filters.from || filters.to),
@@ -51,9 +43,9 @@ export function searchFilterAnalyticsProps(
 export function exportAnalyticsProps(
   filters: SearchFilters,
   result: AnalyticsEventMap["export_performed"]["result"],
-): AnalyticsEventMap["export_performed"] {
+) {
   return {
-    status: filters.status as AnalyticsLifecycleStatus,
+    status: filters.status,
     result,
     hasQuery: filters.q.trim().length > 0,
     hasDateRange: Boolean(filters.from || filters.to),

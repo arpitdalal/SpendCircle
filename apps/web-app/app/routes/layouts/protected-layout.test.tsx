@@ -4,9 +4,9 @@ import { createRoutesStub, Link } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SKELETON_DELAY_MS } from "~/lib/route-skeleton.js";
 import { SnackbarProvider } from "~/lib/snackbar.js";
-import { analyticsMock } from "~/test/analytics-mock.js";
 import { configureConvex, makeCurrentUserView } from "~/test/convex-react.js";
 import { installIntersectionObserverStub } from "~/test/intersection-observer-stub.js";
+import { posthogSdk, resetPostHogBoundary } from "~/test/posthog-boundary.js";
 import { deferred, renderRouteStub } from "~/test/router-stub.js";
 
 /**
@@ -17,9 +17,9 @@ import { deferred, renderRouteStub } from "~/test/router-stub.js";
  * The header chrome must stay put while the `<Outlet/>` content swaps to the skeleton.
  */
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
-vi.mock(
-  "~/lib/analytics.js",
-  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
+vi.mock("posthog-js", async () => (await import("~/test/posthog-mock.js")).posthogModuleMock);
+vi.mock("~/lib/env.js", async (importOriginal) =>
+  (await import("~/test/posthog-mock.js")).createPosthogEnvMock(importOriginal),
 );
 
 import OnboardingRoute from "../onboarding.js";
@@ -46,7 +46,7 @@ function routesWith(settingsLoader: () => any) {
 installIntersectionObserverStub();
 
 afterEach(() => {
-  vi.clearAllMocks();
+  resetPostHogBoundary();
 });
 
 function ready() {
@@ -279,10 +279,12 @@ describe("ProtectedLayout onboarding gate", () => {
 
     expect(await screen.findByText("Home stub")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Welcome" })).not.toBeInTheDocument();
-    expect(analyticsMock.initAnalytics).toHaveBeenCalledWith(
-      expect.objectContaining({ analyticsOptOut: false }),
+    expect(posthogSdk.init).toHaveBeenCalledWith(
+      "phc_test",
+      expect.objectContaining({
+        disable_session_recording: true,
+      }),
     );
-    expect(analyticsMock.setAnalyticsOptOut).toHaveBeenCalledWith(false);
   });
 
   it("syncs analytics opt-out from the ready session", async () => {
@@ -302,8 +304,8 @@ describe("ProtectedLayout onboarding gate", () => {
     );
 
     await screen.findByText("Home stub");
-    expect(analyticsMock.initAnalytics).not.toHaveBeenCalled();
-    expect(analyticsMock.setAnalyticsOptOut).toHaveBeenCalledWith(true);
+    expect(posthogSdk.init).not.toHaveBeenCalled();
+    expect(posthogSdk.opt_out_capturing).not.toHaveBeenCalled();
   });
 
   it("completes onboarding and lets the User reach the app shell", async () => {

@@ -5,13 +5,17 @@ import { ConvexError } from "convex/values";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SnackbarProvider } from "~/lib/snackbar.js";
-import { analyticsMock } from "~/test/analytics-mock.js";
 import { configureConvex, convexReactMock, makeCurrentUserView } from "~/test/convex-react.js";
+import {
+  posthogSdk,
+  primeAnalyticsForTests,
+  resetPostHogBoundary,
+} from "~/test/posthog-boundary.js";
 
 vi.mock("convex/react", async () => (await import("~/test/convex-react.js")).convexReactMock);
-vi.mock(
-  "~/lib/analytics.js",
-  async () => (await import("~/test/analytics-mock.js")).analyticsModuleMock,
+vi.mock("posthog-js", async () => (await import("~/test/posthog-mock.js")).posthogModuleMock);
+vi.mock("~/lib/env.js", async (importOriginal) =>
+  (await import("~/test/posthog-mock.js")).createPosthogEnvMock(importOriginal),
 );
 
 import Settings from "./settings.js";
@@ -28,9 +32,11 @@ function renderSettings() {
 
 beforeEach(() => {
   convexReactMock.useConvexAuth.mockReturnValue({ isAuthenticated: true, isLoading: false });
+  primeAnalyticsForTests();
 });
 
 afterEach(() => {
+  resetPostHogBoundary();
   vi.clearAllMocks();
 });
 
@@ -246,7 +252,7 @@ describe("Settings feedback form", () => {
     await waitFor(() => {
       expect(screen.getByText("Thanks — your feedback was sent.")).toBeInTheDocument();
     });
-    expect(analyticsMock.track).toHaveBeenCalledWith("feedback_submitted", { type: "bug" });
+    expect(posthogSdk.capture).toHaveBeenCalledWith("feedback_submitted", { type: "bug" });
     expect(message).toHaveValue("");
     expect(screen.getByRole("button", { name: "Send feedback" })).toBeDisabled();
   });

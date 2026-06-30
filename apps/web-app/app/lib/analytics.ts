@@ -49,6 +49,7 @@ export function setAnalyticsOptOut(optOut: boolean) {
     if (clientInitialized) {
       posthog.opt_out_capturing();
       posthog.stopSessionRecording();
+      posthog.reset();
     }
     return;
   }
@@ -73,7 +74,11 @@ export function track<E extends AnalyticsEvent>(event: E, props?: AnalyticsEvent
     return;
   }
 
-  posthog.capture(event, sanitized);
+  try {
+    posthog.capture(event, sanitized);
+  } catch {
+    // Product analytics are best-effort and must not affect user flows.
+  }
 }
 
 /** Test-only reset so unit tests can re-run init lifecycle. */

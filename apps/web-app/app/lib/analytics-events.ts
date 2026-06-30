@@ -1,9 +1,9 @@
-import type { FeedbackType } from "@spend-circle/domain";
+import { type CurrencyCode, type FeedbackType, isSupportedCurrency } from "@spend-circle/domain";
 
 import type { LifecycleFilter, TypeFilter } from "./transaction-filter-url.js";
 
 /** Transaction / ledger filter type values allowed in analytics payloads. */
-export type AnalyticsTransactionType = Extract<TypeFilter, "expense" | "income" | "all">;
+export type AnalyticsTransactionType = TypeFilter;
 
 /** Lifecycle filter values allowed in analytics payloads. */
 export type AnalyticsLifecycleStatus = LifecycleFilter;
@@ -13,6 +13,8 @@ export type AnalyticsCategorySource = "standalone" | "transaction_inline";
 export type AnalyticsExportResult = "downloaded" | "too_many" | "inaccessible" | "failed";
 
 export type AnalyticsFeedbackType = FeedbackType;
+
+export type AnalyticsCategoryType = Extract<AnalyticsTransactionType, "expense" | "income">;
 
 export const FORBIDDEN_ANALYTICS_PROP_KEYS = [
   "amount",
@@ -47,14 +49,14 @@ export const FORBIDDEN_ANALYTICS_PROP_KEYS = [
 const FORBIDDEN_KEY_SET = new Set<string>(FORBIDDEN_ANALYTICS_PROP_KEYS);
 
 export type AnalyticsEventMap = {
-  circle_created: { currency: string };
+  circle_created: { currency: CurrencyCode };
   transaction_added: {
     type: AnalyticsTransactionType;
     paidBySelf: boolean;
     categoryCount: number;
   };
   category_created: {
-    type: Extract<AnalyticsTransactionType, "expense" | "income">;
+    type: AnalyticsCategoryType;
     source: AnalyticsCategorySource;
   };
   ledger_filter_applied: {
@@ -117,18 +119,6 @@ const EVENT_ALLOWLISTS: Record<AnalyticsEvent, ReadonlySet<string>> = {
   feedback_submitted: new Set(["type"]),
 };
 
-const TRANSACTION_TYPES = new Set<AnalyticsTransactionType>(["expense", "income", "all"]);
-const CATEGORY_TYPES = new Set(["expense", "income"] as const);
-const LIFECYCLE_STATUSES = new Set<AnalyticsLifecycleStatus>(["active", "archived", "all"]);
-const CATEGORY_SOURCES = new Set<AnalyticsCategorySource>(["standalone", "transaction_inline"]);
-const EXPORT_RESULTS = new Set<AnalyticsExportResult>([
-  "downloaded",
-  "too_many",
-  "inaccessible",
-  "failed",
-]);
-const FEEDBACK_TYPES = new Set<AnalyticsFeedbackType>(["bug", "feature", "currency"]);
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -137,50 +127,230 @@ function hasForbiddenKey(key: string) {
   return FORBIDDEN_KEY_SET.has(key);
 }
 
+function isAnalyticsTransactionType(value: unknown): value is AnalyticsTransactionType {
+  return value === "expense" || value === "income" || value === "all";
+}
+
+function isAnalyticsCategoryType(value: unknown): value is AnalyticsCategoryType {
+  return value === "expense" || value === "income";
+}
+
+function isAnalyticsLifecycleStatus(value: unknown): value is AnalyticsLifecycleStatus {
+  return value === "active" || value === "archived" || value === "all";
+}
+
+function isAnalyticsCategorySource(value: unknown): value is AnalyticsCategorySource {
+  return value === "standalone" || value === "transaction_inline";
+}
+
+function isAnalyticsExportResult(value: unknown): value is AnalyticsExportResult {
+  return (
+    value === "downloaded" || value === "too_many" || value === "inaccessible" || value === "failed"
+  );
+}
+
+function isAnalyticsFeedbackType(value: unknown): value is AnalyticsFeedbackType {
+  return value === "bug" || value === "feature" || value === "currency";
+}
+
+function isNonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isPositiveInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
 function validatePropValue(event: AnalyticsEvent, key: string, value: unknown) {
   if (value === undefined) {
     return false;
   }
   switch (event) {
     case "circle_created":
-      return key === "currency" && typeof value === "string" && value.length > 0;
+      return key === "currency" && typeof value === "string" && isSupportedCurrency(value);
     case "transaction_added":
-      if (key === "type") return TRANSACTION_TYPES.has(value as AnalyticsTransactionType);
+      if (key === "type") return isAnalyticsTransactionType(value);
       if (key === "paidBySelf") return typeof value === "boolean";
-      if (key === "categoryCount")
-        return typeof value === "number" && Number.isInteger(value) && value >= 0;
+      if (key === "categoryCount") return isNonNegativeInteger(value);
       return false;
     case "category_created":
-      if (key === "type") return CATEGORY_TYPES.has(value as "expense" | "income");
-      if (key === "source") return CATEGORY_SOURCES.has(value as AnalyticsCategorySource);
+      if (key === "type") return isAnalyticsCategoryType(value);
+      if (key === "source") return isAnalyticsCategorySource(value);
       return false;
     case "ledger_filter_applied":
     case "transaction_search_submitted":
-      if (key === "type") return TRANSACTION_TYPES.has(value as AnalyticsTransactionType);
-      if (key === "status") return LIFECYCLE_STATUSES.has(value as AnalyticsLifecycleStatus);
+      if (key === "type") return isAnalyticsTransactionType(value);
+      if (key === "status") return isAnalyticsLifecycleStatus(value);
       if (key === "hasQuery" || key === "hasDateRange" || key === "hasAmountRange") {
         return typeof value === "boolean";
       }
       if (key === "categoryCount" || key === "recordedByCount" || key === "paidByCount") {
-        return typeof value === "number" && Number.isInteger(value) && value >= 0;
+        return isNonNegativeInteger(value);
       }
       if (key === "monthOffset" && event === "ledger_filter_applied") {
         return typeof value === "number" && Number.isInteger(value);
       }
       return false;
     case "transaction_search_page_changed":
-      return key === "page" && typeof value === "number" && Number.isInteger(value) && value > 0;
+      return key === "page" && isPositiveInteger(value);
     case "export_performed":
-      if (key === "status") return LIFECYCLE_STATUSES.has(value as AnalyticsLifecycleStatus);
-      if (key === "result") return EXPORT_RESULTS.has(value as AnalyticsExportResult);
+      if (key === "status") return isAnalyticsLifecycleStatus(value);
+      if (key === "result") return isAnalyticsExportResult(value);
       if (key === "hasQuery" || key === "hasDateRange" || key === "hasAmountRange") {
         return typeof value === "boolean";
       }
       return false;
     case "feedback_submitted":
-      return key === "type" && FEEDBACK_TYPES.has(value as AnalyticsFeedbackType);
+      return key === "type" && isAnalyticsFeedbackType(value);
     default:
       return false;
+  }
+}
+
+function isCircleCreatedPayload(
+  value: Record<string, unknown>,
+): value is AnalyticsEventMap["circle_created"] {
+  return (
+    typeof value.currency === "string" &&
+    isSupportedCurrency(value.currency) &&
+    Object.keys(value).length === 1
+  );
+}
+
+function isTransactionAddedPayload(
+  value: Record<string, unknown>,
+): value is AnalyticsEventMap["transaction_added"] {
+  return (
+    isAnalyticsTransactionType(value.type) &&
+    typeof value.paidBySelf === "boolean" &&
+    isNonNegativeInteger(value.categoryCount) &&
+    Object.keys(value).length === 3
+  );
+}
+
+function isCategoryCreatedPayload(
+  value: Record<string, unknown>,
+): value is AnalyticsEventMap["category_created"] {
+  return (
+    isAnalyticsCategoryType(value.type) &&
+    isAnalyticsCategorySource(value.source) &&
+    Object.keys(value).length === 2
+  );
+}
+
+function isLedgerFilterAppliedPayload(
+  value: Record<string, unknown>,
+): value is AnalyticsEventMap["ledger_filter_applied"] {
+  return (
+    isAnalyticsTransactionType(value.type) &&
+    isAnalyticsLifecycleStatus(value.status) &&
+    typeof value.hasQuery === "boolean" &&
+    isNonNegativeInteger(value.categoryCount) &&
+    isNonNegativeInteger(value.recordedByCount) &&
+    isNonNegativeInteger(value.paidByCount) &&
+    typeof value.monthOffset === "number" &&
+    Number.isInteger(value.monthOffset) &&
+    Object.keys(value).length === 7
+  );
+}
+
+function isTransactionSearchSubmittedPayload(
+  value: Record<string, unknown>,
+): value is AnalyticsEventMap["transaction_search_submitted"] {
+  return (
+    isAnalyticsTransactionType(value.type) &&
+    isAnalyticsLifecycleStatus(value.status) &&
+    typeof value.hasQuery === "boolean" &&
+    typeof value.hasDateRange === "boolean" &&
+    typeof value.hasAmountRange === "boolean" &&
+    isNonNegativeInteger(value.categoryCount) &&
+    isNonNegativeInteger(value.recordedByCount) &&
+    isNonNegativeInteger(value.paidByCount) &&
+    Object.keys(value).length === 8
+  );
+}
+
+function isTransactionSearchPageChangedPayload(
+  value: Record<string, unknown>,
+): value is AnalyticsEventMap["transaction_search_page_changed"] {
+  return isPositiveInteger(value.page) && Object.keys(value).length === 1;
+}
+
+function isExportPerformedPayload(
+  value: Record<string, unknown>,
+): value is AnalyticsEventMap["export_performed"] {
+  return (
+    isAnalyticsLifecycleStatus(value.status) &&
+    isAnalyticsExportResult(value.result) &&
+    typeof value.hasQuery === "boolean" &&
+    typeof value.hasDateRange === "boolean" &&
+    typeof value.hasAmountRange === "boolean" &&
+    Object.keys(value).length === 5
+  );
+}
+
+function isFeedbackSubmittedPayload(
+  value: Record<string, unknown>,
+): value is AnalyticsEventMap["feedback_submitted"] {
+  return isAnalyticsFeedbackType(value.type) && Object.keys(value).length === 1;
+}
+
+function toValidatedPayload(
+  event: "circle_created",
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap["circle_created"] | null;
+function toValidatedPayload(
+  event: "transaction_added",
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap["transaction_added"] | null;
+function toValidatedPayload(
+  event: "category_created",
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap["category_created"] | null;
+function toValidatedPayload(
+  event: "ledger_filter_applied",
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap["ledger_filter_applied"] | null;
+function toValidatedPayload(
+  event: "transaction_search_submitted",
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap["transaction_search_submitted"] | null;
+function toValidatedPayload(
+  event: "transaction_search_page_changed",
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap["transaction_search_page_changed"] | null;
+function toValidatedPayload(
+  event: "export_performed",
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap["export_performed"] | null;
+function toValidatedPayload(
+  event: "feedback_submitted",
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap["feedback_submitted"] | null;
+function toValidatedPayload(
+  event: AnalyticsEvent,
+  sanitized: Record<string, unknown>,
+): AnalyticsEventMap[AnalyticsEvent] | null;
+function toValidatedPayload(event: AnalyticsEvent, sanitized: Record<string, unknown>) {
+  switch (event) {
+    case "circle_created":
+      return isCircleCreatedPayload(sanitized) ? sanitized : null;
+    case "transaction_added":
+      return isTransactionAddedPayload(sanitized) ? sanitized : null;
+    case "category_created":
+      return isCategoryCreatedPayload(sanitized) ? sanitized : null;
+    case "ledger_filter_applied":
+      return isLedgerFilterAppliedPayload(sanitized) ? sanitized : null;
+    case "transaction_search_submitted":
+      return isTransactionSearchSubmittedPayload(sanitized) ? sanitized : null;
+    case "transaction_search_page_changed":
+      return isTransactionSearchPageChangedPayload(sanitized) ? sanitized : null;
+    case "export_performed":
+      return isExportPerformedPayload(sanitized) ? sanitized : null;
+    case "feedback_submitted":
+      return isFeedbackSubmittedPayload(sanitized) ? sanitized : null;
+    default:
+      return null;
   }
 }
 
@@ -214,9 +384,9 @@ export function sanitizeAnalyticsProps<E extends AnalyticsEvent>(
     }
   }
 
-  return sanitized as AnalyticsEventMap[E];
+  return toValidatedPayload(event, sanitized);
 }
 
 export function isAnalyticsEvent(event: string): event is AnalyticsEvent {
-  return event in EVENT_ALLOWLISTS;
+  return Object.hasOwn(EVENT_ALLOWLISTS, event);
 }

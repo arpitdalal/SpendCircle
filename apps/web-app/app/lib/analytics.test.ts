@@ -2,34 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("posthog-js", async () => (await import("~/test/posthog-mock.js")).posthogModuleMock);
+vi.mock("~/lib/env.js", async (importOriginal) =>
+  (await import("~/test/posthog-mock.js")).createPosthogEnvMock(importOriginal),
+);
+
+import { posthogEnv, posthogSdk, resetPostHogBoundary } from "~/test/posthog-boundary.js";
+import { buildPostHogInitOptions, initAnalytics, setAnalyticsOptOut, track } from "./analytics.js";
 import { FORBIDDEN_ANALYTICS_PROP_KEYS, sanitizeAnalyticsProps } from "./analytics-events.js";
-
-const posthogSdk = vi.hoisted(() => ({
-  init: vi.fn(),
-  capture: vi.fn(),
-  opt_out_capturing: vi.fn(),
-  opt_in_capturing: vi.fn(),
-  stopSessionRecording: vi.fn(),
-}));
-
-vi.mock("posthog-js", () => ({
-  default: posthogSdk,
-}));
-
-const env = vi.hoisted(() => ({
-  POSTHOG_KEY: undefined as string | undefined,
-  POSTHOG_HOST: "https://us.i.posthog.com",
-}));
-
-vi.mock("./env.js", () => env);
-
-import {
-  buildPostHogInitOptions,
-  initAnalytics,
-  resetAnalyticsStateForTests,
-  setAnalyticsOptOut,
-  track,
-} from "./analytics.js";
 
 const readyUser = {
   id: "user-1",
@@ -40,9 +20,7 @@ const readyUser = {
 };
 
 afterEach(() => {
-  vi.clearAllMocks();
-  env.POSTHOG_KEY = undefined;
-  resetAnalyticsStateForTests();
+  resetPostHogBoundary();
 });
 
 describe("buildPostHogInitOptions", () => {
@@ -60,19 +38,17 @@ describe("buildPostHogInitOptions", () => {
 
 describe("initAnalytics", () => {
   it("no-ops when the PostHog key is missing", () => {
-    env.POSTHOG_KEY = undefined;
+    posthogEnv.POSTHOG_KEY = undefined;
     initAnalytics(readyUser);
     expect(posthogSdk.init).not.toHaveBeenCalled();
   });
 
   it("does not initialize when analyticsOptOut is true", () => {
-    env.POSTHOG_KEY = "phc_test";
     initAnalytics({ ...readyUser, analyticsOptOut: true });
     expect(posthogSdk.init).not.toHaveBeenCalled();
   });
 
   it("initializes once with session recording disabled", () => {
-    env.POSTHOG_KEY = "phc_test";
     initAnalytics(readyUser);
     initAnalytics(readyUser);
 
@@ -83,8 +59,7 @@ describe("initAnalytics", () => {
 });
 
 describe("setAnalyticsOptOut", () => {
-  it("opts out and stops capture after init", () => {
-    env.POSTHOG_KEY = "phc_test";
+  it("opts out, resets identity, and stops capture after init", () => {
     initAnalytics(readyUser);
 
     setAnalyticsOptOut(true);
@@ -92,11 +67,11 @@ describe("setAnalyticsOptOut", () => {
 
     expect(posthogSdk.opt_out_capturing).toHaveBeenCalled();
     expect(posthogSdk.stopSessionRecording).toHaveBeenCalled();
+    expect(posthogSdk.reset).toHaveBeenCalled();
     expect(posthogSdk.capture).not.toHaveBeenCalled();
   });
 
   it("opts back in without requiring a reload", () => {
-    env.POSTHOG_KEY = "phc_test";
     initAnalytics(readyUser);
     setAnalyticsOptOut(true);
 
@@ -110,27 +85,31 @@ describe("setAnalyticsOptOut", () => {
 
 describe("track", () => {
   it("no-ops before init", () => {
-    env.POSTHOG_KEY = "phc_test";
     track("circle_created", { currency: "USD" });
     expect(posthogSdk.capture).not.toHaveBeenCalled();
   });
 
   it("drops unknown events", () => {
-    env.POSTHOG_KEY = "phc_test";
     initAnalytics(readyUser);
-    track("not_a_real_event" as "circle_created", { currency: "USD" });
+    // @ts-expect-error intentional malformed event name for contract test
+    track("not_a_real_event", { currency: "USD" });
     expect(posthogSdk.capture).not.toHaveBeenCalled();
   });
 
   it("strips unknown prop keys but still captures allowed props", () => {
-    env.POSTHOG_KEY = "phc_test";
     initAnalytics(readyUser);
-    track("circle_created", { currency: "USD", title: "secret" } as { currency: string });
+    track("circle_created", { currency: "USD", ...{ title: "secret" } });
     expect(posthogSdk.capture).toHaveBeenCalledWith("circle_created", { currency: "USD" });
   });
 
+  it("rejects unsupported currency codes", () => {
+    initAnalytics(readyUser);
+    // @ts-expect-error intentional unsupported currency for runtime guard test
+    track("circle_created", { currency: "XYZ" });
+    expect(posthogSdk.capture).not.toHaveBeenCalled();
+  });
+
   it("never forwards forbidden keys", () => {
-    env.POSTHOG_KEY = "phc_test";
     initAnalytics(readyUser);
 
     for (const forbidden of FORBIDDEN_ANALYTICS_PROP_KEYS) {
@@ -144,7 +123,7 @@ describe("track", () => {
         recordedByCount: 0,
         paidByCount: 0,
         [forbidden]: "leak",
-      } as never);
+      });
       expect(props).toEqual({
         type: "all",
         status: "all",
@@ -166,8 +145,8 @@ describe("track", () => {
       categoryCount: 1,
       recordedByCount: 0,
       paidByCount: 0,
-      query: "rent",
-    } as never);
+      ...{ query: "rent" },
+    });
     expect(posthogSdk.capture).toHaveBeenLastCalledWith("transaction_search_submitted", {
       type: "all",
       status: "all",
@@ -181,10 +160,18 @@ describe("track", () => {
   });
 
   it("captures whitelisted circle_created props", () => {
-    env.POSTHOG_KEY = "phc_test";
     initAnalytics(readyUser);
     track("circle_created", { currency: "EUR" });
     expect(posthogSdk.capture).toHaveBeenCalledWith("circle_created", { currency: "EUR" });
+  });
+
+  it("does not throw when PostHog capture rejects", () => {
+    initAnalytics(readyUser);
+    posthogSdk.capture.mockImplementation(() => {
+      throw new Error("posthog down");
+    });
+
+    expect(() => track("feedback_submitted", { type: "bug" })).not.toThrow();
   });
 });
 
